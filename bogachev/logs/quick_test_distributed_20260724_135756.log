@@ -1,0 +1,37 @@
+2026-07-24 13:57:56 | INFO     | ============================================================
+2026-07-24 13:57:56 | INFO     | БЫСТРОЕ ТЕСТИРОВАНИЕ select_features_distributed (True Spark)
+2026-07-24 13:57:56 | INFO     | ============================================================
+2026-07-24 13:57:56 | INFO     | 
+[1/3] Запуск Spark сессии...
+2026-07-24 13:58:31 | INFO     | Spark сессия запущена! Время: 34.95 сек
+2026-07-24 13:58:31 | INFO     | 
+[2/3] Загрузка конфигурации и данных...
+2026-07-24 13:58:31 | INFO     | Загружено 556 категориальных колонок
+2026-07-24 13:58:43 | INFO     | Загружено 1,373,107 строк
+2026-07-24 13:58:46 | INFO     | Маленький сэмпл: 1,389 строк (0.1%)
+2026-07-24 13:58:46 | INFO     | После дропа колонок: 4464
+2026-07-24 13:58:46 | INFO     | Время: 15.45 сек
+2026-07-24 13:58:46 | INFO     | 
+[3/3] Запуск select_features_distributed (Spark MLlib)...
+2026-07-24 13:58:46 | INFO     | Используются распределенные вычисления - НЕТ toPandas()!
+2026-07-24 13:58:46 | INFO     | 
+--- Вариант 1: Distributed LGBM отбор (top_n=50) ---
+2026-07-24 13:58:46 | ERROR    | ERROR: Can't instantiate abstract class SparkLGBMFeatureSelectionDistributed with abstract method _get_importances_from_model
+2026-07-24 13:58:46 | ERROR    | Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/quick_test_distributed.py", line 102, in <module>
+    selected_lgbm = select_features_distributed(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/shap_lgbm_spark_distributed.py", line 492, in select_features_distributed
+    selector = SparkLGBMFeatureSelectionDistributed(
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: Can't instantiate abstract class SparkLGBMFeatureSelectionDistributed with abstract method _get_importances_from_model
+
+2026-07-24 13:58:46 | ERROR    | Время: 0.01 сек
+2026-07-24 13:58:46 | INFO     | 
+============================================================
+2026-07-24 13:58:46 | INFO     | ТЕСТ ЗАВЕРШЕН!
+2026-07-24 13:58:46 | INFO     | ============================================================
+2026-07-24 13:58:46 | INFO     | 
+Итоговое время выполнения: 50.41 сек
+2026-07-24 13:58:46 | INFO     | Лог сохранен в: /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/logs/quick_test_distributed_20260724_135756.log
+2026-07-24 13:58:46 | INFO     | Closing down clientserver connection

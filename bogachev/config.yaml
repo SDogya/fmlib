@@ -1,0 +1,86 @@
+# Конфигурация пайплайна отбора признаков
+# Основано на sms_64.yaml
+
+datasets:
+  raw: /user/team/team_ai_avatar/ds/shchepanovskiy/campaign_validation_tests/1221_all_features_for_fs
+  target_column: target
+  drop_columns:
+    - epk_id
+    - report_month
+    - seq_hidden_state
+    - split_type
+    - ml360
+    - score
+    - camp_type
+    - prl_tax_payer_inn
+    - dep_acct_lst_division_dk
+    - seg_main_card_dwh_id
+    - dep_social_bitmask_l12m_cd
+    - seg_crd_segm_special_cd
+    - seg_crd_segm_special_prev_cd
+    - ctl_loading
+    - dep_lst_payroll_agrmnt_id
+    - seg_main_card_w4_id
+    - row_actual_from_dt
+    - crd_lst_agrmnt_osb_cd
+    - actual_epk_id
+    - seg_crd_segm_special_set_dt
+    - prd_1st_prod_division_dk
+    - prd_lst_prod_osb_cd
+    - dep_payroll_bitmask_l12m_cd
+    - channel_name_crm
+    - prl_agrmnt_nbr
+    - row_upd_dttm
+    - tp_lst_division_dk
+    - crd_lst_agrmnt_vsp_cd
+    - prd_lst_prod_division_dk
+    - dep_acct_1st_division_dk
+    - dep_acct_max_bal_division_dk
+    - row_actual_to_dt
+    - row_upd_dttm_lag1
+    - prd_lst_prod_vsp_cd
+  cat_columns_path: /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/campaign_all_cat_cols.yaml
+
+# Step 1: Drop null features
+drop_null:
+  max_null_fraction: 0.5
+  enabled: true
+
+# Step 2: Drop constant features
+drop_constant:
+  tol: 0.98
+  enabled: true
+
+# Step 3: Drop low variance features - отключено для теста
+drop_variance:
+  min_variance: 0.01
+  scale_method: "standard"
+  enabled: false
+
+# Step 4: Spark feature selection - только Boruta-SHAP
+spark_feature_selection:
+  use_optuna: false
+  n_trials: 50
+  method: "both"
+  n_folds: 5
+  threshold: 0.85
+  top_n: null
+  sample_fraction: 1.0
+  max_rows_limit: 100000
+  n_jobs: 4
+  null_strategy: "median"
+  enabled: false
+
+# Boruta-SHAP - включено для теста
+boruta_shap:
+  enabled: true
+  model_type: "lgbm"
+  boruta_trials: 50
+  optuna_trials: 20
+  tentative_fix_method: "rough"
+
+# Параметры для логирования
+logging:
+  log_dir: "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/logs"
+  level: "INFO"
+  format: "%(asctime)s | %(levelname)-8s | %(message)s"

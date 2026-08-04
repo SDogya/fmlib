@@ -1,0 +1,98 @@
+2026-07-29 15:22:19,538 | INFO     | Запуск последовательного тестирования методов
+2026-07-29 15:22:19,538 | INFO     | 
+Загрузка путей из paths_sequential.yaml
+2026-07-29 15:22:19,544 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-29 15:22:53,617 | INFO     | Spark сессия запущена! Время: 34.07 сек
+2026-07-29 15:22:53,619 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-29 15:23:31,602 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-29 15:23:31,604 | INFO     | 
+================================================================================
+2026-07-29 15:23:31,604 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: PD
+2026-07-29 15:23:31,604 | INFO     | ================================================================================
+2026-07-29 15:23:31,604 | INFO     |   Target column: target_attr_1
+2026-07-29 15:23:31,606 | INFO     |   Exclude columns: ['dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_1', 'epk_id', 'report_month']
+2026-07-29 15:23:31,606 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 15:23:31,606 | INFO     | 
+================================================================================
+2026-07-29 15:23:31,606 | INFO     | Шаг 1: drop_null
+2026-07-29 15:23:31,606 | INFO     | ================================================================================
+2026-07-29 15:23:31,606 | ERROR    |   ОШИБКА: name 'method_config' is not defined
+2026-07-29 15:23:31,606 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 392, in main
+    run_sequential_tests(original_df, original_df, dataset_name, SEQUENTIAL_DIR, config, logger)
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 253, in run_sequential_tests
+    enabled, param = get_method_param(method_config, method_name)
+                                      ^^^^^^^^^^^^^
+NameError: name 'method_config' is not defined
+2026-07-29 15:23:31,607 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 15:23:35,803 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-29 15:23:35,803 | INFO     | 
+================================================================================
+2026-07-29 15:23:35,803 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: SA_ERKC
+2026-07-29 15:23:35,803 | INFO     | ================================================================================
+2026-07-29 15:23:35,804 | INFO     |   Target column: target_attr_1
+2026-07-29 15:23:35,805 | INFO     |   Exclude columns: ['dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'split_type', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_1', 'epk_id', 'report_month']
+2026-07-29 15:23:35,805 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 15:23:35,805 | INFO     | 
+================================================================================
+2026-07-29 15:23:35,805 | INFO     | Шаг 1: drop_null
+2026-07-29 15:23:35,805 | INFO     | ================================================================================
+2026-07-29 15:23:35,805 | ERROR    |   ОШИБКА: name 'method_config' is not defined
+2026-07-29 15:23:35,805 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 392, in main
+    run_sequential_tests(original_df, original_df, dataset_name, SEQUENTIAL_DIR, config, logger)
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 253, in run_sequential_tests
+    enabled, param = get_method_param(method_config, method_name)
+                                      ^^^^^^^^^^^^^
+NameError: name 'method_config' is not defined
+2026-07-29 15:23:35,806 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-29 15:23:38,720 | ERROR    |   ОШИБКА: An error occurred while calling o138.count
+2026-07-29 15:23:38,720 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 386, in main
+    total_rows = original_df.count()
+                 ^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o138.count
+2026-07-29 15:23:38,721 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 15:23:42,696 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-29 15:23:42,696 | INFO     | 
+================================================================================
+2026-07-29 15:23:42,696 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: SA_SMA
+2026-07-29 15:23:42,696 | INFO     | ================================================================================
+2026-07-29 15:23:42,696 | INFO     |   Target column: target_attr_1
+2026-07-29 15:23:42,698 | INFO     |   Exclude columns: ['dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'split_type', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_1', 'epk_id', 'report_month']
+2026-07-29 15:23:42,698 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 15:23:42,698 | INFO     | 
+================================================================================
+2026-07-29 15:23:42,698 | INFO     | Шаг 1: drop_null
+2026-07-29 15:23:42,698 | INFO     | ================================================================================
+2026-07-29 15:23:42,698 | ERROR    |   ОШИБКА: name 'method_config' is not defined
+2026-07-29 15:23:42,698 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 392, in main
+    run_sequential_tests(original_df, original_df, dataset_name, SEQUENTIAL_DIR, config, logger)
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 253, in run_sequential_tests
+    enabled, param = get_method_param(method_config, method_name)
+                                      ^^^^^^^^^^^^^
+NameError: name 'method_config' is not defined
+2026-07-29 15:23:42,699 | INFO     | 
+================================================================================
+2026-07-29 15:23:42,699 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 15:23:42,699 | INFO     | ================================================================================

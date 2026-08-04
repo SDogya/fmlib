@@ -1,0 +1,68 @@
+2026-07-29 09:39:39,105 | INFO     | Запуск тестирования методов
+2026-07-29 09:39:39,106 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 09:39:39,111 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 09:40:13,198 | INFO     | Spark сессия запущена! Время: 34.09 сек
+2026-07-29 09:40:13,199 | INFO     | 
+PD: пропущено (disabled in config)
+2026-07-29 09:40:13,199 | INFO     | 
+TD: пропущено (disabled in config)
+2026-07-29 09:40:13,199 | INFO     | 
+SA_SMA: пропущено (disabled in config)
+2026-07-29 09:40:13,200 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 09:40:44,954 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-29 09:40:44,956 | INFO     | 
+================================================================================
+2026-07-29 09:40:44,956 | INFO     | Тестирование датасета: SA_ERKC
+2026-07-29 09:40:44,956 | INFO     | ================================================================================
+2026-07-29 09:40:44,956 | INFO     |   Target column: target_attr_1
+2026-07-29 09:40:44,957 | INFO     |   Exclude columns: ['dmik_tag_video_content_flg', 'dmik_tag_kids_flg', 'dmik_kids_small_flg', 'target_attr_1', 'epk_id', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'report_month', 'bki_all_feats_count_mon_between_reports_equ']
+2026-07-29 09:40:44,957 | INFO     |   Total columns: 2503
+2026-07-29 09:40:44,958 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 09:40:44,958 | INFO     | 
+--- drop_constant_features ---
+2026-07-29 09:40:44,958 | INFO     |   Test drop_constant with tol=0.95
+2026-07-29 09:56:34,504 | ERROR    |   ОШИБКА: An error occurred while calling o5980.collectToPython
+2026-07-29 09:56:34,505 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 326, in main
+    run_dataset_tests_with_config(df, dataset_name, RESULTS_DIR, method_config, logger)
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 237, in run_dataset_tests_with_config
+    dropped = test_drop_constant(df, target_col, exclude_cols, param, dataset_name, logger)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 176, in test_drop_constant
+    result = drop_constant_features(df, tol=tol, exclude_cols=exclude_cols)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py", line 49, in drop_constant_features
+    modes_row = df.agg(*mode_exprs).first()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2997, in first
+    return self.head()
+           ^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2973, in head
+    rs = self.head(1)
+         ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2975, in head
+    return self.take(n)
+           ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1407, in take
+    return self.limit(num).collect()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1263, in collect
+    sock_info = self._jdf.collectToPython()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o5980.collectToPython
+2026-07-29 09:56:34,506 | INFO     | 
+================================================================================
+2026-07-29 09:56:34,506 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 09:56:34,506 | INFO     | ================================================================================

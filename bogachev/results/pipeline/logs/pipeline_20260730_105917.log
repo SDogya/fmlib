@@ -1,0 +1,145 @@
+2026-07-30 10:59:17,845 | INFO     | Запуск пайплайна отбора признаков
+2026-07-30 10:59:17,845 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-30 10:59:17,853 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-30 10:59:52,603 | INFO     | Spark сессия запущена! Время: 34.75 сек
+2026-07-30 10:59:52,605 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-30 11:00:16,062 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-30 11:00:16,065 | INFO     |   Загрузка колонок для дропа из results/sequential/PD/constant_0.95_cols.txt
+2026-07-30 11:00:16,067 | INFO     |   Найдено 721 колонок для дропа
+2026-07-30 11:00:18,107 | INFO     |   После дропа: 1781 колонок
+2026-07-30 11:00:18,107 | INFO     | 
+================================================================================
+2026-07-30 11:00:18,107 | INFO     | ПИПЛИН ОТБОРА: PD
+2026-07-30 11:00:18,107 | INFO     | ================================================================================
+2026-07-30 11:00:18,107 | INFO     |   Target column: target_attr_1
+2026-07-30 11:00:18,108 | INFO     |   Exclude columns: ['epk_id', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_equ', 'report_month', 'dmik_tag_kids_flg', 'target_attr_1', 'bki_all_feats_count_mon_between_reports_okb']
+2026-07-30 11:00:18,108 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 11:00:18,108 | INFO     |   drop_null:
+2026-07-30 11:00:18,108 | INFO     |     enabled: false
+2026-07-30 11:00:18,108 | INFO     |   drop_constant:
+2026-07-30 11:00:18,108 | INFO     |     enabled: true, params: [0.95, 0.99, 1.0], chunk_size: 1000
+2026-07-30 11:00:18,108 | INFO     |   drop_low_variance:
+2026-07-30 11:00:18,108 | INFO     |     enabled: false
+2026-07-30 11:00:18,108 | INFO     |   drop_correlated:
+2026-07-30 11:00:18,109 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:18,109 | INFO     |   lgbm_shap:
+2026-07-30 11:00:18,109 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:18,109 | ERROR    |   ОШИБКА: name 'order' is not defined
+2026-07-30 11:00:18,109 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 504, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 294, in run_pipeline
+    for method_name in order:
+                       ^^^^^
+NameError: name 'order' is not defined
+2026-07-30 11:00:18,110 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-30 11:00:24,465 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-30 11:00:24,467 | INFO     |   Загрузка колонок для дропа из results/sequential/SA_ERKC/constant_0.95_cols.txt
+2026-07-30 11:00:24,470 | INFO     |   Найдено 673 колонок для дропа
+2026-07-30 11:00:26,406 | INFO     |   После дропа: 1830 колонок
+2026-07-30 11:00:26,406 | INFO     | 
+================================================================================
+2026-07-30 11:00:26,406 | INFO     | ПИПЛИН ОТБОРА: SA_ERKC
+2026-07-30 11:00:26,406 | INFO     | ================================================================================
+2026-07-30 11:00:26,406 | INFO     |   Target column: target_attr_1
+2026-07-30 11:00:26,407 | INFO     |   Exclude columns: ['epk_id', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_equ', 'report_month', 'dmik_tag_kids_flg', 'target_attr_1', 'bki_all_feats_count_mon_between_reports_okb', 'split_type']
+2026-07-30 11:00:26,407 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 11:00:26,407 | INFO     |   drop_null:
+2026-07-30 11:00:26,407 | INFO     |     enabled: false
+2026-07-30 11:00:26,407 | INFO     |   drop_constant:
+2026-07-30 11:00:26,407 | INFO     |     enabled: true, params: [0.95, 0.99, 1.0], chunk_size: 1000
+2026-07-30 11:00:26,407 | INFO     |   drop_low_variance:
+2026-07-30 11:00:26,407 | INFO     |     enabled: false
+2026-07-30 11:00:26,407 | INFO     |   drop_correlated:
+2026-07-30 11:00:26,408 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:26,408 | INFO     |   lgbm_shap:
+2026-07-30 11:00:26,408 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:26,408 | ERROR    |   ОШИБКА: name 'order' is not defined
+2026-07-30 11:00:26,408 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 504, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 294, in run_pipeline
+    for method_name in order:
+                       ^^^^^
+NameError: name 'order' is not defined
+2026-07-30 11:00:26,408 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-30 11:00:31,980 | INFO     |   Загружено 6,417,688 строк и 2502 колонок
+2026-07-30 11:00:31,983 | INFO     |   Загрузка колонок для дропа из results/sequential/TD/constant_0.95_cols.txt
+2026-07-30 11:00:31,985 | INFO     |   Найдено 673 колонок для дропа
+2026-07-30 11:00:33,749 | INFO     |   После дропа: 1829 колонок
+2026-07-30 11:00:33,749 | INFO     | 
+================================================================================
+2026-07-30 11:00:33,749 | INFO     | ПИПЛИН ОТБОРА: TD
+2026-07-30 11:00:33,749 | INFO     | ================================================================================
+2026-07-30 11:00:33,749 | INFO     |   Target column: target_attr_1
+2026-07-30 11:00:33,750 | INFO     |   Exclude columns: ['epk_id', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_equ', 'report_month', 'dmik_tag_kids_flg', 'target_attr_1', 'bki_all_feats_count_mon_between_reports_okb']
+2026-07-30 11:00:33,751 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 11:00:33,751 | INFO     |   drop_null:
+2026-07-30 11:00:33,751 | INFO     |     enabled: false
+2026-07-30 11:00:33,751 | INFO     |   drop_constant:
+2026-07-30 11:00:33,751 | INFO     |     enabled: true, params: [0.95, 0.99, 1.0], chunk_size: 1000
+2026-07-30 11:00:33,751 | INFO     |   drop_low_variance:
+2026-07-30 11:00:33,751 | INFO     |     enabled: false
+2026-07-30 11:00:33,751 | INFO     |   drop_correlated:
+2026-07-30 11:00:33,751 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:33,751 | INFO     |   lgbm_shap:
+2026-07-30 11:00:33,751 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:33,751 | ERROR    |   ОШИБКА: name 'order' is not defined
+2026-07-30 11:00:33,751 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 504, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 294, in run_pipeline
+    for method_name in order:
+                       ^^^^^
+NameError: name 'order' is not defined
+2026-07-30 11:00:33,752 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-30 11:00:43,272 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-30 11:00:43,274 | INFO     |   Загрузка колонок для дропа из results/sequential/SA_SMA/null_0.95_cols.txt
+2026-07-30 11:00:43,277 | INFO     |   Найдено 160 колонок для дропа
+2026-07-30 11:00:45,523 | INFO     |   После дропа: 2343 колонок
+2026-07-30 11:00:45,524 | INFO     | 
+================================================================================
+2026-07-30 11:00:45,524 | INFO     | ПИПЛИН ОТБОРА: SA_SMA
+2026-07-30 11:00:45,524 | INFO     | ================================================================================
+2026-07-30 11:00:45,524 | INFO     |   Target column: target_attr_1
+2026-07-30 11:00:45,525 | INFO     |   Exclude columns: ['epk_id', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_equ', 'report_month', 'dmik_tag_kids_flg', 'target_attr_1', 'bki_all_feats_count_mon_between_reports_okb', 'split_type']
+2026-07-30 11:00:45,525 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 11:00:45,525 | INFO     |   drop_null:
+2026-07-30 11:00:45,525 | INFO     |     enabled: false
+2026-07-30 11:00:45,525 | INFO     |   drop_constant:
+2026-07-30 11:00:45,525 | INFO     |     enabled: true, params: [0.95, 0.99, 1.0], chunk_size: 250
+2026-07-30 11:00:45,525 | INFO     |   drop_low_variance:
+2026-07-30 11:00:45,525 | INFO     |     enabled: false
+2026-07-30 11:00:45,526 | INFO     |   drop_correlated:
+2026-07-30 11:00:45,526 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:45,526 | INFO     |   lgbm_shap:
+2026-07-30 11:00:45,526 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 11:00:45,526 | ERROR    |   ОШИБКА: name 'order' is not defined
+2026-07-30 11:00:45,526 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 504, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 294, in run_pipeline
+    for method_name in order:
+                       ^^^^^
+NameError: name 'order' is not defined
+2026-07-30 11:00:45,526 | INFO     | 
+================================================================================
+2026-07-30 11:00:45,526 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-30 11:00:45,527 | INFO     | ================================================================================

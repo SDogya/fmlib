@@ -1,0 +1,153 @@
+# Конфигурация для pipeline.py - последовательный отбор признаков
+
+# Глобальные параметры для методов (один param для каждого метода)
+global_methods:
+  order:
+    - drop_constant
+    - drop_low_variance
+    - drop_correlated
+    - boruta_shap
+
+  drop_null:
+    enabled: false
+    param: 0.95
+
+  drop_constant:
+    enabled: true
+    param: 0.95
+
+  drop_low_variance:
+    enabled: true
+    param: 1e-5
+    scale_method: minmax
+
+  drop_correlated:
+    enabled: true
+    param: 0.95
+
+  lgbm_shap:
+    enabled: true
+    param: 0.95
+
+  boruta_shap:
+    enabled: true
+    model_type: lgbm
+    boruta_trials: 50
+    parameters:
+      n_estimators:
+        type: int
+        min: 100
+        max: 1400
+      num_leaves:
+        type: int
+        min: 8
+        max: 64
+      max_depth:
+        type: int
+        min: 4
+        max: 7
+      learning_rate:
+        type: float
+        min: 0.01
+        max: 0.1
+        log: true
+      min_child_samples:
+        type: int
+        min: 16
+        max: 64
+      subsample:
+        type: float
+        min: 0.7
+        max: 1.0
+      colsample_bytree:
+        type: float
+        min: 0.7
+        max: 1.0
+      reg_alpha:
+        type: float
+        min: 0.01
+        max: 1.0
+        log: true
+      reg_lambda:
+        type: float
+        min: 0.01
+        max: 1.0
+        log: true
+      boosting_type:
+        type: categorical
+        values:
+          - gbdt
+          - dart
+          - goss
+    optuna_params:
+      n_trials: 100
+      n_startup_trials: 50
+      sampler: TPE
+
+# Настройки для каждого датасета
+datasets:
+  PD:
+    enabled: false
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc
+    has_split_type: true
+    # drop_cols_file: путь к файлу с колонками ДЛЯ УДАЛЕНИЯ (если есть - удаляются сначала)
+    # drop_cols_file: ~/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/PD/correlated_0.95_cols.txt
+    # selected_cols_file: путь к файлу с КОЛОНКАМИ КОТОРЫЕ НУЖНО ОСТАВИТЬ (фичи из предыдущего шага)
+    # BorutaSHAP будет работать ТОЛЬКО с этими фичами
+    selected_cols_file: ~/nfs/bogachev/fmlib-feature-selection/dev/bogachev/trueresults/pipeline/PD/stage_0_1_SELECTED.txt
+    variance_param: 0.00001
+    order:
+      - stratified_sampling
+      - 750000
+      - boruta_shap
+
+  SA_ERKC:
+    enabled: false
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+    has_split_type: false
+    # drop_cols_file: путь к файлу с колонками ДЛЯ УДАЛЕНИЯ (если есть - удаляются сначала)
+    # drop_cols_file: results/pipeline/SA_ERKC/correlated_0.95_cols.txt
+    # selected_cols_file: путь к файлу с КОЛОНКАМИ КОТОРЫЕ НУЖНО ОСТАВИТЬ (фичи из предыдущего шага)
+    # BorutaSHAP будет работать ТОЛЬКО с этими фичами
+    selected_cols_file: trueresults/pipeline/SA_ERKC/stage_0_1_SELECTED.txt
+    variance_param: 0.00001
+    order:
+      - stratified_sampling
+      - 750000
+      - boruta_shap
+
+  TD:
+    enabled: false
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response
+    has_split_type: true
+    # drop_cols_file: путь к файлу с колонками ДЛЯ УДАЛЕНИЯ (если есть - удаляются сначала)
+    # drop_cols_file: results/pipeline/TD/correlated_0.95_cols.txt
+    # selected_cols_file: путь к файлу с КОЛОНКАМИ КОТОРЫЕ НУЖНО ОСТАВИТЬ (фичи из предыдущего шага)
+    # BorutaSHAP будет работать ТОЛЬКО с этими фичами
+    selected_cols_file: trueresults/pipeline/TD/stage_0_1_SELECTED.txt
+    variance_param: 0.00001
+    order:
+      - stratified_sampling
+      - 750000
+      - boruta_shap
+
+  SA_SMA:
+    enabled: true
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+    has_split_type: false
+    # drop_cols_file: путь к файлу с колонками ДЛЯ УДАЛЕНИЯ (если есть - удаляются сначала)
+    # drop_cols_file: results/pipeline/SA_SMA/correlated_0.95_cols.txt
+    # selected_cols_file: путь к файлу с КОЛОНКАМИ КОТОРЫЕ НУЖНО ОСТАВИТЬ (фичи из предыдущего шага)
+    # BorutaSHAP будет работать ТОЛЬКО с этими фичами
+    selected_cols_file: trueresults/pipeline/SA_SMA/stage_0_1_SELECTED.txt
+    variance_param: 0.00001
+    chunk_size: 200
+    order:
+      # - drop_null
+      # - stratified_sampling
+      # - 8000000
+      # - drop_constant
+      # - drop_low_variance
+      - stratified_sampling
+      - 750000
+      - boruta_shap

@@ -1,0 +1,90 @@
+2026-07-29 14:45:26,728 | INFO     | Запуск тестирования методов
+2026-07-29 14:45:26,729 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 14:45:26,736 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 14:46:03,256 | INFO     | Spark сессия запущена! Время: 36.52 сек
+2026-07-29 14:46:03,258 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-29 14:47:18,315 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-29 14:47:18,317 | INFO     | 
+================================================================================
+2026-07-29 14:47:18,318 | INFO     | Тестирование датасета: PD
+2026-07-29 14:47:18,318 | INFO     | ================================================================================
+2026-07-29 14:47:18,318 | INFO     |   Target column: target_attr_1
+2026-07-29 14:47:18,320 | INFO     |   Exclude columns: ['report_month', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_kids_flg', 'target_attr_1', 'dmik_tag_video_content_flg', 'epk_id', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_okb']
+2026-07-29 14:47:18,320 | INFO     |   Total columns: 2502
+2026-07-29 14:47:18,320 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:47:18,320 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:47:18,320 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:47:18,320 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:47:18,320 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:47:18,320 | INFO     |   DONE!
+2026-07-29 14:47:18,320 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-29 14:47:44,121 | ERROR    |   ОШИБКА: An error occurred while calling o133.count
+2026-07-29 14:47:44,121 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 396, in main
+    total_rows = df.count()
+                 ^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o133.count
+2026-07-29 14:47:44,122 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 14:47:46,084 | ERROR    |   ОШИБКА: An error occurred while calling o137.count
+2026-07-29 14:47:46,084 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 396, in main
+    total_rows = df.count()
+                 ^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o137.count
+2026-07-29 14:47:46,085 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 14:47:46,620 | ERROR    |   ОШИБКА: An error occurred while calling o141.count
+2026-07-29 14:47:46,620 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 396, in main
+    total_rows = df.count()
+                 ^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o141.count
+2026-07-29 14:47:46,620 | INFO     | 
+================================================================================
+2026-07-29 14:47:46,621 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 14:47:46,621 | INFO     | ================================================================================

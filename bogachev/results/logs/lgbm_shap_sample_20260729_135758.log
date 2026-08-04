@@ -1,0 +1,29 @@
+2026-07-29 13:57:58,407 | INFO     | Запуск тестирования LGBM + SHAP
+2026-07-29 13:57:58,407 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 13:57:58,413 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 13:58:32,758 | INFO     | Spark сессия запущена! Время: 34.35 сек
+2026-07-29 13:58:32,760 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 13:59:19,439 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-29 13:59:19,440 | INFO     | 
+Создание sample: 10.0% данных
+2026-07-29 13:59:23,411 | INFO     |   Sample содержит 2,584,365 строк
+2026-07-29 13:59:23,476 | INFO     |   Выбрано 100 случайных колонок:
+2026-07-29 13:59:23,476 | INFO     |   ['aggr_mnth_v2_evt_attr_885', 'aggr_mnth_v2_evt_attr_95', 'bki_response_evt_attr_602', 'bki_response_evt_attr_315', 'bki_response_evt_attr_287', 'aggr_mnth_v2_evt_attr_476', 'aggr_mnth_v2_evt_attr_953', 'dmik_merch_gr_big_road_tolls_ntrx', 'aggr_mnth_v2_evt_attr_206', 'dmik_region_leningr_obl']... (всего 100)
+2026-07-29 13:59:27,735 | INFO     |   Подмножество: 2,584,365 строк, 101 колонок
+2026-07-29 13:59:27,735 | INFO     | 
+================================================================================
+2026-07-29 13:59:27,735 | INFO     | ЗАПУСК LGBM + SHAP
+2026-07-29 13:59:27,735 | INFO     | ================================================================================
+2026-07-29 14:00:42,447 | INFO     | 
+=== РЕЗУЛЬТАТЫ ===
+2026-07-29 14:00:42,448 | INFO     | Время LGBM + SHAP: 1.25 мин
+2026-07-29 14:00:42,448 | INFO     | Отобрано признаков: 17
+2026-07-29 14:00:42,448 | INFO     | Список: ['aggr_mnth_v2_evt_attr_224', 'aggr_mnth_v2_evt_attr_261', 'aggr_mnth_v2_evt_attr_380', 'dmik_avg_rel_salary', 'bki_response_evt_attr_847', 'bki_all_feats_max_debt_all_amt_6m', 'aggr_mnth_v2_evt_attr_73', 'aggr_mnth_v2_evt_attr_306', 'bki_all_feats_avg_debt_sber_kk_amt_3m', 'aggr_mnth_v2_evt_attr_74', 'aggr_mnth_v2_evt_attr_793', 'aggr_mnth_v2_evt_attr_953', 'aggr_mnth_v2_evt_attr_476', 'aggr_mnth_v2_evt_attr_293', 'dmik_in_c2c_sber_sum', 'bki_all_feats_cust_debt_load_v2_pct', 'aggr_mnth_v2_evt_attr_162']
+2026-07-29 14:00:42,452 | INFO     | 
+Результаты сохранены: results/SA_SMA_lgbm_shap_sample_100cols.txt
+2026-07-29 14:00:42,452 | INFO     | 
+================================================================================
+2026-07-29 14:00:42,452 | INFO     | ТЕСТ ЗАВЕРШЕН!
+2026-07-29 14:00:42,452 | INFO     | ================================================================================

@@ -1,0 +1,394 @@
+2026-07-29 16:03:47,569 | INFO     | Запуск последовательного тестирования методов
+2026-07-29 16:03:47,569 | INFO     | 
+Загрузка путей из paths_sequential.yaml
+2026-07-29 16:03:47,577 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-29 16:04:24,857 | INFO     | Spark сессия запущена! Время: 37.28 сек
+2026-07-29 16:04:24,859 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-29 16:05:17,835 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-29 16:05:17,837 | INFO     | 
+================================================================================
+2026-07-29 16:05:17,837 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: PD
+2026-07-29 16:05:17,837 | INFO     | ================================================================================
+2026-07-29 16:05:17,837 | INFO     |   Target column: target_attr_1
+2026-07-29 16:05:17,839 | INFO     |   Exclude columns: ['target_attr_1', 'bki_all_feats_count_mon_between_reports_okb', 'epk_id', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg', 'report_month', 'dmik_tag_kids_flg']
+2026-07-29 16:05:17,839 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 16:05:17,839 | INFO     | 
+================================================================================
+2026-07-29 16:05:17,839 | INFO     | Шаг 1: drop_null
+2026-07-29 16:05:17,839 | INFO     | ================================================================================
+2026-07-29 16:05:17,839 | INFO     |   Количество колонок на входе: 2502
+2026-07-29 16:05:17,839 | INFO     |   Test drop_null with max_null_fraction=0.95
+2026-07-29 16:07:53,694 | INFO     |   Выкинуто: 178 колонок -> results/sequential/PD/null_0.95_cols.txt
+2026-07-29 16:07:53,696 | INFO     |   Количество колонок на выходе: 2324
+2026-07-29 16:07:53,696 | INFO     | 
+================================================================================
+2026-07-29 16:07:53,696 | INFO     | Шаг 2: drop_constant
+2026-07-29 16:07:53,696 | INFO     | ================================================================================
+2026-07-29 16:07:53,696 | INFO     |   Количество колонок на входе: 2324
+2026-07-29 16:07:53,696 | INFO     |   Test drop_constant with tol=0.95
+2026-07-29 16:16:38,583 | INFO     |   Выкинуто: 721 колонок -> results/sequential/PD/constant_0.95_cols.txt
+2026-07-29 16:16:38,585 | INFO     |   Количество колонок на выходе: 1781
+2026-07-29 16:16:38,585 | INFO     | 
+================================================================================
+2026-07-29 16:16:38,585 | INFO     | Шаг 3: drop_low_variance
+2026-07-29 16:16:38,585 | INFO     | ================================================================================
+2026-07-29 16:16:38,585 | INFO     |   Количество колонок на входе: 1781
+2026-07-29 16:16:38,585 | INFO     |   Test drop_low_variance with min_variance=0.005, scale=minmax
+2026-07-29 16:24:24,239 | INFO     |   Выкинуто: 2019 колонок (scale=minmax, param=0.005) -> results/sequential/PD/variance_0.005_minmax_cols.txt
+2026-07-29 16:24:24,240 | INFO     |   Количество колонок на выходе: 483
+2026-07-29 16:24:24,240 | INFO     | 
+================================================================================
+2026-07-29 16:24:24,240 | INFO     | Шаг 4: drop_correlated
+2026-07-29 16:24:24,240 | INFO     | ================================================================================
+2026-07-29 16:24:24,240 | INFO     |   Количество колонок на входе: 483
+2026-07-29 16:24:24,240 | INFO     |   Test drop_correlated with corr_threshold=0.95
+2026-07-29 16:28:59,270 | INFO     |   Выкинуто: 2115 колонок -> results/sequential/PD/correlated_0.95_cols.txt
+2026-07-29 16:28:59,271 | INFO     |   Количество колонок на выходе: 387
+2026-07-29 16:28:59,271 | INFO     | 
+================================================================================
+2026-07-29 16:28:59,271 | INFO     | Шаг 5: lgbm_shap
+2026-07-29 16:28:59,271 | INFO     | ================================================================================
+2026-07-29 16:28:59,271 | INFO     |   Пропущено (disabled in config)
+2026-07-29 16:28:59,271 | INFO     | 
+================================================================================
+2026-07-29 16:28:59,271 | INFO     | ВСЕ ПОСЛЕДОВАТЕЛЬНЫЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 16:28:59,271 | INFO     | ================================================================================
+2026-07-29 16:28:59,271 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 16:29:03,442 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-29 16:29:03,442 | INFO     | 
+================================================================================
+2026-07-29 16:29:03,442 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: SA_ERKC
+2026-07-29 16:29:03,442 | INFO     | ================================================================================
+2026-07-29 16:29:03,443 | INFO     |   Target column: target_attr_1
+2026-07-29 16:29:03,444 | INFO     |   Exclude columns: ['target_attr_1', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'epk_id', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg', 'report_month', 'dmik_tag_kids_flg']
+2026-07-29 16:29:03,444 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 16:29:03,444 | INFO     | 
+================================================================================
+2026-07-29 16:29:03,444 | INFO     | Шаг 1: drop_null
+2026-07-29 16:29:03,444 | INFO     | ================================================================================
+2026-07-29 16:29:03,444 | INFO     |   Количество колонок на входе: 2503
+2026-07-29 16:29:03,444 | INFO     |   Test drop_null with max_null_fraction=0.95
+2026-07-29 16:32:02,198 | INFO     |   Выкинуто: 140 колонок -> results/sequential/SA_ERKC/null_0.95_cols.txt
+2026-07-29 16:32:02,199 | INFO     |   Количество колонок на выходе: 2363
+2026-07-29 16:32:02,199 | INFO     | 
+================================================================================
+2026-07-29 16:32:02,199 | INFO     | Шаг 2: drop_constant
+2026-07-29 16:32:02,200 | INFO     | ================================================================================
+2026-07-29 16:32:02,200 | INFO     |   Количество колонок на входе: 2363
+2026-07-29 16:32:02,200 | INFO     |   Test drop_constant with tol=0.95
+2026-07-29 16:49:12,693 | INFO     |   Выкинуто: 673 колонок -> results/sequential/SA_ERKC/constant_0.95_cols.txt
+2026-07-29 16:49:12,694 | INFO     |   Количество колонок на выходе: 1830
+2026-07-29 16:49:12,694 | INFO     | 
+================================================================================
+2026-07-29 16:49:12,694 | INFO     | Шаг 3: drop_low_variance
+2026-07-29 16:49:12,694 | INFO     | ================================================================================
+2026-07-29 16:49:12,694 | INFO     |   Количество колонок на входе: 1830
+2026-07-29 16:49:12,695 | INFO     |   Test drop_low_variance with min_variance=0.005, scale=minmax
+2026-07-29 17:01:53,262 | INFO     |   Выкинуто: 2052 колонок (scale=minmax, param=0.005) -> results/sequential/SA_ERKC/variance_0.005_minmax_cols.txt
+2026-07-29 17:01:53,263 | INFO     |   Количество колонок на выходе: 451
+2026-07-29 17:01:53,263 | INFO     | 
+================================================================================
+2026-07-29 17:01:53,263 | INFO     | Шаг 4: drop_correlated
+2026-07-29 17:01:53,263 | INFO     | ================================================================================
+2026-07-29 17:01:53,263 | INFO     |   Количество колонок на входе: 451
+2026-07-29 17:01:53,263 | INFO     |   Test drop_correlated with corr_threshold=0.95
+2026-07-29 17:06:27,335 | INFO     |   Выкинуто: 2130 колонок -> results/sequential/SA_ERKC/correlated_0.95_cols.txt
+2026-07-29 17:06:27,336 | INFO     |   Количество колонок на выходе: 373
+2026-07-29 17:06:27,336 | INFO     | 
+================================================================================
+2026-07-29 17:06:27,336 | INFO     | Шаг 5: lgbm_shap
+2026-07-29 17:06:27,336 | INFO     | ================================================================================
+2026-07-29 17:06:27,336 | INFO     |   Пропущено (disabled in config)
+2026-07-29 17:06:27,336 | INFO     | 
+================================================================================
+2026-07-29 17:06:27,336 | INFO     | ВСЕ ПОСЛЕДОВАТЕЛЬНЫЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 17:06:27,336 | INFO     | ================================================================================
+2026-07-29 17:06:27,336 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-29 17:06:29,342 | INFO     |   Загружено 6,417,688 строк и 2502 колонок
+2026-07-29 17:06:29,342 | INFO     | 
+================================================================================
+2026-07-29 17:06:29,342 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: TD
+2026-07-29 17:06:29,342 | INFO     | ================================================================================
+2026-07-29 17:06:29,342 | INFO     |   Target column: target_attr_1
+2026-07-29 17:06:29,343 | INFO     |   Exclude columns: ['target_attr_1', 'bki_all_feats_count_mon_between_reports_okb', 'epk_id', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg', 'report_month', 'dmik_tag_kids_flg']
+2026-07-29 17:06:29,344 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 17:06:29,344 | INFO     | 
+================================================================================
+2026-07-29 17:06:29,344 | INFO     | Шаг 1: drop_null
+2026-07-29 17:06:29,344 | INFO     | ================================================================================
+2026-07-29 17:06:29,344 | INFO     |   Количество колонок на входе: 2502
+2026-07-29 17:06:29,344 | INFO     |   Test drop_null with max_null_fraction=0.95
+2026-07-29 17:09:03,719 | INFO     |   Выкинуто: 149 колонок -> results/sequential/TD/null_0.95_cols.txt
+2026-07-29 17:09:03,720 | INFO     |   Количество колонок на выходе: 2353
+2026-07-29 17:09:03,720 | INFO     | 
+================================================================================
+2026-07-29 17:09:03,720 | INFO     | Шаг 2: drop_constant
+2026-07-29 17:09:03,720 | INFO     | ================================================================================
+2026-07-29 17:09:03,720 | INFO     |   Количество колонок на входе: 2353
+2026-07-29 17:09:03,720 | INFO     |   Test drop_constant with tol=0.95
+2026-07-29 17:29:08,828 | INFO     |   Выкинуто: 673 колонок -> results/sequential/TD/constant_0.95_cols.txt
+2026-07-29 17:29:08,830 | INFO     |   Количество колонок на выходе: 1829
+2026-07-29 17:29:08,830 | INFO     | 
+================================================================================
+2026-07-29 17:29:08,830 | INFO     | Шаг 3: drop_low_variance
+2026-07-29 17:29:08,830 | INFO     | ================================================================================
+2026-07-29 17:29:08,830 | INFO     |   Количество колонок на входе: 1829
+2026-07-29 17:29:08,830 | INFO     |   Test drop_low_variance with min_variance=0.005, scale=minmax
+2026-07-29 17:43:32,021 | INFO     |   Выкинуто: 2046 колонок (scale=minmax, param=0.005) -> results/sequential/TD/variance_0.005_minmax_cols.txt
+2026-07-29 17:43:32,023 | INFO     |   Количество колонок на выходе: 456
+2026-07-29 17:43:32,023 | INFO     | 
+================================================================================
+2026-07-29 17:43:32,023 | INFO     | Шаг 4: drop_correlated
+2026-07-29 17:43:32,023 | INFO     | ================================================================================
+2026-07-29 17:43:32,023 | INFO     |   Количество колонок на входе: 456
+2026-07-29 17:43:32,023 | INFO     |   Test drop_correlated with corr_threshold=0.95
+2026-07-29 17:47:20,284 | INFO     |   Выкинуто: 2123 колонок -> results/sequential/TD/correlated_0.95_cols.txt
+2026-07-29 17:47:20,286 | INFO     |   Количество колонок на выходе: 379
+2026-07-29 17:47:20,286 | INFO     | 
+================================================================================
+2026-07-29 17:47:20,286 | INFO     | Шаг 5: lgbm_shap
+2026-07-29 17:47:20,286 | INFO     | ================================================================================
+2026-07-29 17:47:20,286 | INFO     |   Пропущено (disabled in config)
+2026-07-29 17:47:20,286 | INFO     | 
+================================================================================
+2026-07-29 17:47:20,286 | INFO     | ВСЕ ПОСЛЕДОВАТЕЛЬНЫЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 17:47:20,286 | INFO     | ================================================================================
+2026-07-29 17:47:20,286 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 17:47:22,303 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-29 17:47:22,303 | INFO     | 
+================================================================================
+2026-07-29 17:47:22,303 | INFO     | ПОСЛЕДОВАТЕЛЬНОЕ ТЕСТИРОВАНИЕ: SA_SMA
+2026-07-29 17:47:22,303 | INFO     | ================================================================================
+2026-07-29 17:47:22,303 | INFO     |   Target column: target_attr_1
+2026-07-29 17:47:22,305 | INFO     |   Exclude columns: ['target_attr_1', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'epk_id', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg', 'report_month', 'dmik_tag_kids_flg']
+2026-07-29 17:47:22,305 | INFO     |   Порядок методов: ['drop_null', 'drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-29 17:47:22,305 | INFO     | 
+================================================================================
+2026-07-29 17:47:22,305 | INFO     | Шаг 1: drop_null
+2026-07-29 17:47:22,305 | INFO     | ================================================================================
+2026-07-29 17:47:22,305 | INFO     |   Количество колонок на входе: 2503
+2026-07-29 17:47:22,306 | INFO     |   Test drop_null with max_null_fraction=0.95
+2026-07-29 17:56:41,950 | INFO     |   Выкинуто: 160 колонок -> results/sequential/SA_SMA/null_0.95_cols.txt
+2026-07-29 17:56:41,951 | INFO     |   Количество колонок на выходе: 2343
+2026-07-29 17:56:41,951 | INFO     | 
+================================================================================
+2026-07-29 17:56:41,951 | INFO     | Шаг 2: drop_constant
+2026-07-29 17:56:41,951 | INFO     | ================================================================================
+2026-07-29 17:56:41,951 | INFO     |   Количество колонок на входе: 2343
+2026-07-29 17:56:41,951 | INFO     |   Test drop_constant with tol=0.95
+2026-07-29 18:30:42,177 | ERROR    |   ОШИБКА: An error occurred while calling o218574.collectToPython.
+: org.apache.spark.SparkException: Job aborted due to stage failure: ResultStage 138 (first at /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py:49) has failed the maximum allowable number of times: 4. Most recent failure reason:
+org.apache.spark.shuffle.MetadataFetchFailedException: Missing an output location for shuffle 41 partition 0
+	at org.apache.spark.MapOutputTracker$.validateStatus(MapOutputTracker.scala:1747)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11(MapOutputTracker.scala:1694)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11$adapted(MapOutputTracker.scala:1693)
+	at scala.collection.Iterator.foreach(Iterator.scala:943)
+	at scala.collection.Iterator.foreach$(Iterator.scala:943)
+	at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+	at org.apache.spark.MapOutputTracker$.convertMapStatuses(MapOutputTracker.scala:1693)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorIdImpl(MapOutputTracker.scala:1335)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorId(MapOutputTracker.scala:1297)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:141)
+	at org.apache.spark.shuffle.ShuffleManager.getReader(ShuffleManager.scala:63)
+	at org.apache.spark.shuffle.ShuffleManager.getReader$(ShuffleManager.scala:57)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:73)
+	at org.apache.spark.sql.execution.ShuffledRowRDD.compute(ShuffledRowRDD.scala:200)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+	at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:166)
+	at org.apache.spark.scheduler.Task.run(Task.scala:141)
+	at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:621)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:624)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+	at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2898)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2834)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2833)
+	at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+	at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+	at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2833)
+	at org.apache.spark.scheduler.DAGScheduler.handleTaskCompletion(DAGScheduler.scala:2057)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3096)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3036)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3025)
+	at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:995)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2393)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2414)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2433)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2458)
+	at org.apache.spark.rdd.RDD.$anonfun$collect$1(RDD.scala:1049)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:151)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:112)
+	at org.apache.spark.rdd.RDD.withScope(RDD.scala:410)
+	at org.apache.spark.rdd.RDD.collect(RDD.scala:1048)
+	at org.apache.spark.sql.execution.SparkPlan.executeCollect(SparkPlan.scala:448)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.$anonfun$executeCollect$1(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.withFinalPlanUpdate(AdaptiveSparkPlanExec.scala:420)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.executeCollect(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.Dataset.$anonfun$collectToPython$1(Dataset.scala:4149)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$2(Dataset.scala:4323)
+	at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:546)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$1(Dataset.scala:4321)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+	at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+	at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+	at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+	at org.apache.spark.sql.Dataset.withAction(Dataset.scala:4321)
+	at org.apache.spark.sql.Dataset.collectToPython(Dataset.scala:4146)
+	at jdk.internal.reflect.GeneratedMethodAccessor305.invoke(Unknown Source)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+2026-07-29 18:30:42,179 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 402, in main
+    run_sequential_tests(original_df, original_df, dataset_name, SEQUENTIAL_DIR, config, logger)
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 280, in run_sequential_tests
+    result_df = test_drop_constant(current_df, target_col, exclude_cols, param, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/sequential_test.py", line 172, in test_drop_constant
+    result = drop_constant_features(df, tol=tol, exclude_cols=exclude_cols)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py", line 49, in drop_constant_features
+    modes_row = df.agg(*mode_exprs).first()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2997, in first
+    return self.head()
+           ^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2973, in head
+    rs = self.head(1)
+         ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2975, in head
+    return self.take(n)
+           ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1407, in take
+    return self.limit(num).collect()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1263, in collect
+    sock_info = self._jdf.collectToPython()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 326, in get_return_value
+    raise Py4JJavaError(
+py4j.protocol.Py4JJavaError: An error occurred while calling o218574.collectToPython.
+: org.apache.spark.SparkException: Job aborted due to stage failure: ResultStage 138 (first at /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py:49) has failed the maximum allowable number of times: 4. Most recent failure reason:
+org.apache.spark.shuffle.MetadataFetchFailedException: Missing an output location for shuffle 41 partition 0
+	at org.apache.spark.MapOutputTracker$.validateStatus(MapOutputTracker.scala:1747)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11(MapOutputTracker.scala:1694)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11$adapted(MapOutputTracker.scala:1693)
+	at scala.collection.Iterator.foreach(Iterator.scala:943)
+	at scala.collection.Iterator.foreach$(Iterator.scala:943)
+	at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+	at org.apache.spark.MapOutputTracker$.convertMapStatuses(MapOutputTracker.scala:1693)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorIdImpl(MapOutputTracker.scala:1335)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorId(MapOutputTracker.scala:1297)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:141)
+	at org.apache.spark.shuffle.ShuffleManager.getReader(ShuffleManager.scala:63)
+	at org.apache.spark.shuffle.ShuffleManager.getReader$(ShuffleManager.scala:57)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:73)
+	at org.apache.spark.sql.execution.ShuffledRowRDD.compute(ShuffledRowRDD.scala:200)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+	at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:166)
+	at org.apache.spark.scheduler.Task.run(Task.scala:141)
+	at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:621)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:624)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+	at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2898)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2834)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2833)
+	at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+	at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+	at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2833)
+	at org.apache.spark.scheduler.DAGScheduler.handleTaskCompletion(DAGScheduler.scala:2057)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3096)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3036)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3025)
+	at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:995)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2393)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2414)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2433)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2458)
+	at org.apache.spark.rdd.RDD.$anonfun$collect$1(RDD.scala:1049)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:151)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:112)
+	at org.apache.spark.rdd.RDD.withScope(RDD.scala:410)
+	at org.apache.spark.rdd.RDD.collect(RDD.scala:1048)
+	at org.apache.spark.sql.execution.SparkPlan.executeCollect(SparkPlan.scala:448)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.$anonfun$executeCollect$1(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.withFinalPlanUpdate(AdaptiveSparkPlanExec.scala:420)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.executeCollect(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.Dataset.$anonfun$collectToPython$1(Dataset.scala:4149)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$2(Dataset.scala:4323)
+	at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:546)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$1(Dataset.scala:4321)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+	at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+	at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+	at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+	at org.apache.spark.sql.Dataset.withAction(Dataset.scala:4321)
+	at org.apache.spark.sql.Dataset.collectToPython(Dataset.scala:4146)
+	at jdk.internal.reflect.GeneratedMethodAccessor305.invoke(Unknown Source)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+2026-07-29 18:30:42,186 | INFO     | 
+================================================================================
+2026-07-29 18:30:42,186 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 18:30:42,186 | INFO     | ================================================================================

@@ -1,0 +1,107 @@
+2026-07-29 14:52:03,300 | INFO     | Запуск тестирования методов
+2026-07-29 14:52:03,300 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 14:52:03,310 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 14:52:41,217 | INFO     | Spark сессия запущена! Время: 37.91 сек
+2026-07-29 14:52:41,219 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-29 14:53:57,157 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-29 14:53:57,158 | INFO     | 
+================================================================================
+2026-07-29 14:53:57,158 | INFO     | Тестирование датасета: PD
+2026-07-29 14:53:57,158 | INFO     | ================================================================================
+2026-07-29 14:53:57,158 | INFO     |   Target column: target_attr_1
+2026-07-29 14:53:57,160 | INFO     |   Exclude columns: ['dmik_tag_kids_flg', 'report_month', 'bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_1', 'dmik_kids_small_flg', 'dmik_tag_video_content_flg', 'epk_id']
+2026-07-29 14:53:57,160 | INFO     |   Total columns: 2502
+2026-07-29 14:53:57,161 | INFO     |   get_method_params(drop_null): not found in config
+2026-07-29 14:53:57,161 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:53:57,161 | INFO     |   get_method_params(drop_constant): not found in config
+2026-07-29 14:53:57,161 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:53:57,161 | INFO     |   get_method_params(drop_low_variance): not found in config
+2026-07-29 14:53:57,161 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:53:57,161 | INFO     |   get_method_params(drop_correlated): not found in config
+2026-07-29 14:53:57,161 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:53:57,161 | INFO     |   get_method_params(lgbm_shap): found in global_methods, enabled=False
+2026-07-29 14:53:57,161 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:53:57,161 | INFO     |   DONE!
+2026-07-29 14:53:57,161 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-29 14:54:03,411 | INFO     |   Загружено 6,417,688 строк и 2502 колонок
+2026-07-29 14:54:03,411 | INFO     | 
+================================================================================
+2026-07-29 14:54:03,411 | INFO     | Тестирование датасета: TD
+2026-07-29 14:54:03,411 | INFO     | ================================================================================
+2026-07-29 14:54:03,411 | INFO     |   Target column: target_attr_1
+2026-07-29 14:54:03,413 | INFO     |   Exclude columns: ['dmik_tag_kids_flg', 'report_month', 'bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_1', 'dmik_kids_small_flg', 'dmik_tag_video_content_flg', 'epk_id']
+2026-07-29 14:54:03,413 | INFO     |   Total columns: 2502
+2026-07-29 14:54:03,413 | INFO     |   get_method_params(drop_null): not found in config
+2026-07-29 14:54:03,413 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:54:03,413 | INFO     |   get_method_params(drop_constant): not found in config
+2026-07-29 14:54:03,413 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:54:03,413 | INFO     |   get_method_params(drop_low_variance): not found in config
+2026-07-29 14:54:03,413 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:54:03,413 | INFO     |   get_method_params(drop_correlated): not found in config
+2026-07-29 14:54:03,413 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:54:03,413 | INFO     |   get_method_params(lgbm_shap): found in global_methods, enabled=False
+2026-07-29 14:54:03,413 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:54:03,413 | INFO     |   DONE!
+2026-07-29 14:54:03,413 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 14:54:07,530 | ERROR    |   ОШИБКА: An error occurred while calling o138.count
+2026-07-29 14:54:07,530 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 400, in main
+    total_rows = df.count()
+                 ^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o138.count
+2026-07-29 14:54:07,531 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 14:54:10,769 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-29 14:54:10,769 | INFO     | 
+================================================================================
+2026-07-29 14:54:10,769 | INFO     | Тестирование датасета: SA_ERKC
+2026-07-29 14:54:10,769 | INFO     | ================================================================================
+2026-07-29 14:54:10,769 | INFO     |   Target column: target_attr_1
+2026-07-29 14:54:10,771 | INFO     |   Exclude columns: ['split_type', 'dmik_tag_kids_flg', 'report_month', 'bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_1', 'dmik_kids_small_flg', 'dmik_tag_video_content_flg', 'epk_id']
+2026-07-29 14:54:10,771 | INFO     |   Total columns: 2503
+2026-07-29 14:54:10,771 | INFO     |   get_method_params(drop_null): not found in config
+2026-07-29 14:54:10,771 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:54:10,771 | INFO     |   get_method_params(drop_constant): not found in config
+2026-07-29 14:54:10,771 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:54:10,771 | INFO     |   get_method_params(drop_low_variance): not found in config
+2026-07-29 14:54:10,771 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:54:10,771 | INFO     |   get_method_params(drop_correlated): not found in config
+2026-07-29 14:54:10,771 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:54:10,772 | INFO     |   get_method_params(lgbm_shap): found in global_methods, enabled=False
+2026-07-29 14:54:10,772 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:54:10,772 | INFO     |   DONE!
+2026-07-29 14:54:10,772 | INFO     | 
+================================================================================
+2026-07-29 14:54:10,772 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 14:54:10,772 | INFO     | ================================================================================

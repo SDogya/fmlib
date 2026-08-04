@@ -1,0 +1,92 @@
+2026-07-29 14:48:01,367 | INFO     | Запуск тестирования методов
+2026-07-29 14:48:01,367 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 14:48:01,374 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 14:48:35,368 | INFO     | Spark сессия запущена! Время: 33.99 сек
+2026-07-29 14:48:35,370 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-29 14:49:34,599 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-29 14:49:34,600 | INFO     | 
+================================================================================
+2026-07-29 14:49:34,600 | INFO     | Тестирование датасета: PD
+2026-07-29 14:49:34,600 | INFO     | ================================================================================
+2026-07-29 14:49:34,600 | INFO     |   Target column: target_attr_1
+2026-07-29 14:49:34,602 | INFO     |   Exclude columns: ['dmik_tag_kids_flg', 'target_attr_1', 'dmik_kids_small_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_equ', 'report_month', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg']
+2026-07-29 14:49:34,602 | INFO     |   Total columns: 2502
+2026-07-29 14:49:34,602 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:49:34,602 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:49:34,602 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:49:34,602 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:49:34,602 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:49:34,602 | INFO     |   DONE!
+2026-07-29 14:49:34,602 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-29 14:49:36,902 | ERROR    |   ОШИБКА: An error occurred while calling o133.count
+2026-07-29 14:49:36,903 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 396, in main
+    total_rows = df.count()
+                 ^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o133.count
+2026-07-29 14:49:36,904 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 14:49:45,581 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-29 14:49:45,581 | INFO     | 
+================================================================================
+2026-07-29 14:49:45,581 | INFO     | Тестирование датасета: SA_SMA
+2026-07-29 14:49:45,581 | INFO     | ================================================================================
+2026-07-29 14:49:45,581 | INFO     |   Target column: target_attr_1
+2026-07-29 14:49:45,583 | INFO     |   Exclude columns: ['dmik_tag_kids_flg', 'target_attr_1', 'dmik_kids_small_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_equ', 'split_type', 'report_month', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg']
+2026-07-29 14:49:45,583 | INFO     |   Total columns: 2503
+2026-07-29 14:49:45,583 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:49:45,583 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:49:45,583 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:49:45,583 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:49:45,583 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:49:45,583 | INFO     |   DONE!
+2026-07-29 14:49:45,583 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 14:49:54,189 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-29 14:49:54,189 | INFO     | 
+================================================================================
+2026-07-29 14:49:54,189 | INFO     | Тестирование датасета: SA_ERKC
+2026-07-29 14:49:54,189 | INFO     | ================================================================================
+2026-07-29 14:49:54,189 | INFO     |   Target column: target_attr_1
+2026-07-29 14:49:54,191 | INFO     |   Exclude columns: ['dmik_tag_kids_flg', 'target_attr_1', 'dmik_kids_small_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_equ', 'split_type', 'report_month', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_tag_video_content_flg', 'dmik_kids_school_flg']
+2026-07-29 14:49:54,191 | INFO     |   Total columns: 2503
+2026-07-29 14:49:54,191 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 14:49:54,191 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 14:49:54,191 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 14:49:54,191 | INFO     | 
+--- drop_correlated_features: пропущено (disabled) ---
+2026-07-29 14:49:54,191 | INFO     | 
+--- LGBM + SHAP: пропущено (disabled) ---
+2026-07-29 14:49:54,191 | INFO     |   DONE!
+2026-07-29 14:49:54,191 | INFO     | 
+================================================================================
+2026-07-29 14:49:54,191 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 14:49:54,191 | INFO     | ================================================================================

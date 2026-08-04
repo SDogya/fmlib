@@ -1,0 +1,120 @@
+2026-07-30 10:39:02,250 | INFO     | Запуск пайплайна отбора признаков
+2026-07-30 10:39:02,250 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-30 10:39:02,259 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-30 10:39:36,509 | INFO     | Spark сессия запущена! Время: 34.25 сек
+2026-07-30 10:39:36,511 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-30 10:41:01,751 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-30 10:41:01,755 | INFO     |   Загрузка колонок для дропа из results/sequential/PD/constant_0.95_cols.txt
+2026-07-30 10:41:01,757 | INFO     |   Найдено 721 колонок для дропа
+2026-07-30 10:41:03,763 | INFO     |   После дропа: 1781 колонок
+2026-07-30 10:41:03,764 | INFO     | 
+================================================================================
+2026-07-30 10:41:03,764 | INFO     | ПИПЛИН ОТБОРА: PD
+2026-07-30 10:41:03,764 | INFO     | ================================================================================
+2026-07-30 10:41:03,764 | INFO     |   Target column: target_attr_1
+2026-07-30 10:41:03,765 | INFO     |   Exclude columns: ['dmik_tag_kids_flg', 'report_month', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_1', 'epk_id', 'dmik_kids_small_flg', 'dmik_tag_video_content_flg', 'bki_all_feats_count_mon_between_reports_equ']
+2026-07-30 10:41:03,765 | INFO     |   Порядок методов: ['drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-30 10:41:03,765 | INFO     | 
+================================================================================
+2026-07-30 10:41:03,765 | INFO     | Шаг 1: drop_low_variance
+2026-07-30 10:41:03,765 | INFO     | ================================================================================
+2026-07-30 10:41:03,765 | INFO     |   Test drop_low_variance with min_variance=0.0005, scale=standard
+2026-07-30 10:45:47,517 | INFO     |   Колонок на выходе: 1781
+2026-07-30 10:45:47,519 | INFO     | 
+================================================================================
+2026-07-30 10:45:47,519 | INFO     | Шаг 2: drop_correlated
+2026-07-30 10:45:47,519 | INFO     | ================================================================================
+2026-07-30 10:45:47,519 | INFO     |   Test drop_correlated with corr_threshold=0.95
+2026-07-30 10:51:50,958 | ERROR    |   ОШИБКА: An error occurred while calling z:org.apache.spark.ml.stat.Correlation.corr
+2026-07-30 10:51:50,959 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 436, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 293, in run_pipeline
+    result_df = test_drop_correlated(current_df, target_col, exclude_cols, param, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 181, in test_drop_correlated
+    result = drop_correlated_features(df, corr_threshold=corr_threshold, exclude_cols=exclude_cols)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/CorrDropper.py", line 63, in drop_correlated_features
+    matrix_row = Correlation.corr(vector_df, "features", method='pearson').head()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/ml/stat.py", line 181, in corr
+    return _java2py(sc, javaCorrObj.corr(*args))
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling z:org.apache.spark.ml.stat.Correlation.corr
+2026-07-30 10:51:50,961 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-30 10:51:56,411 | ERROR    |   ОШИБКА: An error occurred while calling o12631.count
+2026-07-30 10:51:56,411 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 414, in main
+    total_rows = original_df.count()
+                 ^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o12631.count
+2026-07-30 10:51:56,411 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-30 10:51:56,636 | ERROR    |   ОШИБКА: An error occurred while calling o12632.parquet
+2026-07-30 10:51:56,636 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 413, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o12632.parquet
+2026-07-30 10:51:56,638 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-30 10:51:56,777 | ERROR    |   ОШИБКА: An error occurred while calling o12635.parquet
+2026-07-30 10:51:56,777 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 413, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o12635.parquet
+2026-07-30 10:51:56,778 | INFO     | 
+================================================================================
+2026-07-30 10:51:56,778 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-30 10:51:56,778 | INFO     | ================================================================================

@@ -1,0 +1,130 @@
+2026-07-24 14:02:05 | INFO     | ============================================================
+2026-07-24 14:02:05 | INFO     | БЫСТРОЕ ТЕСТИРОВАНИЕ select_features_distributed (True Spark)
+2026-07-24 14:02:05 | INFO     | ============================================================
+2026-07-24 14:02:05 | INFO     | 
+[1/3] Запуск Spark сессии...
+2026-07-24 14:02:40 | INFO     | Spark сессия запущена! Время: 34.52 сек
+2026-07-24 14:02:40 | INFO     | 
+[2/3] Загрузка конфигурации и данных...
+2026-07-24 14:02:40 | INFO     | Загружено 556 категориальных колонок
+2026-07-24 14:02:53 | INFO     | Загружено 1,373,107 строк
+2026-07-24 14:02:56 | INFO     | Маленький сэмпл: 1,389 строк (0.1%)
+2026-07-24 14:02:56 | INFO     | После дропа колонок: 4464
+2026-07-24 14:02:56 | INFO     | Время: 16.48 сек
+2026-07-24 14:02:56 | INFO     | 
+[3/3] Запуск select_features_distributed (Spark MLlib)...
+2026-07-24 14:02:56 | INFO     | Используются распределенные вычисления - НЕТ toPandas()!
+2026-07-24 14:02:56 | INFO     | 
+--- Вариант 1: Distributed LGBM отбор (top_n=50) ---
+2026-07-24 14:11:54 | INFO     | Error while receiving.
+Traceback (most recent call last):
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/clientserver.py", line 511, in send_command
+    answer = smart_decode(self.stream.readline()[:-1])
+                          ^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: reentrant call inside <_io.BufferedReader name=5>
+2026-07-24 14:11:54 | INFO     | Closing down clientserver connection
+2026-07-24 14:11:54 | ERROR    | Exception while sending command.
+Traceback (most recent call last):
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/clientserver.py", line 511, in send_command
+    answer = smart_decode(self.stream.readline()[:-1])
+                          ^^^^^^^^^^^^^^^^^^^^^^
+RuntimeError: reentrant call inside <_io.BufferedReader name=5>
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1038, in send_command
+    response = connection.send_command(command)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/clientserver.py", line 539, in send_command
+    raise Py4JNetworkError(
+py4j.protocol.Py4JNetworkError: Error while sending or receiving
+2026-07-24 14:11:54 | INFO     | Error while receiving.
+Traceback (most recent call last):
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/clientserver.py", line 511, in send_command
+    answer = smart_decode(self.stream.readline()[:-1])
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.11/socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/pyspark/context.py", line 381, in signal_handler
+    self.cancelAllJobs()
+  File "/opt/spark/python/pyspark/context.py", line 2446, in cancelAllJobs
+    self._jsc.sc().cancelAllJobs()
+    ^^^^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o109.sc
+2026-07-24 14:11:54 | INFO     | Closing down clientserver connection
+2026-07-24 14:11:54 | ERROR    | Exception while sending command.
+Traceback (most recent call last):
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/clientserver.py", line 511, in send_command
+    answer = smart_decode(self.stream.readline()[:-1])
+                          ^^^^^^^^^^^^^^^^^^^^^^
+  File "/usr/lib64/python3.11/socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/pyspark/context.py", line 381, in signal_handler
+    self.cancelAllJobs()
+  File "/opt/spark/python/pyspark/context.py", line 2446, in cancelAllJobs
+    self._jsc.sc().cancelAllJobs()
+    ^^^^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o109.sc
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1038, in send_command
+    response = connection.send_command(command)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/clientserver.py", line 539, in send_command
+    raise Py4JNetworkError(
+py4j.protocol.Py4JNetworkError: Error while sending or receiving
+2026-07-24 14:11:54 | INFO     | Closing down clientserver connection
+2026-07-24 14:11:54 | ERROR    | ERROR: An error occurred while calling o1038.approxQuantile
+2026-07-24 14:11:54 | ERROR    | Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/quick_test_distributed.py", line 102, in <module>
+    selected_lgbm = select_features_distributed(
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/shap_lgbm_spark_distributed.py", line 512, in select_features_distributed
+    df_prepared, feature_columns = selector._prepare_data(df, target_col, exclude_cols)
+                                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/shap_lgbm_spark_distributed.py", line 102, in _prepare_data
+    median_val = df.approxQuantile(col, [0.5], 0.01)[0]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/pyspark/sql/dataframe.py", line 4847, in approxQuantile
+    jaq = self._jdf.stat().approxQuantile(col, probabilities, relativeError)
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/opt/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/opt/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o1038.approxQuantile
+
+2026-07-24 14:11:54 | ERROR    | Время: 538.05 сек
+2026-07-24 14:11:54 | INFO     | 
+============================================================
+2026-07-24 14:11:54 | INFO     | ТЕСТ ЗАВЕРШЕН!
+2026-07-24 14:11:54 | INFO     | ============================================================
+2026-07-24 14:11:54 | INFO     | 
+Итоговое время выполнения: 589.05 сек
+2026-07-24 14:11:54 | INFO     | Лог сохранен в: /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/logs/quick_test_distributed_20260724_140205.log
+2026-07-24 14:11:54 | INFO     | Closing down clientserver connection

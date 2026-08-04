@@ -1,0 +1,316 @@
+2026-07-31 15:24:25,400 | INFO     | Запуск пайплайна отбора признаков
+2026-07-31 15:24:25,400 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-31 15:24:25,412 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-31 15:24:59,522 | INFO     | Spark сессия запущена! Время: 34.11 сек
+2026-07-31 15:24:59,523 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-31 15:25:26,635 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-31 15:25:26,638 | INFO     |   Target column: target_attr_1
+2026-07-31 15:25:26,638 | INFO     |   Exclude columns (11): ['dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'target_attr_2', 'epk_id', 'report_month', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_3', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg', 'dmik_kids_school_flg']
+2026-07-31 15:25:26,639 | INFO     |   Файл с оставленными колонками не найден: ~/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/PD/stage_0_1_selected.txt
+2026-07-31 15:25:26,639 | INFO     | 
+================================================================================
+2026-07-31 15:25:26,639 | INFO     | ПИПЛИН ОТБОРА: PD
+2026-07-31 15:25:26,639 | INFO     | ================================================================================
+2026-07-31 15:25:32,889 | INFO     |   [run_pipeline] START - df: 2502 cols, 2,817,137 rows
+2026-07-31 15:25:32,889 | INFO     |   [run_pipeline] target_col: target_attr_1
+2026-07-31 15:25:32,889 | INFO     |   [run_pipeline] exclude_cols (11): ['dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'target_attr_2', 'epk_id', 'report_month', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_3', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg']...
+2026-07-31 15:25:32,889 | INFO     |   Порядок методов: [('stratified_sampling', [750000]), ('boruta_shap', None)]
+2026-07-31 15:25:32,889 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-31 15:25:32,889 | INFO     |   drop_null:
+2026-07-31 15:25:32,889 | INFO     |     enabled: false
+2026-07-31 15:25:32,889 | INFO     |   drop_constant:
+2026-07-31 15:25:32,889 | INFO     |     enabled: true, params: [0.95], chunk_size: 1000
+2026-07-31 15:25:32,889 | INFO     |   drop_low_variance:
+2026-07-31 15:25:32,889 | INFO     |     enabled: true, param: 1e-5, scale_method: minmax
+2026-07-31 15:25:32,889 | INFO     |   drop_correlated:
+2026-07-31 15:25:32,889 | INFO     |     enabled: true, params: [0.95]
+2026-07-31 15:25:32,889 | INFO     |   lgbm_shap:
+2026-07-31 15:25:32,889 | INFO     |     enabled: true, params: [0.95]
+2026-07-31 15:25:32,889 | INFO     |   boruta_shap:
+2026-07-31 15:25:32,889 | INFO     |     enabled: true
+2026-07-31 15:25:32,889 | INFO     |     model_type: lgbm
+2026-07-31 15:25:32,889 | INFO     |     boruta_trials: 50
+2026-07-31 15:25:32,890 | INFO     |     optuna_params:
+2026-07-31 15:25:32,890 | INFO     |       n_trials: 100
+2026-07-31 15:25:32,890 | INFO     |       n_startup_trials: 50
+2026-07-31 15:25:32,890 | INFO     |       sampler: TPE
+2026-07-31 15:25:32,890 | INFO     |     parameters: 10 params
+2026-07-31 15:25:32,890 | INFO     | 
+================================================================================
+2026-07-31 15:25:32,890 | INFO     | Шаг 1: stratified_sampling
+2026-07-31 15:25:32,890 | INFO     | ================================================================================
+2026-07-31 15:25:32,890 | INFO     |   Гиперпараметры: max_rows=750000
+2026-07-31 15:25:32,890 | INFO     |   Test stratified_sampling with max_rows=750000
+2026-07-31 15:25:37,278 | INFO     |   [test_stratified_sampling] df: 2502 cols, 2,817,137 rows
+2026-07-31 15:25:57,291 | INFO     |   Выкинуто: 0 колонок -> results/pipeline/PD/stratified_750000_cols.txt
+2026-07-31 15:25:57,292 | INFO     |   Колонок на выходе: 2502
+2026-07-31 15:25:57,292 | INFO     | 
+================================================================================
+2026-07-31 15:25:57,292 | INFO     | Шаг 2: boruta_shap
+2026-07-31 15:25:57,292 | INFO     | ================================================================================
+2026-07-31 15:25:57,292 | INFO     |   Гиперпараметры: model_type=lgbm, boruta_trials=50
+2026-07-31 15:25:57,293 | INFO     |   Test boruta_shap with model_type=lgbm, boruta_trials=50
+2026-07-31 15:26:04,480 | INFO     |   [test_drop_boruta_shap] df: 2502 cols, 749,148 rows
+2026-07-31 15:26:04,480 | INFO     |   [test_drop_boruta_shap] target_col: target_attr_1
+2026-07-31 15:26:04,480 | INFO     |   [test_drop_boruta_shap] exclude_cols (11): ['dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'target_attr_2', 'epk_id', 'report_month', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_3', 'dmik_tag_video_content_flg', 'dmik_kids_small_flg']...
+2026-07-31 15:26:04,480 | INFO     |   [test_drop_boruta_shap] Optuna params:
+2026-07-31 15:26:04,480 | INFO     |     n_trials: 100
+2026-07-31 15:26:04,481 | INFO     |     n_startup_trials: 50
+2026-07-31 15:26:04,481 | INFO     |     sampler: TPE
+2026-07-31 15:26:04,481 | INFO     |   [test_drop_boruta_shap] Parameter grid (10 params):
+2026-07-31 15:26:04,481 | INFO     |     n_estimators: int [100, 1400]
+2026-07-31 15:26:04,481 | INFO     |     num_leaves: int [8, 64]
+2026-07-31 15:26:04,481 | INFO     |     max_depth: int [4, 7]
+2026-07-31 15:26:04,481 | INFO     |     learning_rate: float [0.01, 0.1]
+2026-07-31 15:26:04,481 | INFO     |     min_child_samples: int [16, 64]
+2026-07-31 15:26:04,481 | INFO     |     subsample: float [0.7, 1.0]
+2026-07-31 15:26:04,481 | INFO     |     colsample_bytree: float [0.7, 1.0]
+2026-07-31 15:26:04,481 | INFO     |     reg_alpha: float [0.01, 1.0]
+2026-07-31 15:26:04,481 | INFO     |     reg_lambda: float [0.01, 1.0]
+2026-07-31 15:26:04,481 | INFO     |     boosting_type: categorical values=['gbdt', 'dart', 'goss']
+2026-07-31 15:26:54,061 | ERROR    |   ОШИБКА: An error occurred while calling o2646.getResult.
+: org.apache.spark.SparkException: Exception thrown in awaitResult: 
+	at org.apache.spark.util.SparkThreadUtils$.awaitResult(SparkThreadUtils.scala:56)
+	at org.apache.spark.util.ThreadUtils$.awaitResult(ThreadUtils.scala:310)
+	at org.apache.spark.security.SocketAuthServer.getResult(SocketAuthServer.scala:98)
+	at org.apache.spark.security.SocketAuthServer.getResult(SocketAuthServer.scala:94)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: org.apache.spark.SparkException: Job 15 cancelled as part of cancellation of all jobs
+	at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2898)
+	at org.apache.spark.scheduler.DAGScheduler.handleJobCancellation(DAGScheduler.scala:2773)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$doCancelAllJobs$2(DAGScheduler.scala:1120)
+	at scala.runtime.java8.JFunction1$mcVI$sp.apply(JFunction1$mcVI$sp.java:23)
+	at scala.collection.mutable.HashSet.foreach(HashSet.scala:79)
+	at org.apache.spark.scheduler.DAGScheduler.doCancelAllJobs(DAGScheduler.scala:1119)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3064)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3036)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3025)
+	at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:995)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2393)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2488)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$5(Dataset.scala:4263)
+	at scala.runtime.java8.JFunction0$mcV$sp.apply(JFunction0$mcV$sp.java:23)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$2(Dataset.scala:4267)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$2$adapted(Dataset.scala:4243)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$2(Dataset.scala:4323)
+	at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:546)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$1(Dataset.scala:4321)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+	at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+	at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+	at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+	at org.apache.spark.sql.Dataset.withAction(Dataset.scala:4321)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$1(Dataset.scala:4243)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$1$adapted(Dataset.scala:4242)
+	at org.apache.spark.security.SocketAuthServer$.$anonfun$serveToStream$2(SocketAuthServer.scala:140)
+	at scala.runtime.java8.JFunction0$mcV$sp.apply(JFunction0$mcV$sp.java:23)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.security.SocketAuthServer$.$anonfun$serveToStream$1(SocketAuthServer.scala:142)
+	at org.apache.spark.security.SocketAuthServer$.$anonfun$serveToStream$1$adapted(SocketAuthServer.scala:137)
+	at org.apache.spark.security.SocketFuncServer.handleConnection(SocketAuthServer.scala:114)
+	at org.apache.spark.security.SocketFuncServer.handleConnection(SocketAuthServer.scala:108)
+	at org.apache.spark.security.SocketAuthServer$$anon$1.$anonfun$run$4(SocketAuthServer.scala:69)
+	at scala.util.Try$.apply(Try.scala:213)
+	at org.apache.spark.security.SocketAuthServer$$anon$1.run(SocketAuthServer.scala:69)
+
+2026-07-31 15:26:54,063 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/spark/python/pyspark/sql/pandas/conversion.py", line 280, in _collect_as_arrow
+    results = list(batch_stream)
+              ^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/pandas/serializers.py", line 69, in load_stream
+    for batch in self.serializer.load_stream(stream):
+  File "/spark/python/pyspark/sql/pandas/serializers.py", line 111, in load_stream
+    reader = pa.ipc.open_stream(stream)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/venv/lib64/python3.11/site-packages/pyarrow/ipc.py", line 187, in open_stream
+    return RecordBatchStreamReader(source, options=options,
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/venv/lib64/python3.11/site-packages/pyarrow/ipc.py", line 52, in __init__
+    self._open(source, options=options, memory_pool=memory_pool)
+  File "pyarrow/ipc.pxi", line 1092, in pyarrow.lib._RecordBatchStreamReader._open
+  File "pyarrow/error.pxi", line 155, in pyarrow.lib.pyarrow_internal_check_status
+  File "pyarrow/error.pxi", line 89, in pyarrow.lib.check_status
+  File "/usr/lib64/python3.11/socket.py", line 706, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/context.py", line 382, in signal_handler
+    raise KeyboardInterrupt()
+KeyboardInterrupt
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 839, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger, target_col, exclude_cols)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 646, in run_pipeline
+    results = test_drop_boruta_shap(
+              ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 289, in test_drop_boruta_shap
+    result = select_features_boruta_shap(
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/BorutaSHAP.py", line 96, in select_features_boruta_shap
+    pdf = data_df.limit(max_rows_limit).toPandas()
+          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/pandas/conversion.py", line 131, in toPandas
+    batches = self._collect_as_arrow(split_batches=self_destruct)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/pandas/conversion.py", line 284, in _collect_as_arrow
+    jsocket_auth_server.getResult()
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 326, in get_return_value
+    raise Py4JJavaError(
+py4j.protocol.Py4JJavaError: An error occurred while calling o2646.getResult.
+: org.apache.spark.SparkException: Exception thrown in awaitResult: 
+	at org.apache.spark.util.SparkThreadUtils$.awaitResult(SparkThreadUtils.scala:56)
+	at org.apache.spark.util.ThreadUtils$.awaitResult(ThreadUtils.scala:310)
+	at org.apache.spark.security.SocketAuthServer.getResult(SocketAuthServer.scala:98)
+	at org.apache.spark.security.SocketAuthServer.getResult(SocketAuthServer.scala:94)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+Caused by: org.apache.spark.SparkException: Job 15 cancelled as part of cancellation of all jobs
+	at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2898)
+	at org.apache.spark.scheduler.DAGScheduler.handleJobCancellation(DAGScheduler.scala:2773)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$doCancelAllJobs$2(DAGScheduler.scala:1120)
+	at scala.runtime.java8.JFunction1$mcVI$sp.apply(JFunction1$mcVI$sp.java:23)
+	at scala.collection.mutable.HashSet.foreach(HashSet.scala:79)
+	at org.apache.spark.scheduler.DAGScheduler.doCancelAllJobs(DAGScheduler.scala:1119)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3064)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3036)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3025)
+	at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:995)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2393)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2488)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$5(Dataset.scala:4263)
+	at scala.runtime.java8.JFunction0$mcV$sp.apply(JFunction0$mcV$sp.java:23)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$2(Dataset.scala:4267)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$2$adapted(Dataset.scala:4243)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$2(Dataset.scala:4323)
+	at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:546)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$1(Dataset.scala:4321)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+	at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+	at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+	at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+	at org.apache.spark.sql.Dataset.withAction(Dataset.scala:4321)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$1(Dataset.scala:4243)
+	at org.apache.spark.sql.Dataset.$anonfun$collectAsArrowToPython$1$adapted(Dataset.scala:4242)
+	at org.apache.spark.security.SocketAuthServer$.$anonfun$serveToStream$2(SocketAuthServer.scala:140)
+	at scala.runtime.java8.JFunction0$mcV$sp.apply(JFunction0$mcV$sp.java:23)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.security.SocketAuthServer$.$anonfun$serveToStream$1(SocketAuthServer.scala:142)
+	at org.apache.spark.security.SocketAuthServer$.$anonfun$serveToStream$1$adapted(SocketAuthServer.scala:137)
+	at org.apache.spark.security.SocketFuncServer.handleConnection(SocketAuthServer.scala:114)
+	at org.apache.spark.security.SocketFuncServer.handleConnection(SocketAuthServer.scala:108)
+	at org.apache.spark.security.SocketAuthServer$$anon$1.$anonfun$run$4(SocketAuthServer.scala:69)
+	at scala.util.Try$.apply(Try.scala:213)
+	at org.apache.spark.security.SocketAuthServer$$anon$1.run(SocketAuthServer.scala:69)
+
+2026-07-31 15:26:54,081 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-31 15:26:54,446 | ERROR    |   ОШИБКА: An error occurred while calling o2651.parquet
+2026-07-31 15:26:54,446 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 768, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o2651.parquet
+2026-07-31 15:26:54,447 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-31 15:26:55,223 | ERROR    |   ОШИБКА: An error occurred while calling o2654.parquet
+2026-07-31 15:26:55,223 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 768, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o2654.parquet
+2026-07-31 15:26:55,224 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-31 15:26:55,466 | ERROR    |   ОШИБКА: An error occurred while calling o2659.parquet
+2026-07-31 15:26:55,467 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 768, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o2659.parquet
+2026-07-31 15:26:55,467 | INFO     | 
+================================================================================
+2026-07-31 15:26:55,467 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-31 15:26:55,467 | INFO     | ================================================================================

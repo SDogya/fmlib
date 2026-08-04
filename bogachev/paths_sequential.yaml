@@ -1,0 +1,53 @@
+# Конфигурация для последовательного отбора признаков
+
+# Порядок датасетов по возрастанию размера (от меньшего к большему)
+datasets:
+  PD:
+    enabled: true
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc
+    has_split_type: true
+
+  SA_ERKC:
+    enabled: true
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+    has_split_type: false
+
+  TD:
+    enabled: true
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response
+    has_split_type: true
+
+  SA_SMA:
+    enabled: true
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+    has_split_type: false
+
+# Порядок методов для последовательного отбора
+order:
+  - drop_null
+  - drop_constant
+  - drop_low_variance
+  - drop_correlated
+  - lgbm_shap
+
+# Параметры для каждого метода (один параметр на метод)
+drop_null:
+  enabled: true
+  param: 0.95
+
+drop_constant:
+  enabled: true
+  param: 0.95
+
+drop_low_variance:
+  enabled: true
+  param: 0.005
+  scale_method: minmax
+
+drop_correlated:
+  enabled: true
+  param: 0.95
+
+lgbm_shap:
+  enabled: false
+  param: 0.95

@@ -1,0 +1,36 @@
+2026-07-29 09:57:28,941 | INFO     | Запуск тестирования методов
+2026-07-29 09:57:28,941 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 09:57:28,946 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 09:58:03,157 | INFO     | Spark сессия запущена! Время: 34.21 сек
+2026-07-29 09:58:03,158 | INFO     | 
+PD: пропущено (disabled in config)
+2026-07-29 09:58:03,159 | INFO     | 
+TD: пропущено (disabled in config)
+2026-07-29 09:58:03,159 | INFO     | 
+SA_SMA: пропущено (disabled in config)
+2026-07-29 09:58:03,159 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 09:58:38,448 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-29 09:58:38,449 | INFO     | 
+================================================================================
+2026-07-29 09:58:38,449 | INFO     | Тестирование датасета: SA_ERKC
+2026-07-29 09:58:38,449 | INFO     | ================================================================================
+2026-07-29 09:58:38,449 | INFO     |   Target column: target_attr_1
+2026-07-29 09:58:38,451 | INFO     |   Exclude columns: ['epk_id', 'dmik_tag_kids_flg', 'dmik_kids_small_flg', 'report_month', 'dmik_kids_school_flg', 'bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'target_attr_1', 'dmik_tag_video_content_flg']
+2026-07-29 09:58:38,451 | INFO     |   Total columns: 2503
+2026-07-29 09:58:38,451 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 09:58:38,451 | INFO     | 
+--- drop_constant_features ---
+2026-07-29 09:58:38,451 | INFO     |   Test drop_constant with tol=0.95
+2026-07-29 10:21:40,471 | INFO     |   Dropped 558 columns -> results/SA_ERKC/constant_0.95_cols.txt
+2026-07-29 10:21:40,472 | INFO     | 
+--- drop_low_variance_features ---
+2026-07-29 10:21:40,472 | INFO     |   Test drop_low_variance with min_variance=0.01, scale=standard
+2026-07-29 10:30:24,626 | INFO     |   Dropped 76 columns (scale=standard) -> results/SA_ERKC/variance_0.01_standard_cols.txt
+2026-07-29 10:30:24,627 | INFO     |   DONE!
+2026-07-29 10:30:24,627 | INFO     | 
+================================================================================
+2026-07-29 10:30:24,627 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 10:30:24,627 | INFO     | ================================================================================

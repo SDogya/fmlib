@@ -1,0 +1,320 @@
+2026-07-30 17:50:52,131 | INFO     | Запуск пайплайна отбора признаков
+2026-07-30 17:50:52,131 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-30 17:50:52,139 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-30 17:51:26,571 | INFO     | Spark сессия запущена! Время: 34.43 сек
+2026-07-30 17:51:26,572 | INFO     | 
+PD: пропущено (disabled in config)
+2026-07-30 17:51:26,573 | INFO     | 
+SA_ERKC: пропущено (disabled in config)
+2026-07-30 17:51:26,573 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-30 17:51:54,172 | INFO     |   Загружено 6,417,688 строк и 2502 колонок
+2026-07-30 17:51:54,176 | INFO     |   Target column: target_attr_1
+2026-07-30 17:51:54,176 | INFO     |   Exclude columns (11): ['report_month', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'dmik_tag_video_content_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_2', 'dmik_kids_small_flg', 'target_attr_3', 'dmik_tag_kids_flg']
+2026-07-30 17:51:54,176 | INFO     |   Загрузка колонок для дропа из results/pipeline/TD/correlated_0.95_cols.txt
+2026-07-30 17:51:54,179 | INFO     |   Найдено 1499 колонок для дропа
+2026-07-30 17:51:54,179 | INFO     |   dropped_cols (first 20): ['bki_all_feats_ratio_cust_pti_to_debt_load_v2', 'aggr_mnth_v2_evt_attr_892', 'bki_all_feats_min_cust_debt_load_v1_norm_amt_3m', 'bki_response_evt_attr_471', 'bki_response_evt_attr_387', 'aggr_mnth_v2_evt_attr_279', 'bki_response_evt_attr_450', 'dmik_avg_rel_all_money', 'aggr_mnth_v2_evt_attr_384', 'bki_response_evt_attr_413', 'aggr_mnth_v2_evt_attr_965', 'bki_response_evt_attr_1085', 'bki_response_evt_attr_256', 'bki_response_evt_attr_156', 'bki_response_evt_attr_1069', 'bki_all_feats_min_debt_ik_norm_amt_6m', 'bki_response_evt_attr_337', 'bki_response_evt_attr_559', 'aggr_mnth_v2_evt_attr_782', 'bki_response_evt_attr_815']
+2026-07-30 17:51:54,179 | INFO     |   После фильтрации exclude_cols: 1488 колонок для дропа
+2026-07-30 17:51:54,179 | INFO     |   dropped_cols after filter (first 20): ['bki_all_feats_ratio_cust_pti_to_debt_load_v2', 'aggr_mnth_v2_evt_attr_892', 'bki_all_feats_min_cust_debt_load_v1_norm_amt_3m', 'bki_response_evt_attr_471', 'bki_response_evt_attr_387', 'aggr_mnth_v2_evt_attr_279', 'bki_response_evt_attr_450', 'dmik_avg_rel_all_money', 'aggr_mnth_v2_evt_attr_384', 'bki_response_evt_attr_413', 'aggr_mnth_v2_evt_attr_965', 'bki_response_evt_attr_1085', 'bki_response_evt_attr_256', 'bki_response_evt_attr_156', 'bki_response_evt_attr_1069', 'bki_all_feats_min_debt_ik_norm_amt_6m', 'bki_response_evt_attr_337', 'bki_response_evt_attr_559', 'aggr_mnth_v2_evt_attr_782', 'bki_response_evt_attr_815']
+2026-07-30 17:51:55,610 | INFO     |   После дропа: 1014 колонок
+2026-07-30 17:51:55,610 | INFO     |   current_df columns (first 20): ['epk_id', 'target_attr_1', 'report_month', 'target_attr_2', 'target_attr_3', 'aggr_mnth_v2_evt_attr_1010', 'aggr_mnth_v2_evt_attr_1022', 'aggr_mnth_v2_evt_attr_1027', 'aggr_mnth_v2_evt_attr_1029', 'aggr_mnth_v2_evt_attr_158', 'aggr_mnth_v2_evt_attr_161', 'aggr_mnth_v2_evt_attr_179', 'aggr_mnth_v2_evt_attr_180', 'aggr_mnth_v2_evt_attr_188', 'aggr_mnth_v2_evt_attr_198', 'aggr_mnth_v2_evt_attr_213', 'aggr_mnth_v2_evt_attr_217', 'aggr_mnth_v2_evt_attr_223', 'aggr_mnth_v2_evt_attr_228', 'aggr_mnth_v2_evt_attr_23']
+2026-07-30 17:51:55,611 | INFO     | 
+================================================================================
+2026-07-30 17:51:55,611 | INFO     | ПИПЛИН ОТБОРА: TD
+2026-07-30 17:51:55,611 | INFO     | ================================================================================
+2026-07-30 17:52:03,913 | INFO     |   [run_pipeline] START - df: 1014 cols, 6,417,688 rows
+2026-07-30 17:52:03,913 | INFO     |   [run_pipeline] target_col: target_attr_1
+2026-07-30 17:52:03,913 | INFO     |   [run_pipeline] exclude_cols (11): ['report_month', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'dmik_tag_video_content_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_2', 'dmik_kids_small_flg', 'target_attr_3']...
+2026-07-30 17:52:03,913 | INFO     |   Порядок методов: [('stratified_sampling', [250000]), ('lgbm_shap', None)]
+2026-07-30 17:52:03,913 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 17:52:03,913 | INFO     |   drop_null:
+2026-07-30 17:52:03,913 | INFO     |     enabled: false
+2026-07-30 17:52:03,913 | INFO     |   drop_constant:
+2026-07-30 17:52:03,914 | INFO     |     enabled: true, params: [0.95], chunk_size: 1000
+2026-07-30 17:52:03,914 | INFO     |   drop_low_variance:
+2026-07-30 17:52:03,914 | INFO     |     enabled: true, param: 1e-5, scale_method: minmax
+2026-07-30 17:52:03,914 | INFO     |   drop_correlated:
+2026-07-30 17:52:03,914 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 17:52:03,914 | INFO     |   lgbm_shap:
+2026-07-30 17:52:03,914 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 17:52:03,914 | INFO     | 
+================================================================================
+2026-07-30 17:52:03,914 | INFO     | Шаг 1: stratified_sampling
+2026-07-30 17:52:03,914 | INFO     | ================================================================================
+2026-07-30 17:52:03,914 | INFO     |   Гиперпараметры: max_rows=250000
+2026-07-30 17:52:03,914 | INFO     |   Test stratified_sampling with max_rows=250000
+2026-07-30 17:53:12,041 | INFO     |   [test_stratified_sampling] df: 1014 cols, 6,417,688 rows
+2026-07-30 17:53:23,022 | INFO     |   Выкинуто: 1488 колонок -> results/pipeline/TD/stratified_250000_cols.txt
+2026-07-30 17:53:23,023 | INFO     |   Колонок на выходе: 1014
+2026-07-30 17:53:23,023 | INFO     | 
+================================================================================
+2026-07-30 17:53:23,023 | INFO     | Шаг 2: lgbm_shap
+2026-07-30 17:53:23,023 | INFO     | ================================================================================
+2026-07-30 17:53:23,023 | INFO     |   Гиперпараметры: threshold=0.95
+2026-07-30 17:53:23,023 | INFO     |   Test lgbm_shap with threshold=0.95
+2026-07-30 17:53:25,478 | INFO     |   [test_drop_lgbm_shap] df: 1014 cols, 250,421 rows
+2026-07-30 17:53:25,478 | INFO     |   [test_drop_lgbm_shap] target_col: target_attr_1
+2026-07-30 17:53:25,478 | INFO     |   [test_drop_lgbm_shap] exclude_cols (11): ['report_month', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'dmik_tag_video_content_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'target_attr_2', 'dmik_kids_small_flg', 'target_attr_3']...
+2026-07-30 17:53:25,478 | INFO     |   [test_drop_lgbm_shap] stratified_df: True
+2026-07-30 18:02:50,749 | INFO     |   Selected: 212
+2026-07-30 18:02:50,750 | INFO     | 
+================================================================================
+2026-07-30 18:02:50,751 | INFO     | ВСЕ ШАГИ ПИПЛАЙНА ЗАВЕРШЕНЫ!
+2026-07-30 18:02:50,751 | INFO     | ================================================================================
+2026-07-30 18:02:50,751 | INFO     | 
+Итоговое количество колонок: 1014
+2026-07-30 18:02:50,751 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-30 18:03:03,523 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-30 18:03:03,525 | INFO     |   Target column: target_attr_1
+2026-07-30 18:03:03,526 | INFO     |   Exclude columns (12): ['report_month', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'dmik_tag_video_content_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'split_type', 'target_attr_2', 'dmik_kids_small_flg', 'target_attr_3', 'dmik_tag_kids_flg']
+2026-07-30 18:03:03,528 | INFO     |   Загрузка колонок для дропа из ~/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/sequential/SA_SMA/null_0.95_cols.txt
+2026-07-30 18:03:03,530 | INFO     |   Найдено 160 колонок для дропа
+2026-07-30 18:03:03,530 | INFO     |   dropped_cols (first 20): ['aggr_mnth_v2_evt_attr_895', 'bki_response_evt_attr_674', 'bki_response_evt_attr_1052', 'aggr_mnth_v2_evt_attr_663', 'aggr_mnth_v2_evt_attr_837', 'aggr_mnth_v2_evt_attr_918', 'bki_response_evt_attr_907', 'bki_response_evt_attr_1068', 'bki_response_evt_attr_1066', 'bki_response_evt_attr_548', 'aggr_mnth_v2_evt_attr_862', 'bki_response_evt_attr_1071', 'bki_response_evt_attr_941', 'aggr_mnth_v2_evt_attr_94', 'bki_response_evt_attr_1072', 'aggr_mnth_v2_evt_attr_693', 'aggr_mnth_v2_evt_attr_528', 'bki_response_evt_attr_965', 'bki_response_evt_attr_689', 'aggr_mnth_v2_evt_attr_117']
+2026-07-30 18:03:03,530 | INFO     |   После фильтрации exclude_cols: 160 колонок для дропа
+2026-07-30 18:03:03,530 | INFO     |   dropped_cols after filter (first 20): ['aggr_mnth_v2_evt_attr_895', 'bki_response_evt_attr_674', 'bki_response_evt_attr_1052', 'aggr_mnth_v2_evt_attr_663', 'aggr_mnth_v2_evt_attr_837', 'aggr_mnth_v2_evt_attr_918', 'bki_response_evt_attr_907', 'bki_response_evt_attr_1068', 'bki_response_evt_attr_1066', 'bki_response_evt_attr_548', 'aggr_mnth_v2_evt_attr_862', 'bki_response_evt_attr_1071', 'bki_response_evt_attr_941', 'aggr_mnth_v2_evt_attr_94', 'bki_response_evt_attr_1072', 'aggr_mnth_v2_evt_attr_693', 'aggr_mnth_v2_evt_attr_528', 'bki_response_evt_attr_965', 'bki_response_evt_attr_689', 'aggr_mnth_v2_evt_attr_117']
+2026-07-30 18:03:05,929 | INFO     |   После дропа: 2343 колонок
+2026-07-30 18:03:05,929 | INFO     |   current_df columns (first 20): ['epk_id', 'target_attr_1', 'report_month', 'target_attr_2', 'target_attr_3', 'aggr_mnth_v2_evt_attr_1006', 'aggr_mnth_v2_evt_attr_1007', 'aggr_mnth_v2_evt_attr_1010', 'aggr_mnth_v2_evt_attr_1022', 'aggr_mnth_v2_evt_attr_1027', 'aggr_mnth_v2_evt_attr_1029', 'aggr_mnth_v2_evt_attr_152', 'aggr_mnth_v2_evt_attr_153', 'aggr_mnth_v2_evt_attr_158', 'aggr_mnth_v2_evt_attr_161', 'aggr_mnth_v2_evt_attr_179', 'aggr_mnth_v2_evt_attr_180', 'aggr_mnth_v2_evt_attr_188', 'aggr_mnth_v2_evt_attr_198', 'aggr_mnth_v2_evt_attr_213']
+2026-07-30 18:03:05,929 | INFO     | 
+================================================================================
+2026-07-30 18:03:05,929 | INFO     | ПИПЛИН ОТБОРА: SA_SMA
+2026-07-30 18:03:05,929 | INFO     | ================================================================================
+2026-07-30 18:03:16,388 | INFO     |   [run_pipeline] START - df: 2343 cols, 25,852,832 rows
+2026-07-30 18:03:16,389 | INFO     |   [run_pipeline] target_col: target_attr_1
+2026-07-30 18:03:16,389 | INFO     |   [run_pipeline] exclude_cols (12): ['report_month', 'bki_all_feats_count_mon_between_reports_equ', 'target_attr_1', 'dmik_tag_video_content_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'split_type', 'target_attr_2', 'dmik_kids_small_flg']...
+2026-07-30 18:03:16,389 | INFO     |   Порядок методов: [('drop_constant', None), ('drop_low_variance', None), ('stratified_sampling', [1000000]), ('drop_correlated', None), ('stratified_sampling', [250000]), ('lgbm_shap', None)]
+2026-07-30 18:03:16,389 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 18:03:16,389 | INFO     |   drop_null:
+2026-07-30 18:03:16,389 | INFO     |     enabled: false
+2026-07-30 18:03:16,389 | INFO     |   drop_constant:
+2026-07-30 18:03:16,389 | INFO     |     enabled: true, params: [0.95], chunk_size: 200
+2026-07-30 18:03:16,389 | INFO     |   drop_low_variance:
+2026-07-30 18:03:16,389 | INFO     |     enabled: true, param: 1e-5, scale_method: minmax
+2026-07-30 18:03:16,389 | INFO     |   drop_correlated:
+2026-07-30 18:03:16,389 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 18:03:16,389 | INFO     |   lgbm_shap:
+2026-07-30 18:03:16,389 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 18:03:16,389 | INFO     | 
+================================================================================
+2026-07-30 18:03:16,389 | INFO     | Шаг 1: drop_constant
+2026-07-30 18:03:16,389 | INFO     | ================================================================================
+2026-07-30 18:03:16,389 | INFO     |   Гиперпараметры: tol=0.95, chunk_size=200
+2026-07-30 18:03:16,389 | INFO     |   Test drop_constant with tol=0.95, chunk_size=200
+2026-07-30 19:25:28,268 | ERROR    |   ОШИБКА: An error occurred while calling o10016.collectToPython.
+: org.apache.spark.SparkException: Job aborted due to stage failure: ResultStage 74 (first at /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py:49) has failed the maximum allowable number of times: 4. Most recent failure reason:
+org.apache.spark.shuffle.MetadataFetchFailedException: Missing an output location for shuffle 23 partition 0
+	at org.apache.spark.MapOutputTracker$.validateStatus(MapOutputTracker.scala:1747)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11(MapOutputTracker.scala:1694)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11$adapted(MapOutputTracker.scala:1693)
+	at scala.collection.Iterator.foreach(Iterator.scala:943)
+	at scala.collection.Iterator.foreach$(Iterator.scala:943)
+	at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+	at org.apache.spark.MapOutputTracker$.convertMapStatuses(MapOutputTracker.scala:1693)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorIdImpl(MapOutputTracker.scala:1335)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorId(MapOutputTracker.scala:1297)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:141)
+	at org.apache.spark.shuffle.ShuffleManager.getReader(ShuffleManager.scala:63)
+	at org.apache.spark.shuffle.ShuffleManager.getReader$(ShuffleManager.scala:57)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:73)
+	at org.apache.spark.sql.execution.ShuffledRowRDD.compute(ShuffledRowRDD.scala:200)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+	at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:166)
+	at org.apache.spark.scheduler.Task.run(Task.scala:141)
+	at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:621)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:624)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+	at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2898)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2834)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2833)
+	at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+	at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+	at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2833)
+	at org.apache.spark.scheduler.DAGScheduler.handleTaskCompletion(DAGScheduler.scala:2057)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3096)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3036)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3025)
+	at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:995)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2393)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2414)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2433)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2458)
+	at org.apache.spark.rdd.RDD.$anonfun$collect$1(RDD.scala:1049)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:151)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:112)
+	at org.apache.spark.rdd.RDD.withScope(RDD.scala:410)
+	at org.apache.spark.rdd.RDD.collect(RDD.scala:1048)
+	at org.apache.spark.sql.execution.SparkPlan.executeCollect(SparkPlan.scala:448)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.$anonfun$executeCollect$1(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.withFinalPlanUpdate(AdaptiveSparkPlanExec.scala:420)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.executeCollect(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.Dataset.$anonfun$collectToPython$1(Dataset.scala:4149)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$2(Dataset.scala:4323)
+	at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:546)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$1(Dataset.scala:4321)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+	at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+	at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+	at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+	at org.apache.spark.sql.Dataset.withAction(Dataset.scala:4321)
+	at org.apache.spark.sql.Dataset.collectToPython(Dataset.scala:4146)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+2026-07-30 19:25:28,270 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 656, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger, target_col, exclude_cols)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 435, in run_pipeline
+    result_df = test_drop_constant(current_df, target_col, exclude_cols, param, chunk_size, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 215, in test_drop_constant
+    result = drop_constant_features(df, tol=tol, exclude_cols=exclude_cols, chunk_size=chunk_size)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py", line 49, in drop_constant_features
+    modes_row = df.agg(*mode_exprs).first()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2997, in first
+    return self.head()
+           ^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2973, in head
+    rs = self.head(1)
+         ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2975, in head
+    return self.take(n)
+           ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1407, in take
+    return self.limit(num).collect()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1263, in collect
+    sock_info = self._jdf.collectToPython()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 326, in get_return_value
+    raise Py4JJavaError(
+py4j.protocol.Py4JJavaError: An error occurred while calling o10016.collectToPython.
+: org.apache.spark.SparkException: Job aborted due to stage failure: ResultStage 74 (first at /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py:49) has failed the maximum allowable number of times: 4. Most recent failure reason:
+org.apache.spark.shuffle.MetadataFetchFailedException: Missing an output location for shuffle 23 partition 0
+	at org.apache.spark.MapOutputTracker$.validateStatus(MapOutputTracker.scala:1747)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11(MapOutputTracker.scala:1694)
+	at org.apache.spark.MapOutputTracker$.$anonfun$convertMapStatuses$11$adapted(MapOutputTracker.scala:1693)
+	at scala.collection.Iterator.foreach(Iterator.scala:943)
+	at scala.collection.Iterator.foreach$(Iterator.scala:943)
+	at scala.collection.AbstractIterator.foreach(Iterator.scala:1431)
+	at org.apache.spark.MapOutputTracker$.convertMapStatuses(MapOutputTracker.scala:1693)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorIdImpl(MapOutputTracker.scala:1335)
+	at org.apache.spark.MapOutputTrackerWorker.getMapSizesByExecutorId(MapOutputTracker.scala:1297)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:141)
+	at org.apache.spark.shuffle.ShuffleManager.getReader(ShuffleManager.scala:63)
+	at org.apache.spark.shuffle.ShuffleManager.getReader$(ShuffleManager.scala:57)
+	at org.apache.spark.shuffle.sort.SortShuffleManager.getReader(SortShuffleManager.scala:73)
+	at org.apache.spark.sql.execution.ShuffledRowRDD.compute(ShuffledRowRDD.scala:200)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.rdd.MapPartitionsRDD.compute(MapPartitionsRDD.scala:52)
+	at org.apache.spark.rdd.RDD.computeOrReadCheckpoint(RDD.scala:367)
+	at org.apache.spark.rdd.RDD.iterator(RDD.scala:331)
+	at org.apache.spark.scheduler.ResultTask.runTask(ResultTask.scala:93)
+	at org.apache.spark.TaskContext.runTaskWithListeners(TaskContext.scala:166)
+	at org.apache.spark.scheduler.Task.run(Task.scala:141)
+	at org.apache.spark.executor.Executor$TaskRunner.$anonfun$run$4(Executor.scala:621)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally(SparkErrorUtils.scala:64)
+	at org.apache.spark.util.SparkErrorUtils.tryWithSafeFinally$(SparkErrorUtils.scala:61)
+	at org.apache.spark.util.Utils$.tryWithSafeFinally(Utils.scala:94)
+	at org.apache.spark.executor.Executor$TaskRunner.run(Executor.scala:624)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1136)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:635)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+	at org.apache.spark.scheduler.DAGScheduler.failJobAndIndependentStages(DAGScheduler.scala:2898)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2(DAGScheduler.scala:2834)
+	at org.apache.spark.scheduler.DAGScheduler.$anonfun$abortStage$2$adapted(DAGScheduler.scala:2833)
+	at scala.collection.mutable.ResizableArray.foreach(ResizableArray.scala:62)
+	at scala.collection.mutable.ResizableArray.foreach$(ResizableArray.scala:55)
+	at scala.collection.mutable.ArrayBuffer.foreach(ArrayBuffer.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.abortStage(DAGScheduler.scala:2833)
+	at org.apache.spark.scheduler.DAGScheduler.handleTaskCompletion(DAGScheduler.scala:2057)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.doOnReceive(DAGScheduler.scala:3096)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3036)
+	at org.apache.spark.scheduler.DAGSchedulerEventProcessLoop.onReceive(DAGScheduler.scala:3025)
+	at org.apache.spark.util.EventLoop$$anon$1.run(EventLoop.scala:49)
+	at org.apache.spark.scheduler.DAGScheduler.runJob(DAGScheduler.scala:995)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2393)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2414)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2433)
+	at org.apache.spark.SparkContext.runJob(SparkContext.scala:2458)
+	at org.apache.spark.rdd.RDD.$anonfun$collect$1(RDD.scala:1049)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:151)
+	at org.apache.spark.rdd.RDDOperationScope$.withScope(RDDOperationScope.scala:112)
+	at org.apache.spark.rdd.RDD.withScope(RDD.scala:410)
+	at org.apache.spark.rdd.RDD.collect(RDD.scala:1048)
+	at org.apache.spark.sql.execution.SparkPlan.executeCollect(SparkPlan.scala:448)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.$anonfun$executeCollect$1(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.withFinalPlanUpdate(AdaptiveSparkPlanExec.scala:420)
+	at org.apache.spark.sql.execution.adaptive.AdaptiveSparkPlanExec.executeCollect(AdaptiveSparkPlanExec.scala:392)
+	at org.apache.spark.sql.Dataset.$anonfun$collectToPython$1(Dataset.scala:4149)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$2(Dataset.scala:4323)
+	at org.apache.spark.sql.execution.QueryExecution$.withInternalError(QueryExecution.scala:546)
+	at org.apache.spark.sql.Dataset.$anonfun$withAction$1(Dataset.scala:4321)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$6(SQLExecution.scala:125)
+	at org.apache.spark.sql.execution.SQLExecution$.withSQLConfPropagated(SQLExecution.scala:201)
+	at org.apache.spark.sql.execution.SQLExecution$.$anonfun$withNewExecutionId$1(SQLExecution.scala:108)
+	at org.apache.spark.sql.SparkSession.withActive(SparkSession.scala:900)
+	at org.apache.spark.sql.execution.SQLExecution$.withNewExecutionId(SQLExecution.scala:66)
+	at org.apache.spark.sql.Dataset.withAction(Dataset.scala:4321)
+	at org.apache.spark.sql.Dataset.collectToPython(Dataset.scala:4146)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+2026-07-30 19:25:28,274 | INFO     | 
+================================================================================
+2026-07-30 19:25:28,274 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-30 19:25:28,274 | INFO     | ================================================================================

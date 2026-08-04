@@ -1,0 +1,25 @@
+# LGBM + SHAP on sample (10% rows, 100 random cols)
+# Dataset: SA_SMA
+# Total rows: 25,852,832
+# Sample rows: 2,584,365
+# Selected columns: 101
+# Selected features: 17
+# Time: 1.25 min
+# Features:
+aggr_mnth_v2_evt_attr_224
+aggr_mnth_v2_evt_attr_261
+aggr_mnth_v2_evt_attr_380
+dmik_avg_rel_salary
+bki_response_evt_attr_847
+bki_all_feats_max_debt_all_amt_6m
+aggr_mnth_v2_evt_attr_73
+aggr_mnth_v2_evt_attr_306
+bki_all_feats_avg_debt_sber_kk_amt_3m
+aggr_mnth_v2_evt_attr_74
+aggr_mnth_v2_evt_attr_793
+aggr_mnth_v2_evt_attr_953
+aggr_mnth_v2_evt_attr_476
+aggr_mnth_v2_evt_attr_293
+dmik_in_c2c_sber_sum
+bki_all_feats_cust_debt_load_v2_pct
+aggr_mnth_v2_evt_attr_162

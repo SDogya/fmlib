@@ -1,0 +1,108 @@
+# Простой конфиг для new_simple_pipeline.py
+# Формат: YAML с шагами в порядке выполнения
+
+datasets:
+  # SA_SMA - активный датасет
+  SA_SMA:
+    enabled: true
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+    has_split_type: false
+  
+  # SA_ERKC - отключен для тестов
+  SA_ERKC:
+    enabled: false
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+    has_split_type: false
+
+  # TD - отключен
+  TD:
+    enabled: false
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response
+    has_split_type: true
+
+  # PD - отключен
+  PD:
+    enabled: false
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc
+    has_split_type: true
+
+# Пайплайн: шаги выполняются ПОСЛЕДОВАТЕЛЬНО
+pipeline:
+  steps:
+    # Шаг 1: Удалить константные признаки
+    - method: drop_constant
+      params:
+        tol: 0.98
+        chunk_size: 1000
+      enabled: true
+
+    # Шаг 2: Удалить признаки с низкой дисперсией
+    - method: drop_low_variance
+      params:
+        min_variance: 1e-5
+        scale_method: standard
+        chunk_size: 1000
+      enabled: true
+
+    # Шаг 3: Удалить коррелированные признаки
+    - method: drop_correlated
+      params:
+        corr_threshold: 0.95
+      enabled: true
+
+    # Шаг 4: BorutaSHAP - финальный отбор
+    - method: boruta_shap
+      params:
+        model_type: lgbm
+        boruta_trials: 50
+        parameters:
+          n_estimators:
+            type: int
+            min: 100
+            max: 1400
+          num_leaves:
+            type: int
+            min: 8
+            max: 64
+          max_depth:
+            type: int
+            min: 4
+            max: 7
+          learning_rate:
+            type: float
+            min: 0.01
+            max: 0.1
+            log: true
+          min_child_samples:
+            type: int
+            min: 16
+            max: 64
+          subsample:
+            type: float
+            min: 0.7
+            max: 1.0
+          colsample_bytree:
+            type: float
+            min: 0.7
+            max: 1.0
+          reg_alpha:
+            type: float
+            min: 0.01
+            max: 1.0
+            log: true
+          reg_lambda:
+            type: float
+            min: 0.01
+            max: 1.0
+            log: true
+          boosting_type:
+            type: categorical
+            values:
+              - gbdt
+              - dart
+              - goss
+        optuna_params:
+          n_trials: 100
+          n_startup_trials: 50
+          sampler: TPE
+      enabled: true

@@ -1,0 +1,163 @@
+2026-07-30 10:25:46,050 | INFO     | Запуск пайплайна отбора признаков
+2026-07-30 10:25:46,050 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-30 10:25:46,059 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-30 10:26:20,985 | INFO     | Spark сессия запущена! Время: 34.93 сек
+2026-07-30 10:26:20,986 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-30 10:28:23,919 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-30 10:28:23,922 | INFO     |   Загрузка колонок для дропа из results/sequential/PD/constant_0.95_cols.txt
+2026-07-30 10:28:23,925 | INFO     |   Найдено 721 колонок для дропа
+2026-07-30 10:28:26,015 | INFO     |   После дропа: 1781 колонок
+2026-07-30 10:28:26,015 | INFO     | 
+================================================================================
+2026-07-30 10:28:26,015 | INFO     | ПИПЛИН ОТБОРА: PD
+2026-07-30 10:28:26,015 | INFO     | ================================================================================
+2026-07-30 10:28:26,015 | INFO     |   Target column: target_attr_1
+2026-07-30 10:28:26,016 | INFO     |   Exclude columns: ['report_month', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_1', 'epk_id', 'dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_kids_school_flg', 'dmik_tag_video_content_flg']
+2026-07-30 10:28:26,016 | INFO     |   Порядок методов: ['drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-30 10:28:26,016 | INFO     | 
+================================================================================
+2026-07-30 10:28:26,016 | INFO     | Шаг 1: drop_constant
+2026-07-30 10:28:26,016 | INFO     | ================================================================================
+2026-07-30 10:28:26,016 | INFO     |   Test drop_constant with tol=0.95, chunk_size=1000
+2026-07-30 10:34:55,184 | ERROR    |   ОШИБКА: An error occurred while calling o16253.collectToPython
+2026-07-30 10:34:55,185 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 436, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 271, in run_pipeline
+    result_df = test_drop_constant(current_df, target_col, exclude_cols, param, chunk_size, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 159, in test_drop_constant
+    result = drop_constant_features(df, tol=tol, exclude_cols=exclude_cols, chunk_size=chunk_size)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py", line 87, in drop_constant_features
+    stats_row = df.agg(*agg_exprs).first()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2997, in first
+    return self.head()
+           ^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2973, in head
+    rs = self.head(1)
+         ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2975, in head
+    return self.take(n)
+           ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1407, in take
+    return self.limit(num).collect()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1263, in collect
+    sock_info = self._jdf.collectToPython()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o16253.collectToPython
+2026-07-30 10:34:55,187 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-30 10:35:58,877 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-30 10:35:58,877 | INFO     |   Загрузка колонок для дропа из results/sequential/SA_ERKC/constant_0.95_cols.txt
+2026-07-30 10:35:58,880 | INFO     |   Найдено 673 колонок для дропа
+2026-07-30 10:36:00,671 | INFO     |   После дропа: 1830 колонок
+2026-07-30 10:36:00,671 | INFO     | 
+================================================================================
+2026-07-30 10:36:00,671 | INFO     | ПИПЛИН ОТБОРА: SA_ERKC
+2026-07-30 10:36:00,671 | INFO     | ================================================================================
+2026-07-30 10:36:00,671 | INFO     |   Target column: target_attr_1
+2026-07-30 10:36:00,672 | INFO     |   Exclude columns: ['report_month', 'split_type', 'dmik_kids_small_flg', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_1', 'epk_id', 'dmik_tag_kids_flg', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_kids_school_flg', 'dmik_tag_video_content_flg']
+2026-07-30 10:36:00,672 | INFO     |   Порядок методов: ['drop_constant', 'drop_low_variance', 'drop_correlated', 'lgbm_shap']
+2026-07-30 10:36:00,672 | INFO     | 
+================================================================================
+2026-07-30 10:36:00,672 | INFO     | Шаг 1: drop_constant
+2026-07-30 10:36:00,672 | INFO     | ================================================================================
+2026-07-30 10:36:00,672 | INFO     |   Test drop_constant with tol=0.95, chunk_size=1000
+2026-07-30 10:38:47,018 | ERROR    |   ОШИБКА: An error occurred while calling o21101.collectToPython
+2026-07-30 10:38:47,019 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 436, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 271, in run_pipeline
+    result_df = test_drop_constant(current_df, target_col, exclude_cols, param, chunk_size, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 159, in test_drop_constant
+    result = drop_constant_features(df, tol=tol, exclude_cols=exclude_cols, chunk_size=chunk_size)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/DropConstFeature.py", line 49, in drop_constant_features
+    modes_row = df.agg(*mode_exprs).first()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2997, in first
+    return self.head()
+           ^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2973, in head
+    rs = self.head(1)
+         ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2975, in head
+    return self.take(n)
+           ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1407, in take
+    return self.limit(num).collect()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1263, in collect
+    sock_info = self._jdf.collectToPython()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o21101.collectToPython
+2026-07-30 10:38:47,020 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-30 10:38:47,216 | ERROR    |   ОШИБКА: An error occurred while calling o21102.parquet
+2026-07-30 10:38:47,216 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 413, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o21102.parquet
+2026-07-30 10:38:47,217 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-30 10:38:47,360 | ERROR    |   ОШИБКА: An error occurred while calling o21105.parquet
+2026-07-30 10:38:47,360 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 413, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o21105.parquet
+2026-07-30 10:38:47,360 | INFO     | 
+================================================================================
+2026-07-30 10:38:47,360 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-30 10:38:47,360 | INFO     | ================================================================================

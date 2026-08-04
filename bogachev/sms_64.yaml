@@ -1,0 +1,59 @@
+datasets:
+  train: /home/datalab/projects/avatar/avatards/shchepanovskiy/campaign_validation_tests/1221_all_features_for_fs/split_type=train
+  valid: /home/datalab/projects/avatar/avatards/shchepanovskiy/campaign_validation_tests/1221_all_features_for_fs/split_type=valid
+  test:  /home/datalab/projects/avatar/avatards/shchepanovskiy/campaign_validation_tests/1221_all_features_for_fs/split_type=oot
+  raw: /user/team/team_ai_avatar/ds/shchepanovskiy/campaign_validation_tests/1221_all_features_for_fs
+  target_column: target
+  drop_columns:
+    - epk_id
+    - report_month
+    - seq_hidden_state
+    - split_type
+    # - month_part
+    - ml360
+    - score
+    - camp_type
+    - prl_tax_payer_inn
+    - dep_acct_lst_division_dk
+    - seg_main_card_dwh_id
+    - dep_social_bitmask_l12m_cd
+    - seg_crd_segm_special_cd
+    - seg_crd_segm_special_prev_cd
+    - ctl_loading
+    - dep_lst_payroll_agrmnt_id
+    - seg_main_card_w4_id
+    - row_actual_from_dt
+    - crd_lst_agrmnt_osb_cd
+    - actual_epk_id
+    - seg_crd_segm_special_set_dt
+    - prd_1st_prod_division_dk
+    - prd_lst_prod_osb_cd
+    - dep_payroll_bitmask_l12m_cd
+    - channel_name_crm
+    - prl_agrmnt_nbr
+    - row_upd_dttm
+    - tp_lst_division_dk
+    - crd_lst_agrmnt_vsp_cd
+    - prd_lst_prod_division_dk
+    - dep_acct_1st_division_dk
+    - dep_acct_max_bal_division_dk
+    - row_actual_to_dt
+    - row_upd_dttm_lag1
+    - prd_lst_prod_vsp_cd
+
+  cat_columns_path: /home/datalab/nfs/avatar_fm/experiments/shchepanovskiy/fs_campaign/campaign_all_cat_cols.yaml
+  task_type: binary_classification
+parameters:
+  eval_metric: AUC
+  loss_function: Logloss
+  early_stopping_rounds: 100
+  metric_period: 5
+  task_type: GPU
+  use_best_model: true
+  verbose: true
+feature_selection_params:
+  algorithm: RecursiveByLossFunctionChange
+  num_features_to_select: 64
+  steps: 60
+  shap_calc_type: Regular
+output_path: /home/datalab/nfs/avatar_fm/experiments/shchepanovskiy/fs_campaign/outputs_campaigh_validation_tests/sms_64.yaml

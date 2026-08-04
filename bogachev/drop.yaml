@@ -1,0 +1,17 @@
+# Конфиг для вычисления дропнутых фичей
+
+datasets:
+  PD:
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc
+    has_split_type: true
+    selected_file: /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/PD/boruta_shap_selected.txt
+
+  SA_ERKC:
+    path: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+    has_split_type: false
+    selected_file: /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/SA_ERKC/boruta_shap_selected.txt
+
+  TD:
+    path: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response
+    has_split_type: true
+    selected_file: /home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/TD/boruta_shap_selected.txt

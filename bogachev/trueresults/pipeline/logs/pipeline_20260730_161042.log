@@ -1,0 +1,132 @@
+2026-07-30 16:10:42,292 | INFO     | Запуск пайплайна отбора признаков
+2026-07-30 16:10:42,293 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-30 16:10:42,303 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-30 16:11:19,276 | INFO     | Spark сессия запущена! Время: 36.97 сек
+2026-07-30 16:11:19,278 | INFO     | 
+PD: пропущено (disabled in config)
+2026-07-30 16:11:19,278 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-30 16:12:52,532 | INFO     |   Загружено 5,198,303 строк и 2503 колонок
+2026-07-30 16:12:52,536 | INFO     |   Target column: target_attr_1
+2026-07-30 16:12:52,536 | INFO     |   Exclude columns (12): ['bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_video_content_flg', 'report_month', 'target_attr_1', 'split_type', 'target_attr_2', 'dmik_kids_school_flg', 'dmik_tag_kids_flg', 'epk_id', 'dmik_kids_small_flg', 'target_attr_3', 'bki_all_feats_count_mon_between_reports_okb']
+2026-07-30 16:12:52,536 | INFO     |   Загрузка колонок для дропа из ~/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/SA_ERKC/variance_1e-05_minmax_cols.txt
+2026-07-30 16:12:52,550 | INFO     |   Найдено 1045 колонок для дропа
+2026-07-30 16:12:52,551 | INFO     |   dropped_cols (first 20): ['bki_response_evt_attr_1015', 'bki_response_evt_attr_162', 'bki_response_evt_attr_746', 'bki_response_evt_attr_1057', 'bki_response_evt_attr_152', 'bki_response_evt_attr_196', 'aggr_mnth_v2_evt_attr_229', 'bki_all_feats_relative_delta_cust_debt_load_v1_norm_amt_1m', 'dmik_merch_gr_big_rent_transport_ntrx', 'bki_response_evt_attr_909', 'bki_response_evt_attr_791', 'bki_response_evt_attr_436', 'dmik_yandex_out_amt', 'bki_response_evt_attr_1083', 'dmik_ozon_bank_out_amt', 'dmik_merch_gr_big_sport_ntrx', 'target_attr_2', 'aggr_mnth_v2_evt_attr_860', 'bki_response_evt_attr_632', 'bki_response_evt_attr_320']
+2026-07-30 16:12:52,551 | INFO     |   После фильтрации exclude_cols: 1044 колонок для дропа
+2026-07-30 16:12:52,551 | INFO     |   dropped_cols after filter (first 20): ['bki_response_evt_attr_1015', 'bki_response_evt_attr_162', 'bki_response_evt_attr_746', 'bki_response_evt_attr_1057', 'bki_response_evt_attr_152', 'bki_response_evt_attr_196', 'aggr_mnth_v2_evt_attr_229', 'bki_all_feats_relative_delta_cust_debt_load_v1_norm_amt_1m', 'dmik_merch_gr_big_rent_transport_ntrx', 'bki_response_evt_attr_909', 'bki_response_evt_attr_791', 'bki_response_evt_attr_436', 'dmik_yandex_out_amt', 'bki_response_evt_attr_1083', 'dmik_ozon_bank_out_amt', 'dmik_merch_gr_big_sport_ntrx', 'aggr_mnth_v2_evt_attr_860', 'bki_response_evt_attr_632', 'bki_response_evt_attr_320', 'bki_response_evt_attr_1007']
+2026-07-30 16:12:54,237 | INFO     |   После дропа: 1459 колонок
+2026-07-30 16:12:54,237 | INFO     |   current_df columns (first 20): ['epk_id', 'target_attr_1', 'report_month', 'target_attr_2', 'target_attr_3', 'aggr_mnth_v2_evt_attr_1010', 'aggr_mnth_v2_evt_attr_1022', 'aggr_mnth_v2_evt_attr_1027', 'aggr_mnth_v2_evt_attr_1029', 'aggr_mnth_v2_evt_attr_158', 'aggr_mnth_v2_evt_attr_161', 'aggr_mnth_v2_evt_attr_180', 'aggr_mnth_v2_evt_attr_188', 'aggr_mnth_v2_evt_attr_198', 'aggr_mnth_v2_evt_attr_213', 'aggr_mnth_v2_evt_attr_217', 'aggr_mnth_v2_evt_attr_223', 'aggr_mnth_v2_evt_attr_228', 'aggr_mnth_v2_evt_attr_23', 'aggr_mnth_v2_evt_attr_274']
+2026-07-30 16:12:54,237 | INFO     | 
+================================================================================
+2026-07-30 16:12:54,237 | INFO     | ПИПЛИН ОТБОРА: SA_ERKC
+2026-07-30 16:12:54,238 | INFO     | ================================================================================
+2026-07-30 16:13:02,607 | INFO     |   [run_pipeline] START - df: 1459 cols, 5,198,303 rows
+2026-07-30 16:13:02,608 | INFO     |   [run_pipeline] target_col: target_attr_1
+2026-07-30 16:13:02,608 | INFO     |   [run_pipeline] exclude_cols (12): ['bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_video_content_flg', 'report_month', 'target_attr_1', 'split_type', 'target_attr_2', 'dmik_kids_school_flg', 'dmik_tag_kids_flg', 'epk_id', 'dmik_kids_small_flg']...
+2026-07-30 16:13:02,608 | INFO     |   Порядок методов: [('stratified_sampling - 1000000', None), ('drop_correlated', None), ('stratified_sampling - 250000', None), ('lgbm_shap', None)]
+2026-07-30 16:13:02,608 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-30 16:13:02,608 | INFO     |   drop_null:
+2026-07-30 16:13:02,608 | INFO     |     enabled: false
+2026-07-30 16:13:02,608 | INFO     |   drop_constant:
+2026-07-30 16:13:02,608 | INFO     |     enabled: true, params: [0.95], chunk_size: 1000
+2026-07-30 16:13:02,608 | INFO     |   drop_low_variance:
+2026-07-30 16:13:02,608 | INFO     |     enabled: true, param: 1e-5, scale_method: minmax
+2026-07-30 16:13:02,608 | INFO     |   drop_correlated:
+2026-07-30 16:13:02,608 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 16:13:02,608 | INFO     |   lgbm_shap:
+2026-07-30 16:13:02,608 | INFO     |     enabled: true, params: [0.95]
+2026-07-30 16:13:02,608 | INFO     | 
+================================================================================
+2026-07-30 16:13:02,608 | INFO     | Шаг 1: stratified_sampling - 1000000
+2026-07-30 16:13:02,608 | INFO     | ================================================================================
+2026-07-30 16:13:02,608 | INFO     | 
+================================================================================
+2026-07-30 16:13:02,609 | INFO     | Шаг 2: drop_correlated
+2026-07-30 16:13:02,609 | INFO     | ================================================================================
+2026-07-30 16:13:02,609 | INFO     |   Гиперпараметры: corr_threshold=0.95
+2026-07-30 16:13:02,609 | INFO     |   Test drop_correlated with corr_threshold=0.95
+2026-07-30 16:14:18,915 | ERROR    |   ОШИБКА: An error occurred while calling o5937.collectToPython
+2026-07-30 16:14:18,915 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 655, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger, target_col, exclude_cols)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 476, in run_pipeline
+    result_df = test_drop_correlated(current_df, target_col, exclude_cols, param, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 239, in test_drop_correlated
+    result = drop_correlated_features(df, corr_threshold=corr_threshold, exclude_cols=exclude_cols)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/CorrDropper.py", line 41, in drop_correlated_features
+    counts = df.agg(*agg_exprs).first().asDict()
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2997, in first
+    return self.head()
+           ^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2973, in head
+    rs = self.head(1)
+         ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 2975, in head
+    return self.take(n)
+           ^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1407, in take
+    return self.limit(num).collect()
+           ^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1263, in collect
+    sock_info = self._jdf.collectToPython()
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o5937.collectToPython
+2026-07-30 16:14:18,918 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-30 16:14:19,509 | ERROR    |   ОШИБКА: An error occurred while calling o5938.parquet
+2026-07-30 16:14:19,509 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 613, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o5938.parquet
+2026-07-30 16:14:19,511 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-30 16:14:19,686 | ERROR    |   ОШИБКА: An error occurred while calling o5941.parquet
+2026-07-30 16:14:19,686 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 613, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o5941.parquet
+2026-07-30 16:14:19,687 | INFO     | 
+================================================================================
+2026-07-30 16:14:19,687 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-30 16:14:19,687 | INFO     | ================================================================================

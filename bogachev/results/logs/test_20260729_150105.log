@@ -1,0 +1,118 @@
+2026-07-29 15:01:05,960 | INFO     | Запуск тестирования методов
+2026-07-29 15:01:05,960 | INFO     | 
+Загрузка путей из paths.yaml
+2026-07-29 15:01:05,966 | INFO     | Найдено 4 датасетов: ['PD', 'TD', 'SA_SMA', 'SA_ERKC']
+2026-07-29 15:01:40,242 | INFO     | Spark сессия запущена! Время: 34.28 сек
+2026-07-29 15:01:40,243 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-29 15:02:52,635 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-29 15:02:52,637 | INFO     | 
+================================================================================
+2026-07-29 15:02:52,637 | INFO     | Тестирование датасета: PD
+2026-07-29 15:02:52,637 | INFO     | ================================================================================
+2026-07-29 15:02:52,637 | INFO     |   Target column: target_attr_1
+2026-07-29 15:02:52,639 | INFO     |   Exclude columns: ['bki_all_feats_count_mon_between_reports_equ', 'dmik_kids_small_flg', 'dmik_tag_video_content_flg', 'bki_all_feats_count_mon_between_reports_okb', 'dmik_kids_school_flg', 'report_month', 'epk_id', 'dmik_tag_kids_flg', 'target_attr_1']
+2026-07-29 15:02:52,639 | INFO     |   Total columns: 2502
+2026-07-29 15:02:52,639 | INFO     |   get_method_params(drop_null): found in global_methods, enabled=False
+2026-07-29 15:02:52,639 | INFO     | 
+--- drop_null_features: пропущено (disabled) ---
+2026-07-29 15:02:52,639 | INFO     |   get_method_params(drop_constant): found in global_methods, enabled=False
+2026-07-29 15:02:52,639 | INFO     | 
+--- drop_constant_features: пропущено (disabled) ---
+2026-07-29 15:02:52,639 | INFO     |   get_method_params(drop_low_variance): found in global_methods, enabled=False
+2026-07-29 15:02:52,639 | INFO     | 
+--- drop_low_variance_features: пропущено (disabled) ---
+2026-07-29 15:02:52,639 | INFO     |   get_method_params(drop_correlated): found in global_methods, enabled=True
+2026-07-29 15:02:52,639 | INFO     | 
+--- drop_correlated_features ---
+2026-07-29 15:02:52,639 | INFO     |   Test drop_correlated with corr_threshold=0.9
+2026-07-29 15:13:24,216 | ERROR    |   ОШИБКА: An error occurred while calling z:org.apache.spark.ml.stat.Correlation.corr
+2026-07-29 15:13:24,217 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 406, in main
+    run_dataset_tests_with_config(df, dataset_name, RESULTS_DIR, method_config, logger)
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 313, in run_dataset_tests_with_config
+    dropped = test_drop_correlated(df, target_col, exclude_cols, param, dataset_name, logger)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 210, in test_drop_correlated
+    result = drop_correlated_features(df, corr_threshold=corr_threshold, exclude_cols=exclude_cols)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods/CorrDropper.py", line 63, in drop_correlated_features
+    matrix_row = Correlation.corr(vector_df, "features", method='pearson').head()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/ml/stat.py", line 181, in corr
+    return _java2py(sc, javaCorrObj.corr(*args))
+                        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling z:org.apache.spark.ml.stat.Correlation.corr
+2026-07-29 15:13:24,219 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-29 15:13:24,407 | ERROR    |   ОШИБКА: An error occurred while calling o7685.parquet
+2026-07-29 15:13:24,407 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 399, in main
+    df = spark.read.parquet(train_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o7685.parquet
+2026-07-29 15:13:24,408 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-29 15:13:24,535 | ERROR    |   ОШИБКА: An error occurred while calling o7688.parquet
+2026-07-29 15:13:24,535 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 399, in main
+    df = spark.read.parquet(train_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o7688.parquet
+2026-07-29 15:13:24,536 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-29 15:13:25,215 | ERROR    |   ОШИБКА: An error occurred while calling o7691.parquet
+2026-07-29 15:13:25,215 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/methods_test.py", line 399, in main
+    df = spark.read.parquet(train_path)
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o7691.parquet
+2026-07-29 15:13:25,216 | INFO     | 
+================================================================================
+2026-07-29 15:13:25,216 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-29 15:13:25,216 | INFO     | ================================================================================

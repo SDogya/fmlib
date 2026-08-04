@@ -1,0 +1,90 @@
+2026-07-31 11:45:42,438 | INFO     | Запуск пайплайна отбора признаков
+2026-07-31 11:45:42,438 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-31 11:45:42,446 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-31 11:46:16,477 | INFO     | Spark сессия запущена! Время: 34.03 сек
+2026-07-31 11:46:16,479 | INFO     | 
+PD: пропущено (disabled in config)
+2026-07-31 11:46:16,479 | INFO     | 
+SA_ERKC: пропущено (disabled in config)
+2026-07-31 11:46:16,479 | INFO     | 
+TD: пропущено (disabled in config)
+2026-07-31 11:46:16,479 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-31 11:46:39,054 | INFO     |   Загружено 25,852,832 строк и 2503 колонок
+2026-07-31 11:46:39,057 | INFO     |   Target column: target_attr_1
+2026-07-31 11:46:39,057 | INFO     |   Exclude columns (12): ['bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'report_month', 'dmik_tag_video_content_flg', 'target_attr_2', 'dmik_kids_small_flg', 'epk_id', 'dmik_kids_school_flg', 'target_attr_1', 'target_attr_3', 'dmik_tag_kids_flg']
+2026-07-31 11:46:39,060 | INFO     |   Загрузка колонок для дропа из results/pipeline/SA_SMA/correlated_0.95_cols.txt
+2026-07-31 11:46:39,062 | INFO     |   Найдено 1572 колонок для дропа
+2026-07-31 11:46:39,062 | INFO     |   dropped_cols (first 20): ['bki_response_evt_attr_501', 'dmik_mean_home_repair', 'bki_response_evt_attr_626', 'bki_all_feats_min_debt_no_ik_amt_3m', 'bki_response_evt_attr_59', 'aggr_mnth_v2_evt_attr_160', 'bki_response_evt_attr_180', 'bki_response_evt_attr_412', 'aggr_mnth_v2_evt_attr_771', 'bki_response_evt_attr_1088', 'bki_response_evt_attr_939', 'aggr_mnth_v2_evt_attr_663', 'dmik_merch_gr_big_beauty_ntrx', 'dmik_merch_gr_small_education_ntrx', 'bki_all_feats_spike_down_debt_ik_amt_1m', 'bki_all_feats_relative_delta_eqfx_n2523_score_val_1m', 'bki_all_feats_avg_debt_all_amt_6m', 'dmik_cc_pos_share_in_total_pos', 'bki_response_evt_attr_441', 'bki_response_evt_attr_365']
+2026-07-31 11:46:39,063 | INFO     |   После фильтрации exclude_cols: 1560 колонок для дропа
+2026-07-31 11:46:39,063 | INFO     |   dropped_cols after filter (first 20): ['bki_response_evt_attr_501', 'dmik_mean_home_repair', 'bki_response_evt_attr_626', 'bki_all_feats_min_debt_no_ik_amt_3m', 'bki_response_evt_attr_59', 'aggr_mnth_v2_evt_attr_160', 'bki_response_evt_attr_180', 'bki_response_evt_attr_412', 'aggr_mnth_v2_evt_attr_771', 'bki_response_evt_attr_1088', 'bki_response_evt_attr_939', 'aggr_mnth_v2_evt_attr_663', 'dmik_merch_gr_big_beauty_ntrx', 'dmik_merch_gr_small_education_ntrx', 'bki_all_feats_spike_down_debt_ik_amt_1m', 'bki_all_feats_relative_delta_eqfx_n2523_score_val_1m', 'bki_all_feats_avg_debt_all_amt_6m', 'dmik_cc_pos_share_in_total_pos', 'bki_response_evt_attr_441', 'bki_response_evt_attr_365']
+2026-07-31 11:46:40,338 | INFO     |   После дропа: 943 колонок
+2026-07-31 11:46:40,338 | INFO     |   current_df columns (first 20): ['epk_id', 'target_attr_1', 'report_month', 'target_attr_2', 'target_attr_3', 'aggr_mnth_v2_evt_attr_1010', 'aggr_mnth_v2_evt_attr_1022', 'aggr_mnth_v2_evt_attr_1027', 'aggr_mnth_v2_evt_attr_1029', 'aggr_mnth_v2_evt_attr_158', 'aggr_mnth_v2_evt_attr_161', 'aggr_mnth_v2_evt_attr_179', 'aggr_mnth_v2_evt_attr_180', 'aggr_mnth_v2_evt_attr_188', 'aggr_mnth_v2_evt_attr_198', 'aggr_mnth_v2_evt_attr_213', 'aggr_mnth_v2_evt_attr_217', 'aggr_mnth_v2_evt_attr_223', 'aggr_mnth_v2_evt_attr_228', 'aggr_mnth_v2_evt_attr_23']
+2026-07-31 11:46:40,338 | INFO     | 
+================================================================================
+2026-07-31 11:46:40,338 | INFO     | ПИПЛИН ОТБОРА: SA_SMA
+2026-07-31 11:46:40,338 | INFO     | ================================================================================
+2026-07-31 11:46:51,655 | INFO     |   [run_pipeline] START - df: 943 cols, 25,852,832 rows
+2026-07-31 11:46:51,655 | INFO     |   [run_pipeline] target_col: target_attr_1
+2026-07-31 11:46:51,655 | INFO     |   [run_pipeline] exclude_cols (12): ['bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'report_month', 'dmik_tag_video_content_flg', 'target_attr_2', 'dmik_kids_small_flg', 'epk_id', 'dmik_kids_school_flg', 'target_attr_1']...
+2026-07-31 11:46:51,655 | INFO     |   Порядок методов: [('stratified_sampling', [1000000]), ('drop_correlated', None), ('stratified_sampling', [250000]), ('lgbm_shap', None)]
+2026-07-31 11:46:51,655 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-31 11:46:51,655 | INFO     |   drop_null:
+2026-07-31 11:46:51,655 | INFO     |     enabled: false
+2026-07-31 11:46:51,655 | INFO     |   drop_constant:
+2026-07-31 11:46:51,656 | INFO     |     enabled: true, params: [0.95], chunk_size: 200
+2026-07-31 11:46:51,656 | INFO     |   drop_low_variance:
+2026-07-31 11:46:51,656 | INFO     |     enabled: true, param: 1e-5, scale_method: minmax
+2026-07-31 11:46:51,656 | INFO     |   drop_correlated:
+2026-07-31 11:46:51,656 | INFO     |     enabled: true, params: [0.95]
+2026-07-31 11:46:51,656 | INFO     |   lgbm_shap:
+2026-07-31 11:46:51,656 | INFO     |     enabled: true, params: [0.95]
+2026-07-31 11:46:51,656 | INFO     | 
+================================================================================
+2026-07-31 11:46:51,656 | INFO     | Шаг 1: stratified_sampling
+2026-07-31 11:46:51,656 | INFO     | ================================================================================
+2026-07-31 11:46:51,656 | INFO     |   Гиперпараметры: max_rows=1000000
+2026-07-31 11:46:51,656 | INFO     |   Test stratified_sampling with max_rows=1000000
+2026-07-31 11:46:59,924 | INFO     |   [test_stratified_sampling] df: 943 cols, 25,852,832 rows
+2026-07-31 11:49:12,893 | INFO     |   Выкинуто: 1560 колонок -> results/pipeline/SA_SMA/stratified_1000000_cols.txt
+2026-07-31 11:49:12,894 | INFO     |   Колонок на выходе: 943
+2026-07-31 11:49:12,894 | INFO     | 
+================================================================================
+2026-07-31 11:49:12,894 | INFO     | Шаг 2: drop_correlated
+2026-07-31 11:49:12,894 | INFO     | ================================================================================
+2026-07-31 11:49:12,894 | INFO     |   Гиперпараметры: corr_threshold=0.95
+2026-07-31 11:49:12,894 | INFO     |   Test drop_correlated with corr_threshold=0.95
+2026-07-31 11:59:23,161 | INFO     |   Выкинуто: 1575 колонок -> results/pipeline/SA_SMA/correlated_0.95_cols.txt
+2026-07-31 11:59:23,163 | INFO     |   Колонок на выходе: 928
+2026-07-31 11:59:23,163 | INFO     | 
+================================================================================
+2026-07-31 11:59:23,163 | INFO     | Шаг 3: stratified_sampling
+2026-07-31 11:59:23,163 | INFO     | ================================================================================
+2026-07-31 11:59:23,163 | INFO     |   Гиперпараметры: max_rows=250000
+2026-07-31 11:59:23,163 | INFO     |   Test stratified_sampling with max_rows=250000
+2026-07-31 11:59:26,433 | INFO     |   [test_stratified_sampling] df: 928 cols, 999,314 rows
+2026-07-31 11:59:36,200 | INFO     |   Выкинуто: 1575 колонок -> results/pipeline/SA_SMA/stratified_250000_cols.txt
+2026-07-31 11:59:36,201 | INFO     |   Колонок на выходе: 928
+2026-07-31 11:59:36,201 | INFO     | 
+================================================================================
+2026-07-31 11:59:36,201 | INFO     | Шаг 4: lgbm_shap
+2026-07-31 11:59:36,201 | INFO     | ================================================================================
+2026-07-31 11:59:36,201 | INFO     |   Гиперпараметры: threshold=0.95
+2026-07-31 11:59:36,201 | INFO     |   Test lgbm_shap with threshold=0.95
+2026-07-31 11:59:38,888 | INFO     |   [test_drop_lgbm_shap] df: 928 cols, 251,073 rows
+2026-07-31 11:59:38,888 | INFO     |   [test_drop_lgbm_shap] target_col: target_attr_1
+2026-07-31 11:59:38,888 | INFO     |   [test_drop_lgbm_shap] exclude_cols (12): ['bki_all_feats_count_mon_between_reports_equ', 'bki_all_feats_count_mon_between_reports_okb', 'split_type', 'report_month', 'dmik_tag_video_content_flg', 'target_attr_2', 'dmik_kids_small_flg', 'epk_id', 'dmik_kids_school_flg', 'target_attr_1']...
+2026-07-31 11:59:38,889 | INFO     |   [test_drop_lgbm_shap] stratified_df: True
+2026-07-31 12:10:26,490 | INFO     |   Selected: 308
+2026-07-31 12:10:26,491 | INFO     | 
+================================================================================
+2026-07-31 12:10:26,491 | INFO     | ВСЕ ШАГИ ПИПЛАЙНА ЗАВЕРШЕНЫ!
+2026-07-31 12:10:26,491 | INFO     | ================================================================================
+2026-07-31 12:10:26,492 | INFO     | 
+Итоговое количество колонок: 928
+2026-07-31 12:10:26,492 | INFO     | 
+================================================================================
+2026-07-31 12:10:26,492 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-31 12:10:26,492 | INFO     | ================================================================================

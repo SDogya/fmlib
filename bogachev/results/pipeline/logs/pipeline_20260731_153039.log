@@ -1,0 +1,134 @@
+2026-07-31 15:30:39,347 | INFO     | Запуск пайплайна отбора признаков
+2026-07-31 15:30:39,348 | INFO     | 
+Загрузка путей из pipeline_conf.yaml
+2026-07-31 15:30:39,359 | INFO     | Найдено 4 датасетов: ['PD', 'SA_ERKC', 'TD', 'SA_SMA']
+2026-07-31 15:31:13,820 | INFO     | Spark сессия запущена! Время: 34.46 сек
+2026-07-31 15:31:13,822 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train
+2026-07-31 15:31:40,380 | INFO     |   Загружено 2,817,137 строк и 2502 колонок
+2026-07-31 15:31:40,383 | INFO     |   Target column: target_attr_1
+2026-07-31 15:31:40,383 | INFO     |   Exclude columns (11): ['dmik_tag_video_content_flg', 'dmik_kids_school_flg', 'target_attr_1', 'target_attr_2', 'report_month', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_kids_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_3', 'dmik_kids_small_flg']
+2026-07-31 15:31:40,384 | INFO     |   Файл с оставленными колонками не найден: ~/nfs/bogachev/fmlib-feature-selection/dev/bogachev/results/pipeline/PD/stage_0_1_SELECTED.txt
+2026-07-31 15:31:40,384 | INFO     | 
+================================================================================
+2026-07-31 15:31:40,384 | INFO     | ПИПЛИН ОТБОРА: PD
+2026-07-31 15:31:40,384 | INFO     | ================================================================================
+2026-07-31 15:31:54,320 | INFO     |   [run_pipeline] START - df: 2502 cols, 2,817,137 rows
+2026-07-31 15:31:54,320 | INFO     |   [run_pipeline] target_col: target_attr_1
+2026-07-31 15:31:54,320 | INFO     |   [run_pipeline] exclude_cols (11): ['dmik_tag_video_content_flg', 'dmik_kids_school_flg', 'target_attr_1', 'target_attr_2', 'report_month', 'bki_all_feats_count_mon_between_reports_equ', 'dmik_tag_kids_flg', 'epk_id', 'bki_all_feats_count_mon_between_reports_okb', 'target_attr_3']...
+2026-07-31 15:31:54,320 | INFO     |   Порядок методов: [('stratified_sampling', [750000]), ('boruta_shap', None)]
+2026-07-31 15:31:54,320 | INFO     | 
+ГИПЕРПАРАМЕТРЫ МЕТОДОВ:
+2026-07-31 15:31:54,320 | INFO     |   drop_null:
+2026-07-31 15:31:54,320 | INFO     |     enabled: false
+2026-07-31 15:31:54,320 | INFO     |   drop_constant:
+2026-07-31 15:31:54,320 | INFO     |     enabled: true, params: [0.95], chunk_size: 1000
+2026-07-31 15:31:54,320 | INFO     |   drop_low_variance:
+2026-07-31 15:31:54,321 | INFO     |     enabled: true, param: 1e-5, scale_method: minmax
+2026-07-31 15:31:54,321 | INFO     |   drop_correlated:
+2026-07-31 15:31:54,321 | INFO     |     enabled: true, params: [0.95]
+2026-07-31 15:31:54,321 | INFO     |   lgbm_shap:
+2026-07-31 15:31:54,321 | INFO     |     enabled: true, params: [0.95]
+2026-07-31 15:31:54,321 | INFO     |   boruta_shap:
+2026-07-31 15:31:54,321 | INFO     |     enabled: true
+2026-07-31 15:31:54,321 | INFO     |     model_type: lgbm
+2026-07-31 15:31:54,321 | INFO     |     boruta_trials: 50
+2026-07-31 15:31:54,321 | INFO     |     optuna_params:
+2026-07-31 15:31:54,321 | INFO     |       n_trials: 100
+2026-07-31 15:31:54,321 | INFO     |       n_startup_trials: 50
+2026-07-31 15:31:54,321 | INFO     |       sampler: TPE
+2026-07-31 15:31:54,321 | INFO     |     parameters: 10 params
+2026-07-31 15:31:54,321 | INFO     | 
+================================================================================
+2026-07-31 15:31:54,321 | INFO     | Шаг 1: stratified_sampling
+2026-07-31 15:31:54,321 | INFO     | ================================================================================
+2026-07-31 15:31:54,321 | INFO     |   Гиперпараметры: max_rows=750000
+2026-07-31 15:31:54,321 | INFO     |   Test stratified_sampling with max_rows=750000
+2026-07-31 15:32:35,409 | ERROR    |   ОШИБКА: An error occurred while calling o128.count
+2026-07-31 15:32:35,409 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 839, in main
+    final_df = run_pipeline(current_df, original_df, dataset_name, PIPELINE_DIR, config, logger, target_col, exclude_cols)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 537, in run_pipeline
+    result_df = test_stratified_sampling(current_df, target_col, exclude_cols, max_rows, dataset_name, logger)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 355, in test_stratified_sampling
+    logger.info(f"  [test_stratified_sampling] df: {len(df.columns)} cols, {df.count():,} rows")
+                                                                            ^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o128.count
+2026-07-31 15:32:35,411 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc
+2026-07-31 15:32:35,808 | ERROR    |   ОШИБКА: An error occurred while calling o130.parquet
+2026-07-31 15:32:35,808 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 768, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o130.parquet
+2026-07-31 15:32:35,809 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train
+2026-07-31 15:32:36,407 | ERROR    |   ОШИБКА: An error occurred while calling o138.count
+2026-07-31 15:32:36,407 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 769, in main
+    total_rows = original_df.count()
+                 ^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/dataframe.py", line 1240, in count
+    return int(self._jdf.count())
+               ^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o138.count
+2026-07-31 15:32:36,408 | INFO     | 
+Загрузка данных: /user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms
+2026-07-31 15:32:36,619 | ERROR    |   ОШИБКА: An error occurred while calling o139.parquet
+2026-07-31 15:32:36,619 | ERROR    | Детали ошибки:
+Traceback (most recent call last):
+  File "/home/datalab/nfs/bogachev/fmlib-feature-selection/dev/bogachev/pipeline.py", line 768, in main
+    original_df = spark.read.parquet(train_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/sql/readwriter.py", line 544, in parquet
+    return self._df(self._jreader.parquet(_to_seq(self._spark._sc, paths)))
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py", line 1322, in __call__
+    return_value = get_return_value(
+                   ^^^^^^^^^^^^^^^^^
+  File "/spark/python/pyspark/errors/exceptions/captured.py", line 179, in deco
+    return f(*a, **kw)
+           ^^^^^^^^^^^
+  File "/spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py", line 334, in get_return_value
+    raise Py4JError(
+py4j.protocol.Py4JError: An error occurred while calling o139.parquet
+2026-07-31 15:32:36,620 | INFO     | 
+================================================================================
+2026-07-31 15:32:36,620 | INFO     | ВСЕ ТЕСТЫ ЗАВЕРШЕНЫ!
+2026-07-31 15:32:36,620 | INFO     | ================================================================================
