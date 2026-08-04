@@ -1,0 +1,212 @@
+seed: 42
+
+events_meta:
+  evt_attr_9:
+    type: categorical
+    cardinality: 534
+    event_id: 0
+  evt_attr_15:
+    type: numerical
+    event_id: 0
+  channel_group:
+    type: categorical
+    cardinality: 10
+    event_id: 1
+  sale_product_class_id:
+    type: categorical
+    cardinality: 39
+    event_id: 1
+
+# Per-modality configuration: which columns + timestamp column + max events before merging.
+# Combined sequence length = sum(max_length) = 8 + 8 = 16.
+modalities:
+  txn:
+    event_id: 0
+    time_column: txn_evt_dttm
+    columns:
+      - evt_attr_9
+      - evt_attr_15
+    max_length: 8
+  evk:
+    event_id: 1
+    time_column: evk_evt_dttm
+    columns:
+      - channel_group
+      - sale_product_class_id
+    max_length: 8
+
+model:
+  _target_: fmlib.nn.models.SequenceRepresentationModel
+  embedding:
+    _target_: fmlib.nn.embedding.EventEmbedding
+    embedding_dim: 128
+    columns_meta: ${events_meta}
+  time_embedding:
+    _target_: fmlib.nn.embedding.LinearEmbedding
+    embedding_dim: ${model.embedding.embedding_dim}
+    feature_count: 1
+  feature_encoder_block:
+    _target_: fmlib.nn.blocks.EventEncoderBlock
+    hidden_dim: ${model.embedding.embedding_dim}
+    attn_dropout: 0.0
+    dropout: 0.1
+    attention:
+      _target_: fmlib.nn.blocks.IntraFeatureAttention
+      hidden_size: ${model.embedding.embedding_dim}
+    ffn:
+      _target_: fmlib.nn.blocks.FeatureFFN
+      model_dim: ${model.embedding.embedding_dim}
+      linear_dim: 512 # ${model.embedding.embedding_dim} * 4
+      feature_dim: 5 # количество признаков + 1 (если есть time_embedding)
+      dropout: ${model.feature_encoder_block.dropout}
+  transformer_model:
+    _target_: transformers.GPT2Model
+    config:
+      _target_: transformers.GPT2Config
+      n_positions: 16 # combined max sequence length (sum of per-modality max_length)
+      vocab_size: 0 # может быть любое значение, так как nn.Embedding gpt мы не используем
+      n_embd: ${model.embedding.embedding_dim}
+      n_layer: 3
+      n_head: 4
+      pad_token_id: 0
+      bos_token_id: 1
+      eos_token_id: 2
+  aggregation_layer:
+    _target_: fmlib.nn.utils.agg.Sum
+  event_names:
+    - "evt_attr_9"
+    - "evt_attr_15"
+    - "channel_group"
+    - "sale_product_class_id"
+  output_names:
+    - "logits"
+    - "last_hidden_state"
+
+training_step_callbacks:
+  _target_: fmlib.training.callbacks.step.GroupedStepCallback
+  callbacks: []
+
+validation_step_callbacks:
+  _target_: fmlib.training.callbacks.step.GroupedStepCallback
+  callbacks: []
+
+optimizer:
+  _target_: torch.optim.AdamW
+  lr: 0.001
+  weight_decay: 0.01
+
+scheduler:
+  _target_: transformers.optimization.get_scheduler
+  name: cosine
+  num_warmup_steps: 5
+  num_training_steps: 20_000_000
+
+accelerator:
+  _target_: accelerate.Accelerator
+  tracker:
+    _target_: accelerate.tracking.MLflowTracker
+    experiment_name: compare_libs
+    run_name: fmlib_full_window
+  kwargs_handlers:
+    - _target_: accelerate.utils.DistributedDataParallelKwargs
+      find_unused_parameters: True
+
+log_params:
+  - model
+  - optimizer
+  - scheduler
+  - training_data
+  - validation_data
+
+training_transform:
+  _target_: fmlib.nn.transforms.make_for_sequence_representation
+  events_meta: ${events_meta}
+  time_encoding: "delta"
+  bypass: ["epk_id"]
+  change_padding: True
+
+validation_transform:
+  _target_: fmlib.nn.transforms.make_for_sequence_representation
+  events_meta: ${events_meta}
+  time_encoding: "delta"
+  bypass: ["epk_id"]
+  change_padding: True
+
+autocast:
+  _target_: fmlib.training.utils.autocast.make_autocast_wrapper
+  do_autocast: False
+
+losses:
+  _target_: fmlib.nn.losses.CombinedLoss
+  losses:
+    body_loss:
+      _target_: fmlib.nn.losses.NextKTokensLoss
+      hidden_size: ${model.embedding.embedding_dim}
+      columns_meta: ${events_meta}
+      horizon: 1
+
+# Output column schema after multimodal merge.
+# sequence_length = sum of per-modality max_length (8 + 8 = 16).
+metadata:
+  epk_id: {}
+  evt_attr_15:
+    sequential: true
+    sequence_length: 16
+    padding: 0
+  evt_attr_9:
+    sequential: true
+    sequence_length: 16
+    padding: 0
+  channel_group:
+    sequential: true
+    sequence_length: 16
+    padding: 0
+  sale_product_class_id:
+    sequential: true
+    sequence_length: 16
+    padding: 0
+  evt_dttm:
+    sequential: true
+    sequence_length: 16
+    padding: 0
+  event_ids:
+    sequential: true
+    sequence_length: 16
+    padding: 0
+
+training_data:
+  _target_: fmlib.data.io.multimodal_parquet_dataset.MultimodalParquetDataset
+  source: "C:/Users/Gleb/Desktop/avatar_2_0/sber-amazme-fmlib/data/synth/multimodal_dataset"
+  metadata: ${metadata}
+  modalities: ${modalities}
+  partition_size: 32 # 131072
+  batch_size: 1
+  random_slicing: True
+  generator:
+    _target_: fmlib.utils.generator.make_seeded_generator
+    seed: ${seed}
+
+validation_data:
+  _target_: fmlib.data.io.multimodal_parquet_dataset.MultimodalParquetDataset
+  source: "C:/Users/Gleb/Desktop/avatar_2_0/sber-amazme-fmlib/data/synth/multimodal_dataset"
+  metadata: ${metadata}
+  modalities: ${modalities}
+  partition_size: 32 # 131072
+  batch_size: 1
+
+epoch_callbacks:
+  _target_: fmlib.training.callbacks.epoch.GroupedEpochCallback
+  callbacks:
+    - _target_: fmlib.training.callbacks.epoch.EarlyStoppingCallback
+      metric_to_track: "valid_body_loss_median_rank_0"
+      patience: 10
+    - _target_: fmlib.training.callbacks.epoch.LoggingEpochCallback
+    - _target_: fmlib.training.callbacks.epoch.SaveCheckpointCallback
+      base_path: "C:/Users/Gleb/Desktop/avatar_2_0/sber-amazme-fmlib/checkpoints"
+      metric_to_track: "valid_body_loss_median_rank_0"
+      submodule_to_save: "model"
+      num_checkpoints: 5
+
+epoch_iterable:
+  _target_: fmlib.training.callbacks.epoch.EarlyStoppingIterable
+  max_iter: 30

@@ -1,0 +1,156 @@
+
+seed: 42
+
+model:
+  _target_: fmlib.nn.models.FeatureTransformer
+  embedding:
+    _target_: fmlib.nn.embedding.FeatureEmbedding
+    numerical_feature_count: 189
+    embedding_dim: 64
+    vocab_size: 172
+    std_noise: null
+    # Early fusion option
+    hidden_state_aggregator:
+      _target_: fmlib.nn.embedding.LayerNormConcatenate
+      hidden_state_dim: 128  # Размерность external hidden_state
+      embedding_dim: ${model.embedding.embedding_dim}
+  num_encoder_layers: 3
+  encoder_block:
+    _target_: fmlib.nn.blocks.EncoderBlock
+    hidden_dim: ${model.embedding.embedding_dim}
+    num_heads: 4
+    attn_dropout: 0.15
+    dropout: ${model.encoder_block.attn_dropout}
+    ffn:
+      _target_: fmlib.nn.blocks.STEv2FFN
+      model_dim: ${model.embedding.embedding_dim}
+      linear_dim: 256  # ${model.embedding.embedding_dim} * 4
+      dropout: ${model.encoder_block.attn_dropout}
+  aggregation_layer:
+    _target_: fmlib.nn.utils.agg.LinearAggregation
+    num_features: 244 # Размер hidden_state на выходе из STEv2 (243) + 1 (если был early fusion)
+    embedding_dim: ${model.embedding.embedding_dim}
+  # Late fusion option
+  late_fusion_layer_norm:
+    _target_: torch.nn.LayerNorm
+    normalized_shape: 128 # Размерность external hidden_state
+  head:
+    _target_: fmlib.nn.models.heads.FeatureTransformerClassificationHead
+    hidden_dim: 192  # ${model.encoder_block.embedding_dim} + ${model.late_fusion_layer_norm.normalized_shape}
+    num_classes: 2
+    dropout: 0.15
+  output_names:
+    - "logits"
+
+training_step_callbacks:
+  _target_: fmlib.training.callbacks.step.GroupedStepCallback
+  callbacks:
+    - _target_: fmlib.training.callbacks.step.RocAucCallback
+      output_slice: 
+        - _target_: hydra.utils.get_object
+          path: builtins.Ellipsis
+        - 1
+      metric_name: "roc_auc_training"
+      target_name: "target_attr_1"
+      output_name: "logits"
+
+validation_step_callbacks:
+  _target_: fmlib.training.callbacks.step.GroupedStepCallback
+  callbacks:
+    - _target_: fmlib.training.callbacks.step.RocAucCallback
+      output_slice: 
+        - _target_: hydra.utils.get_object
+          path: builtins.Ellipsis
+        - 1
+      metric_name: "roc_auc_validation"
+      target_name: "target_attr_1"
+      output_name: "logits"
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.001
+
+scheduler:
+  _target_: transformers.optimization.get_scheduler
+  name: cosine
+  num_warmup_steps: 1
+  num_training_steps: 300
+
+accelerator:
+  _target_: accelerate.Accelerator
+
+training_transform:
+  _target_: fmlib.nn.transforms.make_for_feature_transformer
+  bypass: ["epk_id", "target_attr_1"]
+
+validation_transform:
+  _target_: fmlib.nn.transforms.make_for_feature_transformer
+  bypass: ["epk_id", "target_attr_1"]
+
+autocast:
+  _target_: fmlib.training.utils.autocast.make_autocast_wrapper
+  do_autocast: False
+
+losses:
+  _target_: fmlib.nn.losses.CombinedLoss
+  losses:
+    tabular_loss:
+      _target_: fmlib.nn.losses.WrappedLoss
+      target_type:
+        _target_: hydra.utils.get_object
+        path: torch.int64
+      target_name: "target_attr_1"
+      loss_to_wrap:
+        _target_: torch.nn.CrossEntropyLoss
+
+metadata:
+  epk_id: {}
+  bucket_num: {}
+  target_attr_1: {}
+  target_attr_2: {}
+  target_attr_3: {}
+  cat_features:
+      sequential: true
+      sequence_length: 54
+      padding: 0
+  num_features:
+      sequential: true
+      sequence_length: 189
+      padding: 0
+  seq_hidden_state:
+      sequential: true
+      sequence_length: 128
+      padding: 0
+
+training_data:
+  _target_: fmlib.data.io.parquet_dataset.ParquetDataset
+  source: "/home/datalab/nfs/data/feature_transformer/train"
+  metadata: ${metadata}
+  partition_size: 131072
+  batch_size: 2048
+  generator:
+    _target_: fmlib.utils.generator.make_seeded_generator
+    seed: ${seed}
+
+validation_data:
+  _target_: fmlib.data.io.parquet_dataset.ParquetDataset
+  source: "/home/datalab/nfs/data/feature_transformer/valid"
+  metadata: ${metadata}
+  partition_size: 131072
+  batch_size: 2048
+
+epoch_callbacks:
+  _target_: fmlib.training.callbacks.epoch.GroupedEpochCallback
+  callbacks:
+    - _target_: fmlib.training.callbacks.epoch.EarlyStoppingCallback
+      metric_to_track: "roc_auc_validation"
+      patience: 6
+    - _target_: fmlib.training.callbacks.epoch.LoggingEpochCallback
+    - _target_: fmlib.training.callbacks.epoch.SaveCheckpointCallback
+      base_path: "/home/datalab/nfs/checkpoints/test_osiris"
+      metric_to_track: "roc_auc_validation"
+      num_checkpoints: 15
+
+epoch_iterable:
+  _target_: fmlib.training.callbacks.epoch.EarlyStoppingIterable
+  max_iter: 30

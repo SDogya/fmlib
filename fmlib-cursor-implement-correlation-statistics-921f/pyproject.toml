@@ -1,0 +1,103 @@
+[project]
+name = "sber-amazme-fmlib"
+version = "0.2.0"
+description = ""
+authors = [
+    {name = "AmazMe, Sber"},
+    {name = "Kulandin Denis", email="DSKulandin@omega.sbrf.ru"},
+    {name = "Kulikov Nikita", email="NSergeeKulikov@omega.sbrf.ru"},
+    {name = "Smirnov Mikhail", email="MAlSmirnov@omega.sbrf.ru"},
+]
+readme = "README.md"
+requires-python = ">=3.11"
+dynamic = ["dependencies"]
+
+[tool.poetry.dependencies]
+numpy = {version="2.3.5", source="sber-osc"}
+onnx = {version="1.21.0", source="sber-osc"}
+onnx-ir = {version="0.2.0", source="sber-osc"}
+onnxscript = {version="0.6.2", source="sber-osc"}
+onnxruntime = {version="1.24.2", source="sber-osc"}
+pandas = {version="^2.2", source="sber-osc"}
+pyarrow = {version="23.0.0", source="sber-osc"}
+pyarrow-hotfix = {version="0.7", source="sber-osc"}
+safetensors = {version="0.7.0", source="sber-osc"}
+torch = {version="2.7.0", source="sber-osc"}
+torchvision = {version=">0.20.0", source="sber-osc"}
+tqdm = {version="4.67.1", source="sber-osc"}
+transformers = {version="5.5.4", source="sber-osc"}
+hydra-core = {version="1.3.2", source="sber-osc"}
+accelerate = {version="1.13.0", source="sber-osc"}
+boto3 = {version="1.35.15", source="sber-osc"}
+requests = {version=">=2.28.0, <3.0.0", source="sber-osc"}
+soxr = {version=">=1.0.0", source="sber-osc"}
+scikit-learn = "^1.8.0"
+mlflow = "^3.12.0"
+protobuf = ">=4.25.1,<6.0.0"
+
+[tool.poetry]
+classifiers = [
+    "Operating System :: Unix",
+]
+packages = [{include="fmlib"}]
+
+[tool.poetry.group.dev.dependencies]
+ruff = {version="0.11.10", source="sber-osc"}
+pytest = {version="8.3.5", source="sber-osc"}
+
+[[tool.poetry.source]]
+name = "sber-osc"
+url = "https://pypi.org/simple/"
+priority = "primary"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.ruff]
+line-length = 128
+indent-width = 4
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E", # pycodestyle
+    "F", # pyflakes
+    "I", # isort
+    "W", # Warning
+    "N", # pep8-naming
+    "B", "B9", # bugbear
+    "S", # flake8-bandit
+    "Q", # flake8-quotes
+    "YTT", # flake8-2020
+    "PIE", # flake8-pie
+    "PYI", # flake8-pyi
+    "SIM", # flake8-simplify
+    "C4", # flake8-comprehensions
+    "BLE", # flake8-blind-except
+    "A", # flake8-builtins
+    "COM", # flake8-commas
+    "EM", # flake8-errmsg
+    "LOG", # flake8-logging
+    "G", # flake8-logging-format
+    "T20", # flake8-print
+    "PGH", # pygrep-hooks
+    "RUF", # Ruff-specific
+    "ERA" # eradicate - deletes commented code
+]
+ignore = [
+    "COM812", # Trailing comma bugfix
+    "S101", # `assert`s are allowed
+    "RUF001", "RUF002", "RUF003", # Cyrillic characters in documentation
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.flake8-quotes]
+inline-quotes = "double"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"

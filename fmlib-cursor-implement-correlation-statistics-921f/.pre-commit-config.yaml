@@ -1,0 +1,25 @@
+repos:
+  - repo: local
+    hooks:
+      - id: clean-up-notebooks
+        name: clean up notebooks
+        entry: python3 scripts/clean_up_notebooks.py
+        language: system
+        files: \.ipynb$
+      - id: ruff-check
+        name: ruff check
+        entry: ruff check
+        language: system
+        types_or: [python, pyi]
+      - id: ruff-format
+        name: ruff format
+        entry: ruff format
+        language: system
+        types_or: [python, pyi]
+      - id: pytest
+        name: pytest
+        entry: bash scripts/run_tests.sh . -s -x
+        language: system
+        stages: [pre-push]
+        pass_filenames: false
+        always_run: true

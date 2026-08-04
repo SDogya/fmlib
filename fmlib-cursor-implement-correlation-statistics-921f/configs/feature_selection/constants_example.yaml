@@ -1,0 +1,59 @@
+# Example: enable Spark-native ConstantsSelector inside FeatureSelectionPipeline.
+# Constants aggregates in-cluster; no toPandas materialisation.
+# Other statistical filters and model/precise stages can stay stubs or disabled.
+#
+# Usage (notebook):
+#   from fmlib.feature_selection import (
+#       FeatureSchema,
+#       FeatureSelectionConfig,
+#       FeatureSelectionPipeline,
+#   )
+#   config = FeatureSelectionConfig.from_yaml("configs/feature_selection/constants_example.yaml")
+#   pipeline = FeatureSelectionPipeline(config)
+#   result = pipeline.fit_select(spark=spark, data=train_df, schema=schema)
+#   result.dropped_features  # reason in {"constant", "too_few_unique", "quasi_constant"}
+
+statistics:
+  null_rate:
+    enabled: false
+  constants:
+    enabled: true
+    # Drop when the most frequent non-null value covers this share of non-null rows.
+    max_frequency: 0.999
+    # Optional: also drop when distinct non-null values are below this count.
+    # Use null to rely only on max_frequency (true constants still drop via n_unique <= 1).
+    min_unique: 2
+  correlation:
+    # Spark ML correlation runs on no more than max_rows rows.
+    enabled: false
+    max_rows: 100000
+  psi:
+    enabled: false
+  stability_classifier:
+    enabled: false
+
+model:
+  # Still a stub until a real model selector is filled in.
+  method: lasso
+  params: {}
+  selection:
+    max_features: 100
+  tuning:
+    enabled: false
+  cross_validation:
+    strategy: stratified
+    folds: 5
+    metric: roc_auc
+
+precise:
+  method: none
+
+execution:
+  seed: 42
+  allow_local_fallback: true
+  # Used by stages that still materialise locally (e.g. correlation). Unused by constants.
+  max_local_rows: 1000000
+  local_memory_limit: 4
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true
