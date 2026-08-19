@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, LowVarianceConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistics.low_variance import LowVarianceSelector
-from fmlib.feature_selection.conftest import FakeSparkSession
-
-
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
 
 
 def _context(
@@ -37,7 +31,7 @@ def _context(
     )
     candidates = categorical + continuous
     return StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={"train": frame},
         schema=schema,
         config=config,
@@ -111,40 +105,26 @@ def test_order_keeps_low_variance_before_correlation() -> None:
     assert config.statistics.order == ("low_variance", "correlation")
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-def test_spark_minmax_supports_dotted_column_names() -> None:
-    from pyspark.sql import SparkSession
-
-    spark = (
-        SparkSession.builder.master("local[1]")
-        .appName("test-low-variance-spark")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.host", "127.0.0.1")
-        .getOrCreate()
+def test_spark_minmax_supports_dotted_column_names(spark: Any) -> None:
+    frame = spark.createDataFrame([(0.0,), (1.0,), (2.0,), (3.0,), (4.0,)], ["foo.bar"])
+    context = StageContext(
+        spark=spark,
+        datasets={"train": frame},
+        schema=FeatureSchema(
+            categorical=(),
+            continuous=("foo.bar",),
+            target="response",
+            task_type="binary_classification",
+        ),
+        config=FeatureSelectionConfig(),
+        seed=0,
+        candidates=["foo.bar"],
     )
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        frame = spark.createDataFrame([(0.0,), (1.0,), (2.0,), (3.0,), (4.0,)], ["foo.bar"])
-        context = StageContext(
-            spark=spark,
-            datasets={"train": frame},
-            schema=FeatureSchema(
-                categorical=(),
-                continuous=("foo.bar",),
-                target="response",
-                task_type="binary_classification",
-            ),
-            config=FeatureSelectionConfig(),
-            seed=0,
-            candidates=["foo.bar"],
-        )
 
-        decisions = LowVarianceSelector(LowVarianceConfig(min_variance=0.2, scale_method="minmax")).select(
-            context,
-            ["foo.bar"],
-        )
+    decisions = LowVarianceSelector(LowVarianceConfig(min_variance=0.2, scale_method="minmax")).select(
+        context,
+        ["foo.bar"],
+    )
 
-        assert len(decisions) == 1
-        assert decisions[0].value == pytest.approx(0.15625)
-    finally:
-        spark.stop()
+    assert len(decisions) == 1
+    assert decisions[0].value == pytest.approx(0.15625)

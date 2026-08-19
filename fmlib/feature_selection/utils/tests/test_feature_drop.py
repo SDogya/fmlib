@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
@@ -220,3 +221,20 @@ def test_unsupported_frame_type_has_backend_error(tmp_path: Path) -> None:
             _schema(),
             path,
         )
+
+
+def test_apply_drop_on_spark_frame(spark: Any, tmp_path: Path) -> None:
+    path = tmp_path / "drop.txt"
+    path.write_text("category\nsecond\n", encoding="utf-8")
+    train = spark.createDataFrame(_frame())
+    datasets, schema, report = apply_feature_drop_file(
+        {"train": train},
+        _schema(),
+        path,
+    )
+    assert "category" not in datasets["train"].columns
+    assert "second" not in datasets["train"].columns
+    assert "category" in train.columns
+    assert schema.categorical == ("segment",)
+    assert schema.continuous == ("first",)
+    assert report.dropped == ("category", "second")

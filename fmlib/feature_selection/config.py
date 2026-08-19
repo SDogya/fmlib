@@ -123,13 +123,21 @@ def _require_positive_int(value: Any, name: str) -> None:
         raise ConfigError(msg)
 
 
-def _validate_optuna_params_block(section: str, params: Mapping[str, Any]) -> None:
+def _validate_optuna_params_block(
+    section: str,
+    params: Mapping[str, Any],
+    *,
+    extra_int_keys: tuple[str, ...] = (),
+) -> None:
     """Validate the shared ``params.optuna_params`` mapping."""
     optuna_params = params.get("optuna_params", {})
     if not isinstance(optuna_params, Mapping):
         msg = f"{section}.params.optuna_params must be a mapping."
         raise ConfigError(msg)
-    for name in ("n_trials", "n_startup_trials", "timeout"):
+    enabled = optuna_params.get("enabled")
+    if enabled is not None:
+        _require_bool(f"{section}.params.optuna_params.enabled", enabled)
+    for name in ("n_trials", "n_startup_trials", "timeout", *extra_int_keys):
         _require_positive_int(
             optuna_params.get(name),
             f"{section}.params.optuna_params.{name}",
@@ -302,32 +310,11 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
     if not isinstance(parameters, Mapping):
         msg = "precise.params.parameters must be a mapping."
         raise ConfigError(msg)
+    _validate_optuna_params_block("precise", params, extra_int_keys=("niter",))
     optuna_params = params.get("optuna_params", {})
-    if not isinstance(optuna_params, Mapping):
-        msg = "precise.params.optuna_params must be a mapping."
-        raise ConfigError(msg)
-
-    for name in ("n_trials", "niter", "n_startup_trials", "timeout"):
-        value = optuna_params.get(name)
-        if value is not None and (
-            isinstance(value, bool)
-            or not isinstance(value, int)
-            or value < 1
-        ):
-            msg = (
-                f"precise.params.optuna_params.{name} must be a positive "
-                "integer."
-            )
-            raise ConfigError(msg)
-
     sampler = str(optuna_params.get("sampler", "TPE")).upper()
-    if sampler not in BORUTA_SAMPLERS:
-        msg = (
-            f"Unsupported precise.params.optuna_params.sampler={sampler!r}. "
-            f"Expected one of: {sorted(BORUTA_SAMPLERS)}."
-        )
-        raise ConfigError(msg)
-    if sampler == "GRID":
+    tuning_enabled = optuna_params.get("enabled", True)
+    if tuning_enabled is not False and sampler == "GRID":
         finite = bool(parameters) and all(
             isinstance(spec, Mapping)
             and isinstance(spec.get("values"), (list, tuple))
@@ -511,8 +498,8 @@ class ModelConfig:
             - ``"random_forest"``: Random Forest importance (stub)
             - ``"lasso"``: Lasso-based selection (stub)
         params: Method-specific parameters. Methods that tune with Optuna
-            read the shared ``params.optuna_params`` block (``n_trials``,
-            ``n_startup_trials``, ``sampler``, ``timeout``).
+            read the shared ``params.optuna_params`` block (``enabled``,
+            ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``).
         selection: Rule for selecting top features from importances.
         cross_validation: Cross-validation settings.
     """

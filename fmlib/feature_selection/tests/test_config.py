@@ -312,6 +312,7 @@ def test_test_run_preprocessing_config_validation(
         ({"optuna_params": {"n_startup_trials": 0}},
             "optuna_params.n_startup_trials",
         ),
+        ({"optuna_params": {"enabled": "yes"}}, "optuna_params.enabled"),
         ({"n_jobs": 0}, "n_jobs"),
         ({"n_jobs": -2}, "n_jobs"),
     ],
@@ -375,6 +376,7 @@ def test_optuna_params_roundtrip() -> None:
                 "params": {
                     "optuna_mode": "global",
                     "optuna_params": {
+                        "enabled": True,
                         "n_trials": 11,
                         "timeout": 45,
                         "sampler": "TPE",
@@ -386,6 +388,7 @@ def test_optuna_params_roundtrip() -> None:
                 "params": {
                     "boruta_trials": 8,
                     "optuna_params": {
+                        "enabled": False,
                         "n_trials": 6,
                         "timeout": 30,
                         "sampler": "TPE",
@@ -396,10 +399,13 @@ def test_optuna_params_roundtrip() -> None:
     )
 
     assert config.model.params["optuna_params"]["n_trials"] == 11
+    assert config.model.params["optuna_params"]["enabled"] is True
     assert config.precise.params["optuna_params"]["n_trials"] == 6
+    assert config.precise.params["optuna_params"]["enabled"] is False
     payload = config.to_dict()
     assert payload["model"]["params"]["optuna_params"]["timeout"] == 45
     assert payload["precise"]["params"]["optuna_params"]["n_trials"] == 6
+    assert payload["precise"]["params"]["optuna_params"]["enabled"] is False
     assert "tuning" not in payload["model"]
     assert "tuning" not in payload["precise"]
 

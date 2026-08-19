@@ -54,11 +54,12 @@ def build_search_space(
     overrides: Mapping[str, Mapping[str, Any]],
     fixed: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Merge built-in ranges with config overrides and drop pinned parameters.
+    """Copy ``defaults``, overlay ``overrides``, and drop pinned scalars.
 
-    A parameter given as a scalar in the config is pinned: it must leave the
-    search space entirely, otherwise Optuna keeps suggesting values for it and
-    the suggestion silently wins over the configured constant.
+    Used when the config has no mapping entries: the fallback file is the
+    whole space, minus keys the user pinned to a constant. Callers that
+    received any YAML mapping must not use this helper — they already have
+    the complete user grid.
 
     Args:
         defaults: Built-in search space of the selector.
@@ -73,6 +74,37 @@ def build_search_space(
     for name in fixed:
         space.pop(str(name), None)
     return space
+
+
+def resolve_tuning_space(
+    parameters: Mapping[str, Any],
+    *,
+    defaults: Mapping[str, Mapping[str, Any]],
+    enabled: bool,
+    method_name: str,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Choose the Optuna search space from YAML and the fallback file.
+
+    YAML mappings fully replace the fallback: a single mapping means none of
+    the default keys are mixed in. With no mappings and tuning enabled, the
+    fallback is used minus pinned scalars. With tuning disabled the space is
+    empty and only scalars are returned.
+
+    Args:
+        parameters: Raw ``params.parameters`` mapping.
+        defaults: Fallback search space for this selector.
+        enabled: ``params.optuna_params.enabled``.
+        method_name: Selector name used in error messages.
+
+    Returns:
+        Tuple of ``(fixed, search_space)``.
+    """
+    fixed, overrides = split_parameters(parameters, method_name=method_name)
+    if not enabled:
+        return fixed, {}
+    if overrides:
+        return fixed, {str(name): dict(spec) for name, spec in overrides.items()}
+    return fixed, build_search_space(defaults, overrides={}, fixed=fixed)
 
 
 def _bounds(specification: Mapping[str, Any], name: str, method_name: str) -> tuple[Any, Any]:
@@ -171,7 +203,7 @@ def resolve_optuna_settings(
 ) -> dict[str, Any]:
     """Read the shared ``params.optuna_params`` block.
 
-    Every selector that tunes with Optuna accepts the same four keys, so a new
+    Every selector that tunes with Optuna accepts the same keys, so a new
     method only has to call this and hand the result to :func:`build_sampler`
     and ``study.optimize``.
 
@@ -184,7 +216,8 @@ def resolve_optuna_settings(
         timeout: Fallback wall-clock limit in seconds, ``None`` for unlimited.
 
     Returns:
-        Mapping with ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``.
+        Mapping with ``enabled``, ``n_trials``, ``n_startup_trials``,
+        ``sampler``, ``timeout``.
 
     Raises:
         ExecutionError: When the block or one of its values is invalid.
@@ -193,9 +226,15 @@ def resolve_optuna_settings(
         msg = f"{method_name}: params.optuna_params must be a mapping."
         raise ExecutionError(msg)
 
+    raw_enabled = optuna_params.get("enabled", True)
+    if not isinstance(raw_enabled, bool):
+        msg = f"{method_name}: optuna_params.enabled must be boolean."
+        raise ExecutionError(msg)
+
     raw_timeout = optuna_params.get("timeout", timeout)
     try:
         settings: dict[str, Any] = {
+            "enabled": raw_enabled,
             "n_trials": int(optuna_params.get("n_trials", n_trials)),
             "n_startup_trials": int(
                 optuna_params.get("n_startup_trials", n_startup_trials),

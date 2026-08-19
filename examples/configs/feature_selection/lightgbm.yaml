@@ -1,8 +1,10 @@
 # LightGBM + SHAP с настраиваемым пространством поиска Optuna.
 #
-# Блок model.params.parameters переопределяет встроенные диапазоны поточечно:
-# что не указано — остаётся дефолтным. Ключи и значения дефолтов лежат в
-# DEFAULT_SEARCH_SPACE (fmlib/feature_selection/model_based/lightgbm.py).
+# Если params.parameters не содержит ни одной мапы, Optuna берёт целиком
+# LIGHTGBM_SEARCH_SPACE из
+# fmlib/feature_selection/utils/default_model_param_spaces.py.
+# Любая мапа в YAML полностью заменяет этот fallback: незаданные ключи
+# из дефолта не подмешиваются. Скаляр уходит в модель как есть.
 
 statistics:
   order:
@@ -37,6 +39,7 @@ model:
     # Блок общий для всех методов с Optuna (lightgbm, catboost_rfe, boruta_shap).
     # Устаревший ключ params.n_trials уровнем выше ещё читается как запасной.
     optuna_params:
+      enabled: true          # false — сразу обучение на скалярах, без Optuna
       n_trials: 30
       n_startup_trials: 10
       sampler: TPE           # TPE | RANDOM | GRID
@@ -48,10 +51,9 @@ model:
     lgbm_threshold: 0.85
     shap_threshold: 0.85
 
-    # Мапа -> подбирается Optuna, скаляр -> уходит в LightGBM как есть.
-    # Указанные ниже ключи заменяют одноимённые дефолты, остальные
-    # (n_estimators, max_depth, subsample, colsample_bytree) остаются
-    # дефолтными.
+    # Мапа -> вся сетка пользователя (дефолтный файл не подмешивается).
+    # Скаляр -> уходит в LightGBM как есть.
+    # Без мап при enabled: true берётся LIGHTGBM_SEARCH_SPACE целиком.
     parameters:
       num_leaves:
         type: int

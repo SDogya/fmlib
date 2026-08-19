@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import SchemaError
 from fmlib.feature_selection.result import (
     DroppedFeature,
@@ -16,7 +18,6 @@ from fmlib.feature_selection.result import (
     _save_intermediate_result,
 )
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.conftest import FakeDataFrame, FakeSparkSession
 
 
 def _sample_result() -> SelectionResult:
@@ -90,7 +91,7 @@ def test_intermediate_result_preserves_context_scores(tmp_path: Path) -> None:
         {"model": {"method": "lightgbm"}},
     )
     context = StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={},
         schema=sample.schema,
         config=config,
@@ -142,7 +143,7 @@ def test_precise_intermediate_result_preserves_boruta_scores(
         },
     )
     context = StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={},
         schema=sample.schema,
         config=config,
@@ -185,9 +186,18 @@ def test_precise_intermediate_result_preserves_boruta_scores(
 
 def test_apply_projects_selected_and_service() -> None:
     result = _sample_result()
-    frame = FakeDataFrame(columns=["segment", "age", "balance", "response", "client_id", "extra"])
+    frame = pd.DataFrame(
+        {
+            "segment": ["a"],
+            "age": [20],
+            "balance": [100.0],
+            "response": [0],
+            "client_id": [10],
+            "extra": [1],
+        },
+    )
     projected = result.apply(frame)
-    assert projected.columns == ["age", "segment", "response", "client_id"]
+    assert projected.columns.tolist() == ["age", "segment", "response", "client_id"]
 
 
 def test_apply_pandas_preserves_rows_and_data() -> None:
@@ -228,56 +238,41 @@ def test_apply_pandas_preserves_rows_and_data() -> None:
 
 def test_apply_missing_selected_raises() -> None:
     result = _sample_result()
-    frame = FakeDataFrame(columns=["segment", "response", "client_id"])
+    frame = pd.DataFrame({"segment": ["a"], "response": [0], "client_id": [10]})
     with pytest.raises(SchemaError, match="selected features missing"):
         result.apply(frame)
 
 
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
+def test_apply_spark_projects_selected_and_service(spark: Any) -> None:
+    result = _sample_result()
+    frame = spark.createDataFrame(
+        [("a", 20, 100.0, 0, 10, 1)],
+        ["segment", "age", "balance", "response", "client_id", "extra"],
+    )
+    projected = result.apply(frame)
+    assert projected.columns == ["age", "segment", "response", "client_id"]
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-def test_apply_quotes_literal_spark_column_names() -> None:
-    from pyspark.sql import SparkSession
+def test_apply_quotes_literal_spark_column_names(spark: Any) -> None:
+    frame = spark.createDataFrame(
+        [(1.0, 0), (2.0, 1)],
+        ["foo.bar", "response"],
+    )
+    schema = FeatureSchema(
+        categorical=(),
+        continuous=("foo.bar",),
+        target="response",
+        task_type="binary_classification",
+    )
+    result = SelectionResult(
+        selected_features=["foo.bar"],
+        dropped_features=[],
+        schema=schema,
+        config={},
+        seed=42,
+    )
 
-    try:
-        spark = (
-            SparkSession.builder.master("local[1]")
-            .appName("test-selection-result-literal-columns")
-            .config("spark.ui.enabled", "false")
-            .config("spark.driver.host", "127.0.0.1")
-            .getOrCreate()
-        )
-    except Exception as exc:  # noqa: BLE001 - optional local Spark runtime
-        pytest.skip(f"Spark runtime unavailable: {exc}")
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        frame = spark.createDataFrame(
-            [(1.0, 0), (2.0, 1)],
-            ["foo.bar", "response"],
-        )
-        schema = FeatureSchema(
-            categorical=(),
-            continuous=("foo.bar",),
-            target="response",
-            task_type="binary_classification",
-        )
-        result = SelectionResult(
-            selected_features=["foo.bar"],
-            dropped_features=[],
-            schema=schema,
-            config={},
-            seed=42,
-        )
+    projected = result.apply(frame)
 
-        projected = result.apply(frame)
-
-        assert projected.columns == ["foo.bar", "response"]
-        assert projected.collect()[0]["foo.bar"] == 1.0
-    finally:
-        spark.stop()
+    assert projected.columns == ["foo.bar", "response"]
+    assert projected.collect()[0]["foo.bar"] == 1.0

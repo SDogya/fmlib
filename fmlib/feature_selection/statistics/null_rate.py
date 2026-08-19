@@ -8,8 +8,9 @@ import pandas as pd
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import NullRateConfig
-from fmlib.feature_selection.debug import emit as debug_emit, enabled as debug_enabled
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.verbose import emit as verbose_emit
+from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 
 class NullRateSelector:
@@ -64,9 +65,9 @@ class NullRateSelector:
             )
             raise ExecutionError(msg)
 
-        if debug_enabled(context, self.method_name) and null_rates:
+        if verbose_enabled(context, self.method_name) and null_rates:
             rates = list(null_rates.values())
-            debug_emit(
+            verbose_emit(
                 context,
                 self.method_name,
                 "stats",

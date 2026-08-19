@@ -19,9 +19,8 @@ model:
     max_rows: 500000
     sample_fraction: 0.1
 
-    # Скаляр - используется как есть, мапа - подбирается Optuna.
-    # Чтобы пропустить тюнинг, замените мапы на найденные числа
-    # из scores.catboost_rfe.best_params в final_results.json.
+    # Скаляр - используется как есть, мапа - вся сетка пользователя.
+    # Чтобы пропустить тюнинг, поставьте optuna_params.enabled: false.
     parameters:
       iterations: 3000
       loss_function: Logloss
@@ -56,6 +55,7 @@ model:
         max: 0.2
 
     optuna_params:
+      enabled: true
       n_trials: 50
       n_startup_trials: 10
       sampler: TPE

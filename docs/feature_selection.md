@@ -7,8 +7,10 @@
 Spark используется для проекции и стратифицированного сэмплирования, после чего
 ограниченная выборка материализуется в `pandas` и всё дальнейшее считается на драйвере.
 
-Пайплайн — плоский список шагов, собираемый из конфига в
-[`registry.py`](../fmlib/feature_selection/registry.py). Каждый шаг получает список
+Пайплайн собирается из четырёх стадий: [`UtilsStage`](../fmlib/feature_selection/utils/stage.py),
+[`StatisticsStage`](../fmlib/feature_selection/statistics/stage.py),
+[`ModelBasedStage`](../fmlib/feature_selection/model_based/stage.py) и
+[`PreciseStage`](../fmlib/feature_selection/precise/stage.py). Каждая стадия получает список
 кандидатов, возвращает суженный список и `FeatureDecision` по каждому выброшенному
 признаку: на каком шаге, каким методом и по какому порогу его убрали.
 
@@ -125,9 +127,10 @@ precise:
 `eval_months` периодов идут в eval, всё раньше — в обучение. Внешние `valid` и `test`
 не читаются вовсе, поэтому остаются пригодны для непредвзятой проверки набора.
 
-Дефолтного пространства поиска у метода нет — `params.parameters` обязателен.
-Сделано намеренно: один трайл здесь идёт десятки минут, молчаливые дефолты обходятся
-дорого.
+Дефолтное пространство поиска берётся из
+`utils/default_model_param_spaces.py`, если тюнинг включён и в `parameters` нет
+ни одной мапы. `params.parameters` по-прежнему нужен для скаляров вроде
+`iterations` и `loss_function`.
 
 ### `lightgbm`
 
@@ -159,23 +162,25 @@ params:
     iterations: 3000
 
   optuna_params:     # КАК подбирать
+    enabled: true    # false — сразу обучение на скалярах, без Optuna
     n_trials: 20
     n_startup_trials: 10
     sampler: TPE     # TPE | RANDOM | GRID
     timeout: 3600    # секунды или null
 ```
 
-### Optuna включается формой значения
+### Когда запускается Optuna
 
-Отдельного флага нет:
+Флаг `optuna_params.enabled` (по умолчанию `true`) включает тюнинг.
+Пространство поиска выбирается так:
 
-| Форма | Что происходит |
+| Ситуация | Что происходит |
 |---|---|
-| **мапа** `{type: int, min: 4, max: 8}` | параметр перебирается |
-| **скаляр** `3000` | параметр уходит в модель как есть |
+| `enabled: false` | Optuna не запускается, в модель идут только скаляры |
+| `enabled: true`, в `parameters` нет ни одной мапы | берётся fallback из `utils/default_model_param_spaces.py` целиком; скаляры выкидывают одноимённый ключ из сетки |
+| `enabled: true`, есть хотя бы одна мапа | это вся сетка пользователя; дефолтный файл не подмешивается |
 
-Если мап нет ни одной, **Optuna не запускается вообще** — модель обучается сразу
-с заданными параметрами. Это и есть выключатель.
+Мапа `{type: int, min: 4, max: 8}` — ячейка сетки. Скаляр `3000` уходит в модель как есть.
 
 Зафиксированный скаляром параметр исключается из пространства поиска. Без этого
 Optuna продолжала бы предлагать по нему значения, и предложенное перекрывало бы
@@ -195,9 +200,11 @@ values             без type      → то же, сокращение
 
 ### Дефолтные диапазоны
 
-У `lightgbm` и `boruta_shap` есть встроенные пространства поиска. Конфиг
-**переопределяет их точечно**: указали `learning_rate` — остальные остались
-дефолтными. У `catboost_rfe` дефолтов нет.
+У `lightgbm`, `catboost_rfe` и `boruta_shap` fallback-сетки лежат в
+[`utils/default_model_param_spaces.py`](../fmlib/feature_selection/utils/default_model_param_spaces.py).
+Они используются **только** если тюнинг включён и в YAML нет ни одной мапы.
+Любая мапа полностью заменяет fallback: незаданные ключи из Python не
+добираются.
 
 ### Что происходит за один трайл
 
@@ -215,17 +222,21 @@ values             без type      → то же, сокращение
 
 ### Как подключить новый метод
 
-Пять функций покрывают весь цикл, копировать разбор не нужно:
+Четыре функции покрывают весь цикл, копировать разбор не нужно:
 
 ```python
 from fmlib.feature_selection.utils.optuna_space import (
-    build_sampler, build_search_space, resolve_optuna_settings,
-    split_parameters, suggest_parameter,
+    build_sampler, resolve_optuna_settings, resolve_tuning_space,
+    suggest_parameter,
 )
 
-fixed, overrides = split_parameters(params.get("parameters", {}), method_name="my_method")
-space = build_search_space(MY_DEFAULTS, overrides=overrides, fixed=fixed)
 settings = resolve_optuna_settings(params.get("optuna_params", {}), method_name="my_method")
+fixed, space = resolve_tuning_space(
+    params.get("parameters", {}),
+    defaults=MY_DEFAULTS,
+    enabled=settings["enabled"],
+    method_name="my_method",
+)
 ```
 
 Новый метод сразу получает тот же синтаксис конфига, те же дефолты, те же тексты

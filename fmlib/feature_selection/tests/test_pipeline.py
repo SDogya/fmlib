@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Sequence
+from typing import Any, Sequence
 
 import pandas as pd
 import pytest
@@ -16,15 +16,14 @@ from fmlib.feature_selection import (
     SelectionResult,
 )
 from fmlib.feature_selection.base import FeatureDecision, StageContext
+from fmlib.feature_selection.utils.conftest import (
+    make_pandas_frame,
+    make_wide_schema_columns,
+    require_spark_session,
+)
 from fmlib.feature_selection.exceptions import ConfigError, SchemaError
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
 from fmlib.feature_selection.precise.boruta_shap import BorutaShapSelector
-from fmlib.feature_selection.conftest import (
-    FakeDataFrame,
-    FakeSparkSession,
-    make_pandas_frame,
-    make_wide_schema_columns,
-)
 
 
 def _schema(categorical: list[str], continuous: list[str], *, with_split: bool = True) -> FeatureSchema:
@@ -52,7 +51,7 @@ def _config(**overrides: object) -> FeatureSelectionConfig:
 
 def test_fit_select_single_dataframe() -> None:
     categorical, continuous, columns = make_wide_schema_columns(40)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     data = make_pandas_frame(columns)
     pipeline = FeatureSelectionPipeline(_config())
     result = pipeline.fit_select(
@@ -73,7 +72,7 @@ def test_fit_select_single_dataframe() -> None:
 
 def test_fit_select_datasets_mapping() -> None:
     categorical, continuous, columns = make_wide_schema_columns(40)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     train = make_pandas_frame(columns)
     pipeline = FeatureSelectionPipeline(_config())
     result = pipeline.fit_select(
@@ -112,7 +111,7 @@ def test_feature_drop_file_runs_before_selectors_and_updates_schema(
     )
 
     result = FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=_schema(categorical, continuous, with_split=False),
         output_dir=tmp_path / "artifacts",
@@ -150,7 +149,7 @@ def test_feature_drop_file_runs_before_selectors_and_updates_schema(
         assert manual == dropped
 
     FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=_schema(categorical, continuous, with_split=False),
         output_dir=tmp_path / "artifacts",
@@ -184,7 +183,7 @@ def test_test_run_preprocessing_samples_rows_and_drops_random_features(
     )
 
     result = FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=_schema(categorical, continuous, with_split=False),
         output_dir=tmp_path,
@@ -212,7 +211,7 @@ def test_test_run_preprocessing_samples_rows_and_drops_random_features(
 
 def test_mutually_exclusive_inputs() -> None:
     categorical, continuous, columns = make_wide_schema_columns(20)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     frame = make_pandas_frame(columns)
     pipeline = FeatureSelectionPipeline(_config())
     with pytest.raises(ConfigError, match="either data"):
@@ -226,7 +225,7 @@ def test_mutually_exclusive_inputs() -> None:
 
 def test_single_dataframe_requires_split() -> None:
     categorical, continuous, columns = make_wide_schema_columns(20)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     pipeline = FeatureSelectionPipeline(_config())
     with pytest.raises(SchemaError, match="split"):
         pipeline.fit_select(
@@ -238,7 +237,7 @@ def test_single_dataframe_requires_split() -> None:
 
 def test_deterministic_across_runs() -> None:
     categorical, continuous, columns = make_wide_schema_columns(40)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     schema = _schema(categorical, continuous)
     config = _config()
     first = FeatureSelectionPipeline(config).fit_select(
@@ -255,11 +254,11 @@ def test_deterministic_across_runs() -> None:
     assert [item.feature for item in first.dropped_features] == [item.feature for item in second.dropped_features]
 
 
-def test_precise_boruta_registry_produces_drops_and_scores(
+def test_precise_boruta_stage_produces_drops_and_scores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     categorical, continuous, columns = make_wide_schema_columns(50)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     config = _config(
         precise={
             "enabled": True,
@@ -327,7 +326,7 @@ def test_precise_boruta_registry_produces_drops_and_scores(
 def test_correlation_drop_decisions_have_real_values() -> None:
     """Correlation selector should produce numeric value in FeatureDecision."""
     categorical, continuous, columns = make_wide_schema_columns(30)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     config = _config()
     result = FeatureSelectionPipeline(config).fit_select(
         spark,
@@ -364,7 +363,7 @@ def test_low_variance_selector_runs_in_pipeline() -> None:
     )
 
     result = FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=schema,
     )
@@ -374,7 +373,7 @@ def test_low_variance_selector_runs_in_pipeline() -> None:
     assert result.selected_features == ["varying"]
 
 
-def test_lightgbm_registry_produces_real_scores_without_stub_warning(
+def test_lightgbm_stage_produces_real_scores_without_stub_warning(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     frame = pd.DataFrame(
@@ -423,7 +422,7 @@ def test_lightgbm_registry_produces_real_scores_without_stub_warning(
     monkeypatch.setattr(LightGbmSelector, "select", fake_select)
 
     result = FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=schema,
     )
@@ -470,7 +469,7 @@ def test_model_enabled_false_does_not_run_lightgbm(
     monkeypatch.setattr(LightGbmSelector, "select", fake_select)
 
     result = FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=schema,
     )
@@ -484,7 +483,7 @@ def test_model_enabled_false_does_not_run_lightgbm(
 def test_result_schema_apply_projection() -> None:
     """SelectionResult.apply should keep only selected + service columns."""
     categorical, continuous, columns = make_wide_schema_columns(30)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     config = _config()
     schema = _schema(categorical, continuous)
     result = FeatureSelectionPipeline(config).fit_select(
@@ -501,7 +500,7 @@ def test_result_schema_apply_projection() -> None:
 def test_no_service_columns_in_selected() -> None:
     """target, split, time, id columns must never appear in selected_features."""
     categorical, continuous, columns = make_wide_schema_columns(30)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     schema = _schema(categorical, continuous)
     result = FeatureSelectionPipeline(_config()).fit_select(
         spark,
@@ -512,25 +511,39 @@ def test_no_service_columns_in_selected() -> None:
     assert not (set(result.selected_features) & forbidden)
 
 
-def test_apply_fake_dataframe_selects_columns() -> None:
-    """SelectionResult.apply should work on FakeDataFrame for schema/result tests."""
+def test_apply_pandas_dataframe_selects_columns() -> None:
+    """SelectionResult.apply keeps selected columns on a pandas frame."""
     categorical, continuous, columns = make_wide_schema_columns(30)
-    spark = FakeSparkSession()
+    spark = require_spark_session()
     result = FeatureSelectionPipeline(_config()).fit_select(
         spark,
         data=make_pandas_frame(columns),
         schema=_schema(categorical, continuous),
     )
-    fake = FakeDataFrame(columns=columns)
-    projected = result.apply(fake)
+    projected = result.apply(make_pandas_frame(columns, n_rows=8))
     for name in result.selected_features:
         assert name in projected.columns
+
+
+def test_apply_spark_dataframe_selects_columns(spark: Any) -> None:
+    """SelectionResult.apply keeps selected columns on a real Spark frame."""
+    categorical, continuous, columns = make_wide_schema_columns(16)
+    result = FeatureSelectionPipeline(_config()).fit_select(
+        spark,
+        data=make_pandas_frame(columns, n_rows=20),
+        schema=_schema(categorical, continuous),
+    )
+    spark_frame = spark.createDataFrame(make_pandas_frame(columns, n_rows=8))
+    projected = result.apply(spark_frame)
+    keep = set(projected.columns)
+    for name in result.selected_features:
+        assert name in keep
 
 
 def test_empty_order_keeps_all_candidates() -> None:
     categorical, continuous, columns = make_wide_schema_columns(16)
     result = FeatureSelectionPipeline(FeatureSelectionConfig()).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": make_pandas_frame(columns)},
         schema=_schema(categorical, continuous, with_split=False),
     )
@@ -547,12 +560,12 @@ def test_custom_statistics_order_runs_correlation_before_null_rate(tmp_path: Pat
         execution={"seed": 42, "verbose": True},
     )
     FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": make_pandas_frame(columns)},
         schema=_schema(categorical, continuous, with_split=False),
         output_dir=tmp_path,
     )
-    events = json.loads((tmp_path / "debug_log.json").read_text(encoding="utf-8"))["events"]
+    events = json.loads((tmp_path / "verbose_log.json").read_text(encoding="utf-8"))["events"]
     starts = [
         (event["method"], event["step_index"])
         for event in events
@@ -574,12 +587,12 @@ def test_utils_run_before_statistics(tmp_path: Path) -> None:
         execution={"seed": 42, "verbose": True},
     )
     result = FeatureSelectionPipeline(config).fit_select(
-        FakeSparkSession(),
+        require_spark_session(),
         datasets={"train": frame},
         schema=_schema(categorical, continuous, with_split=False),
         output_dir=tmp_path,
     )
-    events = json.loads((tmp_path / "debug_log.json").read_text(encoding="utf-8"))["events"]
+    events = json.loads((tmp_path / "verbose_log.json").read_text(encoding="utf-8"))["events"]
     starts = [
         (event["method"], event["step_index"])
         for event in events

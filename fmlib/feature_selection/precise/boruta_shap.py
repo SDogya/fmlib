@@ -16,54 +16,19 @@ from fmlib.feature_selection.config import (
     PreciseConfig,
 )
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.default_model_param_spaces import (
+    BORUTA_LGBM_SEARCH_SPACE,
+    BORUTA_RF_SEARCH_SPACE,
+)
 from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
-    build_search_space,
     resolve_optuna_settings,
-    split_parameters,
+    resolve_tuning_space,
     suggest_parameter,
 )
 
 logger = logging.getLogger(__name__)
-
-_DEFAULT_LGBM_PARAMETERS: dict[str, dict[str, Any]] = {
-    "n_estimators": {"type": "int", "min": 100, "max": 1_400},
-    "num_leaves": {"type": "int", "min": 8, "max": 64},
-    "max_depth": {"type": "int", "min": 4, "max": 7},
-    "learning_rate": {
-        "type": "float",
-        "min": 0.01,
-        "max": 0.1,
-        "log": True,
-    },
-    "min_child_samples": {"type": "int", "min": 16, "max": 64},
-    "subsample": {"type": "float", "min": 0.7, "max": 1.0},
-    "colsample_bytree": {"type": "float", "min": 0.7, "max": 1.0},
-    "reg_alpha": {
-        "type": "float",
-        "min": 0.01,
-        "max": 1.0,
-        "log": True,
-    },
-    "reg_lambda": {
-        "type": "float",
-        "min": 0.01,
-        "max": 1.0,
-        "log": True,
-    },
-    "boosting_type": {
-        "type": "categorical",
-        "values": ["gbdt", "dart", "goss"],
-    },
-}
-
-_DEFAULT_RF_PARAMETERS: dict[str, dict[str, Any]] = {
-    "n_estimators": {"type": "int", "min": 50, "max": 200},
-    "max_depth": {"type": "int", "min": 3, "max": 10},
-    "min_samples_split": {"type": "int", "min": 2, "max": 20},
-    "min_samples_leaf": {"type": "int", "min": 1, "max": 10},
-}
 
 try:
     import optuna
@@ -140,7 +105,10 @@ class BorutaShapSelector:
             return []
 
         options = self._resolve_options(context)
-        backends = self._load_backends(options["model_type"])
+        backends = self._load_backends(
+            options["model_type"],
+            require_optuna=bool(options["search_space"]),
+        )
         try:
             details = self._run_boruta_selection(
                 train=train,
@@ -187,12 +155,21 @@ class BorutaShapSelector:
             "rejected": list(details["rejected"]),
             "tentative": list(details["tentative"]),
             "model_type": options["model_type"],
-            "best_auc": float(details["best_auc"]),
+            "best_auc": (
+                None
+                if details["best_auc"] is None
+                else float(details["best_auc"])
+            ),
             "best_params": {
                 key: _json_value(value)
                 for key, value in details["best_params"].items()
             },
-            "optuna_trials": options["n_trials"],
+            "optuna_enabled": options["optuna_enabled"],
+            "optuna_trials": (
+                0
+                if not options["search_space"]
+                else options["n_trials"]
+            ),
             "boruta_trials": options["boruta_trials"],
         }
         logger.info(
@@ -209,10 +186,10 @@ class BorutaShapSelector:
         """Resolve legacy-compatible options and execution capacity limits."""
         params = self.config.params
         optuna_params = params.get("optuna_params", {})
-        fixed_params, parameter_overrides = split_parameters(
-            params.get("parameters", {}),
-            method_name=self.method_name,
-        )
+        raw_parameters = params.get("parameters", {})
+        if not isinstance(raw_parameters, Mapping):
+            msg = "boruta_shap: params.parameters must be a mapping."
+            raise ExecutionError(msg)
         # Legacy aliases stay supported as the fallback for optuna_params.n_trials.
         legacy_n_trials = optuna_params.get("niter") if isinstance(optuna_params, Mapping) else None
         if legacy_n_trials is None:
@@ -223,8 +200,28 @@ class BorutaShapSelector:
                 method_name=self.method_name,
                 n_trials=int(legacy_n_trials),
             )
+            model_type = str(params.get("model_type", "lgbm")).lower()
+            sampler_name = optuna_settings["sampler"]
+            filtered = {
+                name: value
+                for name, value in raw_parameters.items()
+                if not (model_type == "lgbm" and str(name) == "bootstrap_type")
+            }
+            defaults: Mapping[str, Mapping[str, Any]] = {}
+            if sampler_name != "GRID":
+                defaults = (
+                    BORUTA_LGBM_SEARCH_SPACE
+                    if model_type == "lgbm"
+                    else BORUTA_RF_SEARCH_SPACE
+                )
+            fixed_params, search_space = resolve_tuning_space(
+                filtered,
+                defaults=defaults,
+                enabled=optuna_settings["enabled"],
+                method_name=self.method_name,
+            )
             options: dict[str, Any] = {
-                "model_type": str(params.get("model_type", "lgbm")).lower(),
+                "model_type": model_type,
                 "max_rows": min(
                     int(
                         params.get(
@@ -237,15 +234,21 @@ class BorutaShapSelector:
                 "sample_fraction": params.get("sample_fraction"),
                 "n_trials": optuna_settings["n_trials"],
                 "n_startup_trials": optuna_settings["n_startup_trials"],
-                "sampler": optuna_settings["sampler"],
+                "sampler": sampler_name,
                 "timeout": optuna_settings["timeout"],
+                "optuna_enabled": optuna_settings["enabled"],
                 "boruta_trials": int(params.get("boruta_trials", 50)),
                 "tentative_fix_method": params.get(
                     "tentative_fix_method",
                     "rough",
                 ),
-                "parameters": parameter_overrides,
+                "parameters": {
+                    name: spec
+                    for name, spec in filtered.items()
+                    if isinstance(spec, Mapping)
+                },
                 "fixed_params": fixed_params,
+                "search_space": search_space,
             }
             if options["sample_fraction"] is not None:
                 options["sample_fraction"] = float(
@@ -284,7 +287,7 @@ class BorutaShapSelector:
                 "boruta_shap: tentative_fix_method must be 'rough' or null."
             )
             raise ExecutionError(msg)
-        if options["sampler"] == "GRID":
+        if options["optuna_enabled"] and options["sampler"] == "GRID":
             finite = bool(options["parameters"]) and all(
                 isinstance(spec.get("values"), (list, tuple))
                 and bool(spec["values"])
@@ -301,6 +304,8 @@ class BorutaShapSelector:
     def _load_backends(
         self: BorutaShapSelector,
         model_type: str,
+        *,
+        require_optuna: bool = True,
     ) -> _Backends:
         """Load optional BorutaSHAP, Optuna, sklearn, and model dependencies."""
         if BorutaShap is None:
@@ -311,21 +316,24 @@ class BorutaShapSelector:
             if _boruta_import_error is not None:
                 msg = f"{msg} Root cause: {root_cause(_boruta_import_error)}."
             raise BackendError(msg)
-        if optuna is None:
-            msg = (
-                "boruta_shap: Optuna is required. Install the optuna optional "
-                "dependency."
-            )
-            raise BackendError(msg)
-        try:
-            from sklearn.metrics import roc_auc_score
-            from sklearn.model_selection import train_test_split
-        except ImportError as exc:
-            msg = (
-                "boruta_shap: scikit-learn is required. Install the sklearn "
-                "optional dependency."
-            )
-            raise BackendError(msg) from exc
+        roc_auc_score: Any = None
+        train_test_split: Any = None
+        if require_optuna:
+            if optuna is None:
+                msg = (
+                    "boruta_shap: Optuna is required. Install the optuna optional "
+                    "dependency."
+                )
+                raise BackendError(msg)
+            try:
+                from sklearn.metrics import roc_auc_score
+                from sklearn.model_selection import train_test_split
+            except ImportError as exc:
+                msg = (
+                    "boruta_shap: scikit-learn is required. Install the sklearn "
+                    "optional dependency."
+                )
+                raise BackendError(msg) from exc
 
         if model_type == "lgbm":
             try:
@@ -404,107 +412,110 @@ class BorutaShapSelector:
                 f"after sampling; class counts are {class_counts.tolist()}."
             )
             raise ExecutionError(msg)
-        test_rows = math.ceil(len(target) * 0.2)
-        train_rows = len(target) - test_rows
-        if test_rows < len(classes) or train_rows < len(classes):
-            msg = (
-                "boruta_shap: the bounded sample is too small for a stratified "
-                f"80/20 hold-out; got {len(target)} rows."
-            )
-            raise ExecutionError(msg)
 
-        (
-            train_features,
-            valid_features,
-            train_target,
-            valid_target,
-        ) = backends.train_test_split(
-            features,
-            target,
-            test_size=0.2,
-            stratify=target,
-            random_state=seed,
-        )
         fixed_params = options["fixed_params"]
-        search_space = self._build_search_space(
-            options["model_type"],
-            options["parameters"],
-            options["sampler"],
-            fixed_params,
-        )
-        if not search_space:
-            msg = "boruta_shap: the configured Optuna search space is empty."
-            raise ExecutionError(msg)
-        sampler = build_sampler(
-            backends.optuna_module,
-            sampler_name=options["sampler"],
-            search_space=search_space,
-            seed=seed,
-            n_startup_trials=options["n_startup_trials"],
-            method_name=self.method_name,
-        )
-        study = backends.optuna_module.create_study(
-            direction="maximize",
-            sampler=sampler,
-        )
-
-        def objective(trial: Any) -> float:
-            suggested = {
-                name: suggest_parameter(
-                    trial,
-                    name,
-                    specification,
-                    method_name=self.method_name,
-                )
-                for name, specification in search_space.items()
-            }
-            model = self._build_model(
-                backends.model_class,
-                options["model_type"],
-                {**fixed_params, **suggested},
-                seed,
-            )
-            if options["model_type"] == "lgbm":
-                model.fit(
-                    train_features,
-                    train_target,
-                    eval_set=[(valid_features, valid_target)],
-                )
-            else:
-                model.fit(train_features, train_target)
-            predictions = model.predict_proba(valid_features)[:, 1]
-            return float(
-                backends.roc_auc_score(valid_target, predictions),
-            )
-
-        try:
-            study.optimize(
-                objective,
-                n_trials=options["n_trials"],
-                timeout=options["timeout"],
-                show_progress_bar=False,
-            )
-            best_params = {**fixed_params, **study.best_params}
-            best_auc = float(study.best_value)
-            if not math.isfinite(best_auc):
+        search_space = options["search_space"]
+        if search_space:
+            test_rows = math.ceil(len(target) * 0.2)
+            train_rows = len(target) - test_rows
+            if test_rows < len(classes) or train_rows < len(classes):
                 msg = (
-                    "boruta_shap: Optuna did not produce a finite best AUC."
+                    "boruta_shap: the bounded sample is too small for a stratified "
+                    f"80/20 hold-out; got {len(target)} rows."
                 )
                 raise ExecutionError(msg)
+
+            (
+                train_features,
+                valid_features,
+                train_target,
+                valid_target,
+            ) = backends.train_test_split(
+                features,
+                target,
+                test_size=0.2,
+                stratify=target,
+                random_state=seed,
+            )
+            sampler = build_sampler(
+                backends.optuna_module,
+                sampler_name=options["sampler"],
+                search_space=search_space,
+                seed=seed,
+                n_startup_trials=options["n_startup_trials"],
+                method_name=self.method_name,
+            )
+            study = backends.optuna_module.create_study(
+                direction="maximize",
+                sampler=sampler,
+            )
+
+            def objective(trial: Any) -> float:
+                suggested = {
+                    name: suggest_parameter(
+                        trial,
+                        name,
+                        specification,
+                        method_name=self.method_name,
+                    )
+                    for name, specification in search_space.items()
+                }
+                model = self._build_model(
+                    backends.model_class,
+                    options["model_type"],
+                    {**fixed_params, **suggested},
+                    seed,
+                )
+                if options["model_type"] == "lgbm":
+                    model.fit(
+                        train_features,
+                        train_target,
+                        eval_set=[(valid_features, valid_target)],
+                    )
+                else:
+                    model.fit(train_features, train_target)
+                predictions = model.predict_proba(valid_features)[:, 1]
+                return float(
+                    backends.roc_auc_score(valid_target, predictions),
+                )
+
+            try:
+                study.optimize(
+                    objective,
+                    n_trials=options["n_trials"],
+                    timeout=options["timeout"],
+                    show_progress_bar=False,
+                )
+                best_params = {**fixed_params, **study.best_params}
+                best_auc = float(study.best_value)
+                if not math.isfinite(best_auc):
+                    msg = (
+                        "boruta_shap: Optuna did not produce a finite best AUC."
+                    )
+                    raise ExecutionError(msg)
+                final_model = self._build_model(
+                    backends.model_class,
+                    options["model_type"],
+                    best_params,
+                    seed,
+                )
+            except ExecutionError:
+                raise
+            except Exception as exc:  # noqa: BLE001 - third-party model failures
+                msg = (
+                    "boruta_shap: Optuna tuning failed. "
+                    f"Root cause: {root_cause(exc)}."
+                )
+                raise ExecutionError(msg) from exc
+        else:
+            best_params = dict(fixed_params)
+            best_auc = None
             final_model = self._build_model(
                 backends.model_class,
                 options["model_type"],
                 best_params,
                 seed,
             )
-        except ExecutionError:
-            raise
-        except Exception as exc:  # noqa: BLE001 - third-party model failures
-            msg = (
-                "boruta_shap: Optuna tuning failed. "
-                f"Root cause: {root_cause(exc)}."
-            )
-            raise ExecutionError(msg) from exc
 
         try:
             feature_selector = backends.boruta_class(
@@ -564,12 +575,14 @@ class BorutaShapSelector:
         overrides: Mapping[str, dict[str, Any]],
         sampler_name: str,
         fixed: Mapping[str, Any],
+        *,
+        enabled: bool = True,
     ) -> dict[str, dict[str, Any]]:
-        """Merge legacy search-space defaults with user overrides.
+        """Resolve the Optuna space: YAML mappings replace the fallback.
 
         ``GRID`` enumerates an explicit product, so built-in ranges are not
-        mixed in: only configured entries take part. Parameters pinned to a
-        scalar in ``fixed`` are excluded either way.
+        used: only configured entries take part. ``bootstrap_type`` is dropped
+        for LightGBM because it is not a LightGBM constructor argument.
         """
         clean_overrides = {
             name: specification
@@ -579,15 +592,17 @@ class BorutaShapSelector:
         defaults: Mapping[str, Mapping[str, Any]] = {}
         if sampler_name != "GRID":
             defaults = (
-                _DEFAULT_LGBM_PARAMETERS
+                BORUTA_LGBM_SEARCH_SPACE
                 if model_type == "lgbm"
-                else _DEFAULT_RF_PARAMETERS
+                else BORUTA_RF_SEARCH_SPACE
             )
-        return build_search_space(
-            defaults,
-            overrides=clean_overrides,
-            fixed=fixed,
+        _fixed, space = resolve_tuning_space(
+            {**fixed, **clean_overrides},
+            defaults=defaults,
+            enabled=enabled,
+            method_name="boruta_shap",
         )
+        return space
 
     @staticmethod
     def _build_model(

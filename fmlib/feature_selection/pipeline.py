@@ -14,21 +14,25 @@ from fmlib.feature_selection.backends.spark import (
 )
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig
-from fmlib.feature_selection.debug import DebugRecorder
 from fmlib.feature_selection.exceptions import ConfigError, SchemaError
-from fmlib.feature_selection.registry import (
-    METHOD_STAGE,
-    STUB_METHODS,
-    build_pipeline_steps,
-    stage_backends_for_config,
-)
+from fmlib.feature_selection.model_based.stage import STUB_METHODS, ModelBasedStage
+from fmlib.feature_selection.precise.stage import PreciseStage
 from fmlib.feature_selection.result import (
     DroppedFeature,
     SelectionResult,
     _next_available_path,
-    _save_intermediate_result,
+    stage_backends_for_config,
 )
 from fmlib.feature_selection.schema import FeatureSchema, ensure_no_feature_leak
+from fmlib.feature_selection.statistics.stage import StatisticsStage
+from fmlib.feature_selection.utils.stage import UtilsStage
+from fmlib.feature_selection.utils.verbose import (
+    VERBOSE_LOG_FILENAME,
+    VerboseRecorder,
+    announce_not_saved,
+    announce_save_failed,
+    announce_saved,
+)
 
 _DATASET_KEYS = ("train", "valid", "test")
 logger = logging.getLogger(__name__)
@@ -47,6 +51,10 @@ class FeatureSelectionPipeline:
     def __init__(self: FeatureSelectionPipeline, config: FeatureSelectionConfig) -> None:
         config.validate()
         self.config = config
+        self._utils = UtilsStage()
+        self._statistics = StatisticsStage()
+        self._model = ModelBasedStage()
+        self._precise = PreciseStage()
 
     def fit_select(
         self: FeatureSelectionPipeline,
@@ -86,11 +94,10 @@ class FeatureSelectionPipeline:
         )
         self._validate_inputs(resolved, schema=schema, datasets_mode=datasets_mode)
 
-        debug = DebugRecorder(self.config.execution.verbose)
+        recorder = VerboseRecorder(self.config.execution.verbose)
         pipeline_started = time.perf_counter()
-        steps = build_pipeline_steps(self.config)
-        if debug.enabled("pipeline"):
-            debug.emit(
+        if recorder.enabled("pipeline"):
+            recorder.emit(
                 "pipeline",
                 "start",
                 datasets_mode=datasets_mode,
@@ -104,7 +111,7 @@ class FeatureSelectionPipeline:
                 precise_enabled=self.config.precise.enabled,
                 precise_method=self.config.precise.method,
                 dataset_splits=list(resolved),
-                datasets=debug.snapshot_datasets(resolved),
+                datasets=recorder.snapshot_datasets(resolved),
                 output_dir=str(output_dir) if output_dir is not None else None,
             )
 
@@ -126,27 +133,19 @@ class FeatureSelectionPipeline:
             seed=seed,
             candidates=list(candidates),
             datasets_mode=datasets_mode,
-            debug=debug,
+            verbose_log=recorder,
             run_seed=seed,
+            output_dir=Path(output_dir) if output_dir is not None else None,
         )
 
-        output_path = Path(output_dir) if output_dir is not None else None
+        output_path = context.output_dir
         remaining = list(candidates)
         try:
-            for step_index, step in enumerate(steps):
-                method_name = step.method_name
-                context.step_index = step_index
-                remaining = step.run(context, remaining)
-                schema = context.schema
-                if output_path is not None:
-                    _save_intermediate_result(
-                        remaining=remaining,
-                        decisions=context.decisions,
-                        stage_name=METHOD_STAGE[method_name],
-                        method_name=method_name,
-                        output_dir=output_path,
-                        context=context,
-                    )
+            remaining, _ = self._utils.run(context, remaining)
+            remaining, _ = self._statistics.run(context, remaining)
+            remaining, _ = self._model.run(context, remaining)
+            remaining, _ = self._precise.run(context, remaining)
+            schema = context.schema
 
             dropped = [
                 DroppedFeature(
@@ -168,6 +167,17 @@ class FeatureSelectionPipeline:
                     "replace it with a real algorithm.",
                 )
 
+            if recorder.enabled("pipeline"):
+                recorder.emit(
+                    "pipeline",
+                    "end",
+                    duration_seconds=round(time.perf_counter() - pipeline_started, 6),
+                    n_selected=len(remaining),
+                    n_dropped=len(dropped),
+                    n_warnings=len(warnings),
+                    datasets_mode=datasets_mode,
+                    n_steps=context.step_index,
+                )
             result = SelectionResult(
                 selected_features=list(remaining),
                 dropped_features=dropped,
@@ -178,24 +188,14 @@ class FeatureSelectionPipeline:
                 warnings=warnings,
                 datasets_mode=datasets_mode,
                 scores=dict(context.scores),
+                verbose_log=recorder.to_dict() if recorder.any_enabled() else None,
             )
-            if debug.enabled("pipeline"):
-                debug.emit(
-                    "pipeline",
-                    "end",
-                    duration_seconds=round(time.perf_counter() - pipeline_started, 6),
-                    n_selected=len(remaining),
-                    n_dropped=len(dropped),
-                    n_warnings=len(warnings),
-                    datasets_mode=datasets_mode,
-                    n_steps=len(steps),
-                )
             if output_path is not None:
                 result.save(output_path / "final_results.json")
             return result
         except Exception as exc:
-            if debug.enabled("pipeline"):
-                debug.emit(
+            if recorder.enabled("pipeline"):
+                recorder.emit(
                     "pipeline",
                     "error",
                     duration_seconds=round(time.perf_counter() - pipeline_started, 6),
@@ -204,11 +204,17 @@ class FeatureSelectionPipeline:
                 )
             raise
         finally:
-            if output_path is not None and debug.any_enabled():
+            if recorder.any_enabled() and output_path is None:
+                announce_not_saved(len(recorder.events))
+            elif recorder.any_enabled() and output_path is not None:
                 try:
-                    debug.save(_next_available_path(output_path / "debug_log.json"))
-                except Exception:
-                    logger.exception("Failed to write feature-selection debug_log.json")
+                    saved = recorder.save(
+                        _next_available_path(output_path / VERBOSE_LOG_FILENAME),
+                    )
+                    announce_saved(saved, len(recorder.events))
+                except Exception as save_exc:
+                    logger.exception("Failed to write feature-selection %s", VERBOSE_LOG_FILENAME)
+                    announce_save_failed(save_exc)
 
     def transform(self: FeatureSelectionPipeline, data: Any, result: SelectionResult) -> Any:
         """Apply a fitted ``SelectionResult`` to a DataFrame-like object.

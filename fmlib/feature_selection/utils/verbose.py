@@ -1,13 +1,20 @@
-"""Per-method verbose tracing for feature selection.
+"""Per-method verbose event log for feature selection.
 
-Events record sizes, timings and numeric summaries. Feature-name lists are
-stripped: those already live in the JSON artifacts written after each stage.
+Gated by ``execution.verbose``. Events are sizes, timings and numeric summaries.
+Feature-name lists are stripped: those already live in the JSON artifacts written
+after each stage.
+
+Lines go to stdout (so Jupyter cells see them even without logging config) and
+to the stdlib logger. JSON is written to ``verbose_log.json`` only when
+``fit_select(..., output_dir=...)`` is set; otherwise the payload stays on
+``SelectionResult.verbose_log``.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import sys
 import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
@@ -17,6 +24,9 @@ from typing import Any, Iterator, Mapping, Sequence
 from fmlib.feature_selection.backends.spark import get_columns
 
 logger = logging.getLogger(__name__)
+
+VERBOSE_LOG_FILENAME = "verbose_log.json"
+LINE_PREFIX = "fs.verbose"
 
 # Keys that would dump keep/drop name lists already stored in stage JSONs.
 _FEATURE_LIST_KEYS = frozenset(
@@ -40,35 +50,59 @@ _FEATURE_LIST_KEYS = frozenset(
 )
 
 
-def default_recorder() -> "DebugRecorder":
+def default_verbose_recorder() -> "VerboseRecorder":
     """Build a silent recorder for StageContext defaults and unit tests."""
     from fmlib.feature_selection.config import VerboseConfig
 
-    return DebugRecorder(verbose=VerboseConfig())
+    return VerboseRecorder(verbose=VerboseConfig())
+
+
+def echo(line: str) -> None:
+    """Print a line to stdout so notebooks see it without logging setup."""
+    print(line, file=sys.stdout, flush=True)  # noqa: T201 - notebooks have no logging config
+    logger.info("%s", line)
+
+
+def announce_saved(path: Path, n_events: int) -> None:
+    """Tell the user where the verbose JSON landed."""
+    echo(f"{LINE_PREFIX} wrote {path} ({n_events} events)")
+
+
+def announce_not_saved(n_events: int) -> None:
+    """Tell the user why JSON was not written (typical Jupyter call)."""
+    echo(
+        f"{LINE_PREFIX} {n_events} events kept on result.verbose_log; "
+        f"pass output_dir=... to write {VERBOSE_LOG_FILENAME}"
+    )
+
+
+def announce_save_failed(exc: BaseException) -> None:
+    """Surface a dump failure on stdout, not only in logging."""
+    echo(f"{LINE_PREFIX} failed to write {VERBOSE_LOG_FILENAME}: {exc}")
 
 
 @dataclass
-class DebugRecorder:
-    """In-memory debug log gated by per-method ``execution.verbose`` flags."""
+class VerboseRecorder:
+    """In-memory event log gated by per-method ``execution.verbose`` flags."""
 
     verbose: Any
     events: list[dict[str, Any]] = field(default_factory=list)
     started_at: float = field(default_factory=time.perf_counter)
     wall_started_at: float = field(default_factory=time.time)
 
-    def enabled(self: DebugRecorder, method: str) -> bool:
-        """Return whether ``method`` should emit debug events."""
+    def enabled(self: VerboseRecorder, method: str) -> bool:
+        """Return whether ``method`` should emit events."""
         return bool(getattr(self.verbose, method, False))
 
-    def any_enabled(self: DebugRecorder) -> bool:
+    def any_enabled(self: VerboseRecorder) -> bool:
         """Return whether at least one method is verbose."""
         flags = getattr(self.verbose, "__dataclass_fields__", None)
         if flags is None:
             return False
         return any(bool(getattr(self.verbose, name, False)) for name in flags)
 
-    def emit(self: DebugRecorder, method: str, stage: str, **payload: Any) -> None:
-        """Append one event when ``method`` is verbose and mirror it to the logger."""
+    def emit(self: VerboseRecorder, method: str, stage: str, **payload: Any) -> None:
+        """Append one event when ``method`` is verbose and echo it to stdout."""
         if not self.enabled(method):
             return
         clean = _sanitize(payload)
@@ -79,12 +113,10 @@ class DebugRecorder:
             **clean,
         }
         self.events.append(event)
-        line = f"fs.debug {method}/{stage} {_compact(clean)}"
-        logger.info("%s", line)
-        print(line, flush=True)
+        echo(f"{LINE_PREFIX} {method}/{stage} {_compact(clean)}")
 
     def snapshot_frame(
-        self: DebugRecorder,
+        self: VerboseRecorder,
         frame: Any,
         *,
         count_rows: bool = False,
@@ -92,7 +124,7 @@ class DebugRecorder:
         """Describe a DataFrame-like object without Spark actions.
 
         ``count_rows`` is accepted for call-site compatibility and ignored:
-        debug must never call ``count()`` / ``collect()`` / ``toPandas()``.
+        verbose logging must never call ``count()`` / ``collect()`` / ``toPandas()``.
         """
         del count_rows
         info: dict[str, Any] = {"type": type(frame).__name__}
@@ -108,7 +140,7 @@ class DebugRecorder:
         return info
 
     def snapshot_datasets(
-        self: DebugRecorder,
+        self: VerboseRecorder,
         datasets: Mapping[str, Any],
         *,
         count_rows: bool = False,
@@ -120,8 +152,8 @@ class DebugRecorder:
             for name, frame in datasets.items()
         }
 
-    def to_dict(self: DebugRecorder) -> dict[str, Any]:
-        """Serialize the recorder for ``debug_log.json``."""
+    def to_dict(self: VerboseRecorder) -> dict[str, Any]:
+        """Serialize the recorder for ``verbose_log.json`` and ``result.verbose_log``."""
         verbose_payload: Any
         try:
             verbose_payload = asdict(self.verbose)
@@ -135,20 +167,20 @@ class DebugRecorder:
             "events": list(self.events),
         }
 
-    def save(self: DebugRecorder, path: Path) -> Path:
-        """Write the debug log as JSON to ``path``."""
+    def save(self: VerboseRecorder, path: Path) -> Path:
+        """Write the verbose log as JSON to ``path``."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2, default=str) + "\n",
             encoding="utf-8",
         )
-        logger.info("Saved debug log to %s (%s events)", path, len(self.events))
+        logger.info("Saved verbose log to %s (%s events)", path, len(self.events))
         return path
 
 
 @contextmanager
-def debug_span(
-    recorder: DebugRecorder,
+def verbose_span(
+    recorder: VerboseRecorder,
     method: str,
     **start_payload: Any,
 ) -> Iterator[dict[str, Any] | None]:
@@ -180,9 +212,16 @@ def debug_span(
     recorder.emit(method, "end", **extra)
 
 
+def _recorder(context: Any) -> VerboseRecorder | None:
+    recorder = getattr(context, "verbose_log", None)
+    if recorder is None or not hasattr(recorder, "emit") or not hasattr(recorder, "enabled"):
+        return None
+    return recorder
+
+
 def emit(context: Any, method: str, stage: str, **payload: Any) -> None:
     """Emit an event from a selector when that method is verbose."""
-    recorder = getattr(context, "debug", None)
+    recorder = _recorder(context)
     if recorder is None:
         return
     recorder.emit(method, stage, **payload)
@@ -190,7 +229,7 @@ def emit(context: Any, method: str, stage: str, **payload: Any) -> None:
 
 def enabled(context: Any, method: str) -> bool:
     """Return whether ``method`` is verbose on ``context``."""
-    recorder = getattr(context, "debug", None)
+    recorder = _recorder(context)
     if recorder is None:
         return False
     return bool(recorder.enabled(method))
@@ -203,7 +242,7 @@ def run_selector_logged(
 ) -> list[Any]:
     """Run ``selector.select`` and record timing / size events when verbose."""
     method = selector.method_name
-    recorder = getattr(context, "debug", None)
+    recorder = _recorder(context)
     if recorder is None or not recorder.enabled(method):
         return selector.select(context, candidates)
 
@@ -212,7 +251,7 @@ def run_selector_logged(
         "datasets": recorder.snapshot_datasets(context.datasets),
         "step_index": getattr(context, "step_index", 0),
     }
-    with debug_span(recorder, method, **start_payload) as span:
+    with verbose_span(recorder, method, **start_payload) as span:
         decisions = selector.select(context, candidates)
         if span is not None:
             span.update(_decision_summary(decisions, len(candidates)))
@@ -306,7 +345,7 @@ def _n_cols(frame: Any) -> int | None:
     """Return the number of columns when cheaply available."""
     try:
         return len(get_columns(frame))
-    except Exception:  # noqa: BLE001 - debug must never fail the run
+    except Exception:  # noqa: BLE001 - verbose logging must never fail the run
         columns = getattr(frame, "columns", None)
         if columns is None:
             shape = getattr(frame, "shape", None)
@@ -337,7 +376,7 @@ def _n_rows(frame: Any) -> int | None:
     except ImportError:  # pragma: no cover - pandas is a core test/runtime dep
         pd = None  # type: ignore[assignment]
     if pd is not None and isinstance(frame, pd.DataFrame):
-        return int(len(frame))
+        return len(frame)
     return None
 
 

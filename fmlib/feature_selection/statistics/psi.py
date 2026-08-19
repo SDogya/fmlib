@@ -10,7 +10,8 @@ import numpy as np
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import PsiConfig
-from fmlib.feature_selection.debug import emit as debug_emit, enabled as debug_enabled
+from fmlib.feature_selection.utils.verbose import emit as verbose_emit
+from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 logger = logging.getLogger(__name__)
 
@@ -204,8 +205,8 @@ class PsiSelector:
 
         is_pyspark = hasattr(train_df, "stat") and hasattr(train_df, "agg")
 
-        if debug_enabled(context, self.method_name):
-            debug_emit(
+        if verbose_enabled(context, self.method_name):
+            verbose_emit(
                 context,
                 self.method_name,
                 "inputs",
@@ -215,8 +216,8 @@ class PsiSelector:
                 n_features=len(feature_cols),
                 backend="spark" if is_pyspark else "pandas",
                 subsample_rows=self.config.subsample_rows,
-                baseline=context.debug.snapshot_frame(train_df),
-                actual=context.debug.snapshot_frame(test_df),
+                baseline=context.verbose_log.snapshot_frame(train_df),
+                actual=context.verbose_log.snapshot_frame(test_df),
             )
 
         if is_pyspark:
@@ -230,9 +231,9 @@ class PsiSelector:
             keep = score <= threshold
             decisions.append(self._make_decision(col, keep=keep, score=score, threshold=threshold))
 
-        if debug_enabled(context, self.method_name) and psi_scores:
+        if verbose_enabled(context, self.method_name) and psi_scores:
             values = [float(score) for score in psi_scores.values()]
-            debug_emit(
+            verbose_emit(
                 context,
                 self.method_name,
                 "scores",

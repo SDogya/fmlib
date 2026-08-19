@@ -191,8 +191,9 @@ execution:
   # Жёсткий потолок pandas-материализации (correlation, lightgbm, boruta).
   max_local_rows: 250_000
   # false — тихо; true — все методы.
-  # Или карта по методам. Debug не делает Spark count/collect.
-  # Пишет размеры (pandas), тайминги, счётчики. Имена дропнутых фичей сюда не
-  # попадают — они уже в JSON артефактах стадий. При output_dir пишется
-  # debug_log.json даже если шаг упал.
+  # Или карта по методам. Verbose-лог не делает Spark count/collect.
+  # Пишет размеры (pandas), тайминги, счётчики в stdout (видно в Jupyter)
+  # и в result.verbose_log. Имена дропнутых фичей сюда не попадают — они уже
+  # в JSON артефактах стадий. При output_dir пишется verbose_log.json даже если
+  # шаг упал. Без output_dir JSON не пишется — смотри result.verbose_log.
   verbose: false

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 from decimal import Decimal
 from types import ModuleType
-from typing import Any, ClassVar
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -14,15 +14,15 @@ import pytest
 import fmlib.feature_selection.model_based.lightgbm as lightgbm_module
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
-from fmlib.feature_selection.utils.local_data import sample_size
 from fmlib.feature_selection.model_based.lightgbm import (
     DEFAULT_SEARCH_SPACE,
     LightGbmSelector,
     normalize_binary_shap_values,
 )
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.conftest import FakeSparkSession
+from fmlib.feature_selection.utils.local_data import sample_size
 
 
 def _context(
@@ -59,7 +59,7 @@ def _context(
     )
     candidates = schema.candidate_features()
     return StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={"train": frame},
         schema=schema,
         config=config,
@@ -108,23 +108,27 @@ def _mock_backends(selector: LightGbmSelector, monkeypatch: pytest.MonkeyPatch) 
     )
 
 
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
-
-
-def _ml_backends_available() -> bool:
-    if lightgbm_module.shap is None or lightgbm_module.optuna is None:
-        return False
+def _require_ml_backends() -> None:
+    """Fail immediately when the LightGBM extra is missing. Do not skip."""
     try:
         import lightgbm  # noqa: F401
+        import optuna  # noqa: F401
+        import shap  # noqa: F401
         import sklearn  # noqa: F401
-    except Exception:  # noqa: BLE001 - optional binary dependencies
-        return False
-    return True
+    except ImportError as exc:
+        pytest.fail(f"Install the lightgbm extra (lightgbm, shap, optuna, sklearn). Root cause: {exc}")
+    if lightgbm_module.shap is None or lightgbm_module.optuna is None:
+        pytest.fail("Install the lightgbm extra (lightgbm, shap, optuna, sklearn).")
+
+
+_TINY_FIXED_PARAMS = {
+    "n_estimators": 8,
+    "num_leaves": 8,
+    "learning_rate": 0.1,
+    "max_depth": 2,
+    "subsample": 1.0,
+    "colsample_bytree": 1.0,
+}
 
 
 def test_selector_is_lightgbm() -> None:
@@ -304,34 +308,6 @@ def test_options_prefer_n_jobs_over_legacy_driver_n_jobs() -> None:
     assert options["n_jobs"] == 4
 
 
-class _FakeStratifiedKFold:
-    def __init__(self: _FakeStratifiedKFold, **_kwargs: Any) -> None:
-        return None
-
-    def split(
-        self: _FakeStratifiedKFold,
-        _matrix: np.ndarray,
-        _target: np.ndarray,
-    ) -> Any:
-        yield np.array([2, 3, 4, 5]), np.array([0, 1])
-        yield np.array([0, 1, 4, 5]), np.array([2, 3])
-
-
-def _install_fake_sklearn_model_selection(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    sklearn_module = ModuleType("sklearn")
-    model_selection = ModuleType("sklearn.model_selection")
-    model_selection.StratifiedKFold = _FakeStratifiedKFold
-    sklearn_module.model_selection = model_selection
-    monkeypatch.setitem(sys.modules, "sklearn", sklearn_module)
-    monkeypatch.setitem(
-        sys.modules,
-        "sklearn.model_selection",
-        model_selection,
-    )
-
-
 @pytest.mark.parametrize(
     ("mode", "expected_driver_calls"),
     [("global", 1), ("per_fold", 0)],
@@ -341,51 +317,55 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
     mode: str,
     expected_driver_calls: int,
 ) -> None:
-    _install_fake_sklearn_model_selection(monkeypatch)
-    context = _context(_frame(), params={"optuna_mode": mode})
-    selector = LightGbmSelector(context.config.model)
-    matrix = np.arange(12, dtype=float).reshape(6, 2)
-    target = np.array([0, 1, 0, 1, 0, 1])
-    monkeypatch.setattr(
-        selector,
-        "_extract_and_prep_data",
-        lambda *_args, **_kwargs: (
-            matrix,
-            target,
-            ["first", "second"],
-        ),
+    _require_ml_backends()
+    context = _context(
+        _frame(),
+        params={
+            "optuna_mode": mode,
+            "n_trials": 1,
+            "n_folds": 2,
+            "n_jobs": 1,
+            "shap_max_rows": 32,
+            "parameters": {
+                "n_estimators": {"type": "int", "min": 8, "max": 10},
+                "num_leaves": 8,
+                "learning_rate": 0.1,
+                "max_depth": 2,
+            },
+            "optuna_params": {"n_trials": 1, "n_startup_trials": 1},
+        },
     )
+    selector = LightGbmSelector(context.config.model)
+    options = selector._resolve_options(context)
     tune_calls: list[dict[str, Any]] = []
     captured_folds: list[dict[str, Any]] = []
+    original_tune = lightgbm_module.tune_parameters
+    original_run = selector._run_fold
 
-    def fake_tune(
-        _matrix: np.ndarray,
-        _target: np.ndarray,
+    def wrapped_tune(
+        matrix: np.ndarray,
+        target: np.ndarray,
         **kwargs: Any,
     ) -> dict[str, Any]:
         tune_calls.append(kwargs)
-        return {"n_estimators": 120}
+        return original_tune(matrix, target, **kwargs)
 
-    def fake_run(
-        _matrix: np.ndarray,
-        _target: np.ndarray,
+    def wrapped_run(
+        matrix: np.ndarray,
+        target: np.ndarray,
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
         captured_folds.append(kwargs)
-        return (
-            np.array([1.0, 0.5]),
-            np.array([0.8, 0.4]),
-            {"n_estimators": 120 + kwargs["fold_index"]},
-        )
+        return original_run(matrix, target, **kwargs)
 
-    monkeypatch.setattr(lightgbm_module, "tune_parameters", fake_tune)
-    monkeypatch.setattr(selector, "_run_fold", fake_run)
+    monkeypatch.setattr(lightgbm_module, "tune_parameters", wrapped_tune)
+    monkeypatch.setattr(selector, "_run_fold", wrapped_run)
 
     details = selector._select_robust_features(
         df=_frame(),
         target_col="response",
         feature_cols=["first", "second"],
-        n_trials=2,
+        n_trials=1,
         n_folds=2,
         max_rows_limit=20,
         sample_fraction=None,
@@ -393,23 +373,24 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         shap_threshold=0.85,
         seed=17,
         optuna_mode=mode,
-        n_jobs=2,
-        shap_max_rows=100,
+        n_jobs=1,
+        shap_max_rows=32,
+        search_space=options["search_space"],
+        fixed_params=options["fixed_params"],
+        n_startup_trials=1,
         return_importances=True,
     )
 
     assert len(tune_calls) == expected_driver_calls
     assert len(captured_folds) == 2
     assert all(fold["optuna_mode"] == mode for fold in captured_folds)
-    assert all(fold["n_jobs"] == 2 for fold in captured_folds)
+    assert all(fold["n_jobs"] == 1 for fold in captured_folds)
     assert [fold["seed"] for fold in captured_folds] == [18, 19]
     if mode == "global":
-        assert tune_calls[0]["n_jobs"] == 2
-        assert all(
-            fold["global_params"] == {"n_estimators": 120}
-            for fold in captured_folds
-        )
-        assert details["global_best_params"] == {"n_estimators": 120}
+        assert tune_calls[0]["n_jobs"] == 1
+        assert all(fold["global_params"] is not None for fold in captured_folds)
+        assert details["global_best_params"] is not None
+        assert 8 <= details["global_best_params"]["n_estimators"] <= 10
     else:
         assert all(fold["global_params"] is None for fold in captured_folds)
         assert details["global_best_params"] is None
@@ -644,11 +625,8 @@ def test_sample_size_applies_fraction_and_capacity_caps() -> None:
     assert sample_size(100, max_rows=10, sample_fraction=0.25) == 10
 
 
-@pytest.mark.skipif(
-    not _ml_backends_available(),
-    reason="LightGBM, SHAP, Optuna, and sklearn are required",
-)
-def test_pandas_end_to_end_with_optional_ml_backends() -> None:
+def test_pandas_end_to_end_with_ml_backends() -> None:
+    _require_ml_backends()
     rng = np.random.default_rng(23)
     target = np.tile([0, 1], 50)
     frame = pd.DataFrame(
@@ -669,6 +647,8 @@ def test_pandas_end_to_end_with_optional_ml_backends() -> None:
             "max_rows": len(frame),
             "optuna_mode": "global",
             "n_jobs": 1,
+            "parameters": dict(_TINY_FIXED_PARAMS),
+            "optuna_params": {"enabled": False},
         },
     )
     decisions = LightGbmSelector(context.config.model).select(
@@ -690,52 +670,35 @@ def test_pandas_end_to_end_with_optional_ml_backends() -> None:
     }
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-def test_spark_preparation_uses_declared_columns_and_supports_dots() -> None:
-    from pyspark.sql import SparkSession
+def test_spark_preparation_uses_declared_columns_and_supports_dots(spark: Any) -> None:
+    frame = spark.createDataFrame(
+        [
+            (float(index), float(index * 10), index % 2)
+            for index in range(10)
+        ],
+        ["foo.bar", "unused", "response"],
+    )
+    selector = LightGbmSelector(
+        _context(
+            pd.DataFrame(),
+            categorical=(),
+            continuous=("foo.bar",),
+        ).config.model,
+    )
 
-    try:
-        spark = (
-            SparkSession.builder.master("local[1]")
-            .appName("test-lightgbm-preparation")
-            .config("spark.ui.enabled", "false")
-            .config("spark.driver.host", "127.0.0.1")
-            .getOrCreate()
-        )
-    except Exception as exc:  # noqa: BLE001 - optional local Spark runtime
-        pytest.skip(f"Spark runtime unavailable: {exc}")
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        frame = spark.createDataFrame(
-            [
-                (float(index), float(index * 10), index % 2)
-                for index in range(10)
-            ],
-            ["foo.bar", "unused", "response"],
-        )
-        selector = LightGbmSelector(
-            _context(
-                pd.DataFrame(),
-                categorical=(),
-                continuous=("foo.bar",),
-            ).config.model,
-        )
+    matrix, target, features = selector._extract_and_prep_data(
+        frame,
+        "response",
+        ["foo.bar"],
+        max_rows=20,
+        sample_fraction=None,
+        seed=17,
+    )
 
-        matrix, target, features = selector._extract_and_prep_data(
-            frame,
-            "response",
-            ["foo.bar"],
-            max_rows=20,
-            sample_fraction=None,
-            seed=17,
-        )
-
-        assert features == ["foo.bar"]
-        assert matrix.shape == (10, 1)
-        assert target.shape == (10,)
-        assert matrix[:, 0].tolist() == [float(index) for index in range(10)]
-    finally:
-        spark.stop()
+    assert features == ["foo.bar"]
+    assert matrix.shape == (10, 1)
+    assert target.shape == (10,)
+    assert matrix[:, 0].tolist() == [float(index) for index in range(10)]
 
 
 def test_search_space_defaults_to_established_ranges() -> None:
@@ -746,6 +709,7 @@ def test_search_space_defaults_to_established_ranges() -> None:
 
     assert options["search_space"] == DEFAULT_SEARCH_SPACE
     assert options["fixed_params"] == {}
+    assert options["optuna_enabled"] is True
 
 
 def test_search_space_overrides_come_from_config() -> None:
@@ -762,12 +726,10 @@ def test_search_space_overrides_come_from_config() -> None:
 
     options = selector._resolve_options(context)
 
-    # overridden entry replaces the default
     assert options["search_space"]["num_leaves"] == {"type": "int", "min": 16, "max": 128}
-    # untouched entries keep their defaults
-    assert options["search_space"]["learning_rate"] == DEFAULT_SEARCH_SPACE["learning_rate"]
-    # scalars are passed to the model instead of being tuned
+    assert options["search_space"] == {"num_leaves": {"type": "int", "min": 16, "max": 128}}
     assert options["fixed_params"] == {"min_child_samples": 20}
+    assert "learning_rate" not in options["search_space"]
     assert "min_child_samples" not in options["search_space"]
 
 
@@ -791,6 +753,71 @@ def test_optuna_params_block_is_read_like_the_other_selectors() -> None:
     assert options["n_startup_trials"] == 4
     assert options["sampler"] == "RANDOM"
     assert options["timeout"] == 120
+    assert options["optuna_enabled"] is True
+
+
+def test_optuna_disabled_clears_the_search_space() -> None:
+    context = _context(
+        _frame(),
+        params={"optuna_params": {"enabled": False}},
+    )
+    selector = LightGbmSelector(context.config.model)
+
+    options = selector._resolve_options(context)
+
+    assert options["optuna_enabled"] is False
+    assert options["search_space"] == {}
+
+
+def test_optuna_disabled_skips_driver_tuning(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _require_ml_backends()
+    context = _context(
+        _frame(),
+        params={
+            "parameters": dict(_TINY_FIXED_PARAMS),
+            "optuna_params": {"enabled": False},
+            "n_folds": 2,
+            "n_jobs": 1,
+            "shap_max_rows": 32,
+        },
+    )
+    selector = LightGbmSelector(context.config.model)
+    tune_calls: list[dict[str, Any]] = []
+    original_tune = lightgbm_module.tune_parameters
+
+    def wrapped_tune(
+        matrix: np.ndarray,
+        target: np.ndarray,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        tune_calls.append(kwargs)
+        return original_tune(matrix, target, **kwargs)
+
+    monkeypatch.setattr(lightgbm_module, "tune_parameters", wrapped_tune)
+
+    options = selector._resolve_options(context)
+    selector._select_robust_features(
+        df=_frame(),
+        target_col="response",
+        feature_cols=["first", "second"],
+        n_trials=2,
+        n_folds=2,
+        max_rows_limit=20,
+        sample_fraction=None,
+        lgbm_threshold=0.85,
+        shap_threshold=0.85,
+        seed=17,
+        optuna_mode="global",
+        n_jobs=1,
+        shap_max_rows=32,
+        search_space=options["search_space"],
+        fixed_params=options["fixed_params"],
+        return_importances=True,
+    )
+
+    assert tune_calls == []
 
 
 def test_legacy_n_trials_still_works_as_the_fallback() -> None:
@@ -847,37 +874,47 @@ def test_scalar_overrides_a_default_range_instead_of_being_ignored() -> None:
 def test_configured_search_space_reaches_tuning_and_folds(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    _require_ml_backends()
     context = _context(
         _frame(),
-        params={"parameters": {"num_leaves": {"type": "int", "min": 16, "max": 128}}},
+        params={
+            "n_trials": 1,
+            "n_folds": 2,
+            "n_jobs": 1,
+            "shap_max_rows": 32,
+            "parameters": {
+                "num_leaves": {"type": "int", "min": 8, "max": 16},
+                "n_estimators": 8,
+                "learning_rate": 0.1,
+                "max_depth": 2,
+            },
+            "optuna_params": {"n_trials": 1, "n_startup_trials": 1},
+        },
     )
     selector = LightGbmSelector(context.config.model)
     seen: dict[str, Any] = {}
+    original_tune = lightgbm_module.tune_parameters
+    original_run = selector._run_fold
 
-    def fake_tune(
-        _matrix: np.ndarray,
-        _target: np.ndarray,
+    def wrapped_tune(
+        matrix: np.ndarray,
+        target: np.ndarray,
         **kwargs: Any,
     ) -> dict[str, Any]:
         seen["tune_space"] = kwargs["search_space"]
         seen["tune_fixed"] = kwargs["fixed_params"]
-        return {"n_estimators": 100}
+        return original_tune(matrix, target, **kwargs)
 
-    def fake_run(
-        _matrix: np.ndarray,
-        _target: np.ndarray,
+    def wrapped_run(
+        matrix: np.ndarray,
+        target: np.ndarray,
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
         seen.setdefault("fold_space", kwargs["search_space"])
-        return (
-            np.array([1.0, 0.5]),
-            np.array([0.8, 0.4]),
-            {},
-        )
+        return original_run(matrix, target, **kwargs)
 
-    monkeypatch.setattr(lightgbm_module, "tune_parameters", fake_tune)
-    monkeypatch.setattr(selector, "_run_fold", fake_run)
-    _install_fake_sklearn_model_selection(monkeypatch)
+    monkeypatch.setattr(lightgbm_module, "tune_parameters", wrapped_tune)
+    monkeypatch.setattr(selector, "_run_fold", wrapped_run)
 
     options = selector._resolve_options(context)
     selector._select_robust_features(
@@ -893,78 +930,40 @@ def test_configured_search_space_reaches_tuning_and_folds(
         seed=17,
         optuna_mode="global",
         n_jobs=1,
-        shap_max_rows=5,
+        shap_max_rows=32,
         search_space=options["search_space"],
         fixed_params=options["fixed_params"],
+        n_startup_trials=1,
         return_importances=True,
     )
 
-    assert seen["tune_space"]["num_leaves"]["max"] == 128
-    assert seen["fold_space"]["num_leaves"]["max"] == 128
-
-
-class _FakeTrial:
-    def suggest_int(self: _FakeTrial, _name: str, minimum: int, _maximum: int) -> int:
-        return minimum
-
-    def suggest_float(
-        self: _FakeTrial,
-        _name: str,
-        minimum: float,
-        _maximum: float,
-        *,
-        log: bool = False,
-    ) -> float:
-        del log
-        return minimum
-
-
-class _FakeBooster:
-    def feature_importance(self: _FakeBooster, *, importance_type: str) -> np.ndarray:
-        assert importance_type == "split"
-        return np.array([3.0, 1.0])
-
-
-class _FakeModel:
-    instances: ClassVar[list[_FakeModel]] = []
-
-    def __init__(self: _FakeModel, **params: Any) -> None:
-        self.params = params
-        self.booster_ = _FakeBooster()
-        self.__class__.instances.append(self)
-
-    def fit(self: _FakeModel, _matrix: np.ndarray, _target: np.ndarray) -> None:
-        return None
-
-
-class _FakeExplainer:
-    def __init__(self: _FakeExplainer, model: _FakeModel) -> None:
-        self.model = model
-
-    def shap_values(self: _FakeExplainer, matrix: np.ndarray) -> list[np.ndarray]:
-        zeros = np.zeros((len(matrix), 2))
-        positive = np.tile(np.array([0.5, 0.2]), (len(matrix), 1))
-        return [zeros, positive]
-
-
-def _install_fold_backends(monkeypatch: pytest.MonkeyPatch) -> None:
-    fake_lightgbm = ModuleType("lightgbm")
-    fake_lightgbm.LGBMClassifier = _FakeModel
-    fake_shap = ModuleType("shap")
-    fake_shap.TreeExplainer = _FakeExplainer
-    monkeypatch.setitem(sys.modules, "lightgbm", fake_lightgbm)
-    monkeypatch.setitem(sys.modules, "shap", fake_shap)
+    assert seen["tune_space"]["num_leaves"]["max"] == 16
+    assert seen["fold_space"]["num_leaves"]["max"] == 16
+    assert seen["tune_fixed"]["n_estimators"] == 8
 
 
 def test_trial_parameters_preserve_search_space_and_execution_limits() -> None:
-    params = lightgbm_module.build_trial_parameters(
-        _FakeTrial(),
-        seed=7,
-        n_jobs=2,
-    )
+    _require_ml_backends()
+    import optuna
 
-    assert params["n_estimators"] == 100
-    assert params["learning_rate"] == 0.01
+    captured: dict[str, Any] = {}
+
+    def objective(trial: Any) -> float:
+        captured["params"] = lightgbm_module.build_trial_parameters(
+            trial,
+            seed=7,
+            n_jobs=2,
+            search_space={
+                "n_estimators": {"type": "int", "min": 8, "max": 12},
+                "learning_rate": {"type": "float", "min": 0.01, "max": 0.2, "log": True},
+            },
+        )
+        return 0.0
+
+    optuna.create_study(direction="maximize").optimize(objective, n_trials=1)
+    params = captured["params"]
+    assert 8 <= params["n_estimators"] <= 12
+    assert 0.01 <= params["learning_rate"] <= 0.2
     assert params["random_state"] == 7
     assert params["n_jobs"] == 2
     assert params["objective"] == "binary"
@@ -973,39 +972,31 @@ def test_trial_parameters_preserve_search_space_and_execution_limits() -> None:
 def test_folds_run_in_order_and_importances_are_averaged(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _install_fake_sklearn_model_selection(monkeypatch)
-    context = _context(_frame())
+    _require_ml_backends()
+    context = _context(
+        _frame(),
+        params={
+            "parameters": dict(_TINY_FIXED_PARAMS),
+            "optuna_params": {"enabled": False},
+            "n_folds": 2,
+            "n_jobs": 1,
+            "shap_max_rows": 32,
+        },
+    )
     selector = LightGbmSelector(context.config.model)
-    matrix = np.arange(12, dtype=float).reshape(6, 2)
-    target = np.array([0, 1, 0, 1, 0, 1])
-    monkeypatch.setattr(
-        selector,
-        "_extract_and_prep_data",
-        lambda *_args, **_kwargs: (matrix, target, ["first", "second"]),
-    )
-    monkeypatch.setattr(
-        lightgbm_module,
-        "tune_parameters",
-        lambda *_args, **_kwargs: {"n_estimators": 120},
-    )
+    options = selector._resolve_options(context)
     call_order: list[int] = []
+    original_run = selector._run_fold
 
-    def fake_run(
-        received_matrix: np.ndarray,
-        received_target: np.ndarray,
+    def wrapped_run(
+        matrix: np.ndarray,
+        target: np.ndarray,
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-        assert np.array_equal(received_matrix, matrix)
-        assert np.array_equal(received_target, target)
-        fold_index = kwargs["fold_index"]
-        call_order.append(fold_index)
-        return (
-            np.array([2.0 * fold_index, 1.0]),
-            np.array([0.5, 1.0 * fold_index]),
-            {"fold": fold_index},
-        )
+        call_order.append(kwargs["fold_index"])
+        return original_run(matrix, target, **kwargs)
 
-    monkeypatch.setattr(selector, "_run_fold", fake_run)
+    monkeypatch.setattr(selector, "_run_fold", wrapped_run)
 
     details = selector._select_robust_features(
         df=_frame(),
@@ -1020,25 +1011,35 @@ def test_folds_run_in_order_and_importances_are_averaged(
         seed=17,
         optuna_mode="global",
         n_jobs=1,
-        shap_max_rows=5,
+        shap_max_rows=32,
+        search_space=options["search_space"],
+        fixed_params=options["fixed_params"],
         return_importances=True,
     )
 
     assert call_order == [1, 2]
-    assert details["fold_best_params"] == {"1": {"fold": 1}, "2": {"fold": 2}}
+    assert set(details["fold_best_params"]) == {"1", "2"}
     importances = details["importances_df"].set_index("feature")
-    # (2*1 + 2*2) / 2 = 3.0 and (1 + 1) / 2 = 1.0 -> normalized over the total 4.0
-    assert importances.loc["first", "lgbm_norm"] == pytest.approx(0.75)
-    assert importances.loc["second", "lgbm_norm"] == pytest.approx(0.25)
+    assert importances["lgbm_norm"].sum() == pytest.approx(1.0)
+    assert importances["shap_norm"].sum() == pytest.approx(1.0)
 
 
 def test_global_fold_uses_shared_params_with_driver_limits(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _FakeModel.instances = []
-    _install_fold_backends(monkeypatch)
-    matrix = np.arange(12, dtype=float).reshape(6, 2)
-    target = np.array([0, 1, 0, 1, 0, 1])
+    _require_ml_backends()
+    import lightgbm as lgb
+
+    original = lgb.LGBMClassifier
+    seen: list[dict[str, Any]] = []
+
+    def spy_classifier(**params: Any) -> Any:
+        seen.append(dict(params))
+        return original(**params)
+
+    monkeypatch.setattr(lgb, "LGBMClassifier", spy_classifier)
+    matrix = np.arange(40, dtype=float).reshape(20, 2)
+    target = np.array([0, 1] * 10)
 
     lgbm_importances, shap_importances, best_params = LightGbmSelector._run_fold(
         matrix,
@@ -1047,29 +1048,33 @@ def test_global_fold_uses_shared_params_with_driver_limits(
         valid_indices=np.array([0, 1], dtype=np.int64),
         seed=31,
         optuna_mode="global",
-        n_trials=2,
+        n_trials=1,
         n_jobs=1,
-        shap_max_rows=2,
-        global_params={"n_estimators": 150, "n_jobs": -1},
+        shap_max_rows=8,
+        global_params={**_TINY_FIXED_PARAMS, "n_estimators": 12, "n_jobs": -1},
+        search_space={},
+        fixed_params=_TINY_FIXED_PARAMS,
     )
 
-    assert lgbm_importances.tolist() == [3.0, 1.0]
-    assert shap_importances.tolist() == pytest.approx([0.5, 0.2])
-    assert best_params["n_estimators"] == 150
-    assert _FakeModel.instances[-1].params["n_jobs"] == 1
-    assert _FakeModel.instances[-1].params["random_state"] == 31
+    assert lgbm_importances.shape == (2,)
+    assert shap_importances.shape == (2,)
+    assert np.all(lgbm_importances >= 0.0)
+    assert best_params["n_estimators"] == 12
+    assert seen[-1]["n_jobs"] == 1
+    assert seen[-1]["random_state"] == 31
+    assert seen[-1]["n_estimators"] == 12
 
 
 def test_per_fold_mode_tunes_only_on_outer_train_rows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _FakeModel.instances = []
-    _install_fold_backends(monkeypatch)
-    matrix = np.arange(16, dtype=float).reshape(8, 2)
-    target = np.array([0, 1, 0, 1, 0, 1, 0, 1])
+    _require_ml_backends()
+    matrix = np.arange(40, dtype=float).reshape(20, 2)
+    target = np.array([0, 1] * 10)
     captured: dict[str, Any] = {}
+    original_tune = lightgbm_module.tune_parameters
 
-    def fake_tune(
+    def wrapped_tune(
         train_matrix: np.ndarray,
         train_target: np.ndarray,
         **kwargs: Any,
@@ -1077,9 +1082,9 @@ def test_per_fold_mode_tunes_only_on_outer_train_rows(
         captured["matrix"] = train_matrix
         captured["target"] = train_target
         captured.update(kwargs)
-        return {"n_estimators": 99}
+        return original_tune(train_matrix, train_target, **kwargs)
 
-    monkeypatch.setattr(lightgbm_module, "tune_parameters", fake_tune)
+    monkeypatch.setattr(lightgbm_module, "tune_parameters", wrapped_tune)
 
     _lgbm, _shap, best_params = LightGbmSelector._run_fold(
         matrix,
@@ -1088,23 +1093,28 @@ def test_per_fold_mode_tunes_only_on_outer_train_rows(
         valid_indices=np.array([0, 1], dtype=np.int64),
         seed=42,
         optuna_mode="per_fold",
-        n_trials=3,
+        n_trials=1,
         n_jobs=1,
-        shap_max_rows=10,
+        shap_max_rows=16,
+        n_startup_trials=1,
+        search_space={"n_estimators": {"type": "int", "min": 8, "max": 10}},
+        fixed_params={
+            "num_leaves": 8,
+            "learning_rate": 0.1,
+            "max_depth": 2,
+        },
     )
 
-    assert captured["matrix"].shape == (6, 2)
+    assert captured["matrix"].shape == (18, 2)
     assert captured["target"].tolist() == target[2:].tolist()
-    assert captured["n_trials"] == 3
+    assert captured["n_trials"] == 1
     assert captured["seed"] == 42
     assert captured["n_jobs"] == 1
-    assert best_params["n_estimators"] == 99
+    assert 8 <= best_params["n_estimators"] <= 10
 
 
-def test_fold_without_global_params_reports_missing_tuning(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _install_fold_backends(monkeypatch)
+def test_fold_without_global_params_reports_missing_tuning() -> None:
+    _require_ml_backends()
     matrix = np.arange(12, dtype=float).reshape(6, 2)
     target = np.array([0, 1, 0, 1, 0, 1])
 

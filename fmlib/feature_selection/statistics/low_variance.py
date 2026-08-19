@@ -9,8 +9,9 @@ from pandas.api.types import is_numeric_dtype
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import LowVarianceConfig
-from fmlib.feature_selection.debug import emit as debug_emit, enabled as debug_enabled
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.verbose import emit as verbose_emit
+from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 _NUMERIC_SPARK_TYPE_NAMES = frozenset(
     {
@@ -72,13 +73,13 @@ class LowVarianceSelector:
             )
             raise ExecutionError(msg)
 
-        if debug_enabled(context, self.method_name) and scaled_variances:
+        if verbose_enabled(context, self.method_name) and scaled_variances:
             defined = [
                 variance
                 for variance in scaled_variances.values()
                 if variance is not None
             ]
-            debug_emit(
+            verbose_emit(
                 context,
                 self.method_name,
                 "stats",

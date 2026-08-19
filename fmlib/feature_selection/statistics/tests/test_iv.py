@@ -1,16 +1,13 @@
 """Production-grade tests for Information Value selection.
 
-Covers ``fmlib.feature_selection.statistics.iv`` statement and branch paths.
-Pure helpers are exercised on real data; Spark control-flow uses a local
-DataFrame double plus a ``pyspark.sql.functions`` stub when PySpark is absent.
+Pandas paths run on real frames. Spark paths use the shared real SparkSession.
 """
 
 from __future__ import annotations
 
 import math
-import sys
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import SimpleNamespace
 from typing import Any, Sequence
 
 import numpy as np
@@ -19,9 +16,8 @@ import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, IvConfig, VerboseConfig
-from fmlib.feature_selection.conftest import FakeSparkSession
-from fmlib.feature_selection.debug import DebugRecorder
-from fmlib.feature_selection.exceptions import BackendError, ConfigError, ExecutionError
+from fmlib.feature_selection.utils.conftest import require_spark_session
+from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
 from fmlib.feature_selection.pipeline import FeatureSelectionPipeline
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistics import iv as iv_mod
@@ -41,18 +37,11 @@ from fmlib.feature_selection.statistics.iv import (
     information_value,
     information_value_from_bins,
 )
+from fmlib.feature_selection.utils.verbose import VerboseRecorder
 
 _REPO_ROOT = Path(__file__).resolve().parents[4]
 _NULL = iv_mod._NULL_LEVEL
 _OTHER = iv_mod._OTHER_LEVEL
-
-
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
 
 
 def _frame(n: int = 600, seed: int = 0) -> pd.DataFrame:
@@ -96,15 +85,15 @@ def _context(
         target=target,
         task_type=task_type,
     )
-    debug = DebugRecorder(verbose=VerboseConfig(iv=verbose_iv))
+    recorder = VerboseRecorder(verbose=VerboseConfig(iv=verbose_iv))
     return StageContext(
-        spark=spark if spark is not None else FakeSparkSession(),
+        spark=spark if spark is not None else require_spark_session(),
         datasets={"train": frame},
         schema=schema,
         config=FeatureSelectionConfig(),
         seed=0,
         candidates=schema.candidate_features(),
-        debug=debug,
+        verbose_log=recorder,
     )
 
 
@@ -121,280 +110,6 @@ def _manual_iv(goods: Sequence[float], bads: Sequence[float], eps: float) -> flo
         dist_bad = bad / total_bad
         value += (dist_good - dist_bad) * math.log((dist_good + eps) / (dist_bad + eps))
     return float(value)
-
-
-class IntegerType:
-    """Spark type double; ``__name__`` must match production type names."""
-
-
-class StringType:
-    """Spark string type double."""
-
-
-class BooleanType:
-    """Spark boolean type double (rejected for continuous IV)."""
-
-
-class DecimalType:
-    """Spark decimal type double; allowed for continuous IV."""
-
-
-class FakeCol:
-    """Minimal Spark Column double for ``pyspark.sql.functions`` stubs."""
-
-    def __init__(self: FakeCol, name: str = "c") -> None:
-        self.name = name
-        self.source = name
-
-    def alias(self: FakeCol, name: str) -> FakeCol:
-        out = FakeCol(name)
-        out.source = self.source
-        return out
-
-    def isNotNull(self: FakeCol) -> FakeCol:  # noqa: N802 - Spark Column API
-        return FakeCol(f"isNotNull({self.name})")
-
-    def isNull(self: FakeCol) -> FakeCol:  # noqa: N802 - Spark Column API
-        return FakeCol(f"isNull({self.name})")
-
-    def cast(self: FakeCol, dtype: str) -> FakeCol:
-        return FakeCol(f"cast({self.name},{dtype})")
-
-    def otherwise(self: FakeCol, value: object) -> FakeCol:
-        return FakeCol(f"otherwise({self.name},{value})")
-
-    def __eq__(self: FakeCol, other: object) -> FakeCol:  # type: ignore[override]
-        return FakeCol(f"eq({self.name})")
-
-    def __invert__(self: FakeCol) -> FakeCol:
-        return FakeCol(f"not({self.name})")
-
-    def __and__(self: FakeCol, other: object) -> FakeCol:
-        return FakeCol(f"and({self.name})")
-
-    def __or__(self: FakeCol, other: object) -> FakeCol:
-        return FakeCol(f"or({self.name})")
-
-    def __le__(self: FakeCol, other: object) -> FakeCol:
-        return FakeCol(f"le({self.name})")
-
-    def __gt__(self: FakeCol, other: object) -> FakeCol:
-        return FakeCol(f"gt({self.name})")
-
-
-class _InspectChain:
-    def __init__(self: _InspectChain, owner: FakeSparkDataFrame) -> None:
-        self.owner = owner
-
-    def distinct(self: _InspectChain) -> _InspectChain:
-        return self
-
-    def limit(self: _InspectChain, _n: int) -> _InspectChain:
-        return self
-
-    def collect(self: _InspectChain) -> list[Any]:
-        if self.owner.inspect_error is not None:
-            raise self.owner.inspect_error
-        return list(self.owner.distinct_rows)
-
-
-class _AggHead:
-    def __init__(self: _AggHead, payload: dict[str, Any]) -> None:
-        self._payload = payload
-
-    def head(self: _AggHead) -> _AggHead:
-        return self
-
-    def asDict(self: _AggHead) -> dict[str, Any]:  # noqa: N802 - Spark Row API
-        return dict(self._payload)
-
-
-class FakeSparkDataFrame:
-    """Spark DataFrame double: module name starts with ``pyspark``."""
-
-    def __init__(self: FakeSparkDataFrame) -> None:
-        self.role = "train"
-        self.schema = SimpleNamespace(fields=[])
-        self.is_cached = False
-        self.distinct_rows: list[Any] = [(0,), (1,)]
-        self.as_dict: dict[str, Any] = {}
-        self.cat_rows: list[Any] = []
-        self.quantiles: list[float] = [0.5]
-        self.persist_error: BaseException | None = None
-        self.unpersist_error: BaseException | None = None
-        self.approx_error: BaseException | None = None
-        self.agg_error: BaseException | None = None
-        self.groupby_error: BaseException | None = None
-        self.inspect_error: BaseException | None = None
-        self._grouped = False
-        self.trace: dict[str, Any] = {
-            "persist": 0,
-            "unpersist": 0,
-            "approx": [],
-            "agg": 0,
-            "union": 0,
-        }
-
-    def _clone(self: FakeSparkDataFrame) -> FakeSparkDataFrame:
-        other = FakeSparkDataFrame()
-        other.trace = self.trace
-        other.schema = self.schema
-        other.is_cached = self.is_cached
-        other.distinct_rows = self.distinct_rows
-        other.as_dict = self.as_dict
-        other.cat_rows = self.cat_rows
-        other.quantiles = self.quantiles
-        other.persist_error = self.persist_error
-        other.unpersist_error = self.unpersist_error
-        other.approx_error = self.approx_error
-        other.agg_error = self.agg_error
-        other.groupby_error = self.groupby_error
-        other.inspect_error = self.inspect_error
-        other.role = self.role
-        return other
-
-    def where(self: FakeSparkDataFrame, _cond: object) -> FakeSparkDataFrame:
-        filtered = self._clone()
-        filtered.role = "filtered"
-        return filtered
-
-    def select(self: FakeSparkDataFrame, *cols: object) -> object:
-        if self.role in {"train", "filtered"} and len(cols) == 1:
-            return _InspectChain(self)
-        if self.role in {"train", "filtered"}:
-            prepared = self._clone()
-            prepared.role = "prepared"
-            return prepared
-        piece = self._clone()
-        piece.role = "piece"
-        if cols:
-            feature_name = getattr(cols[0], "source", None)
-            if feature_name:
-                piece.cat_rows = [
-                    row for row in self.cat_rows if row["feature"] == feature_name
-                ]
-        return piece
-
-    def persist(self: FakeSparkDataFrame) -> FakeSparkDataFrame:
-        if self.persist_error is not None:
-            raise self.persist_error
-        self.trace["persist"] += 1
-        self.is_cached = True
-        return self
-
-    def unpersist(self: FakeSparkDataFrame) -> FakeSparkDataFrame:
-        self.trace["unpersist"] += 1
-        if self.unpersist_error is not None:
-            raise self.unpersist_error
-        return self
-
-    @property
-    def stat(self: FakeSparkDataFrame) -> FakeSparkDataFrame:
-        return self
-
-    def approxQuantile(  # noqa: N802 - Spark DataFrame.stat API
-        self: FakeSparkDataFrame,
-        aliases: Sequence[str],
-        probabilities: Sequence[float],
-        relative_error: float,
-    ) -> list[list[float]]:
-        self.trace["approx"].append(
-            {
-                "aliases": list(aliases),
-                "probabilities": list(probabilities),
-                "relative_error": relative_error,
-            },
-        )
-        if self.approx_error is not None:
-            raise self.approx_error
-        return [list(self.quantiles) for _ in aliases]
-
-    def agg(self: FakeSparkDataFrame, *_exprs: object) -> object:
-        if self._grouped:
-            if self.groupby_error is not None:
-                raise self.groupby_error
-            return self
-        self.trace["agg"] += 1
-        if self.agg_error is not None:
-            raise self.agg_error
-        return _AggHead(self.as_dict)
-
-    def unionByName(self: FakeSparkDataFrame, other: object) -> FakeSparkDataFrame:  # noqa: N802
-        self.trace["union"] += 1
-        stacked = self._clone()
-        extra = getattr(other, "cat_rows", [])
-        stacked.cat_rows = list(self.cat_rows) + list(extra)
-        return stacked
-
-    def groupBy(self: FakeSparkDataFrame, *_args: object) -> FakeSparkDataFrame:  # noqa: N802
-        grouped = self._clone()
-        grouped._grouped = True
-        grouped.role = "grouped"
-        return grouped
-
-    def collect(self: FakeSparkDataFrame) -> list[Any]:
-        return list(self.cat_rows)
-
-
-FakeSparkDataFrame.__module__ = "pyspark.sql.dataframe"
-
-
-def _install_pyspark_stub(monkeypatch: pytest.MonkeyPatch) -> None:
-    functions = ModuleType("pyspark.sql.functions")
-    functions.col = lambda name: FakeCol(str(name))
-    functions.lit = lambda value: FakeCol(str(value))
-    functions.when = lambda _cond, _value: FakeCol("when")
-    functions.isnan = lambda _col: FakeCol("isnan")
-    functions.sum = lambda _col: FakeCol("sum")
-    functions.count = lambda _col: FakeCol("count")
-    sql = ModuleType("pyspark.sql")
-    sql.functions = functions
-    root = ModuleType("pyspark")
-    root.sql = sql
-    monkeypatch.setitem(sys.modules, "pyspark", root)
-    monkeypatch.setitem(sys.modules, "pyspark.sql", sql)
-    monkeypatch.setitem(sys.modules, "pyspark.sql.functions", functions)
-
-
-def _field(name: str, type_cls: type) -> SimpleNamespace:
-    return SimpleNamespace(name=name, dataType=type_cls())
-
-
-def _spark_train(
-    columns: Sequence[str],
-    *,
-    target: str = "response",
-    continuous: Sequence[str] = (),
-    types: dict[str, type] | None = None,
-) -> FakeSparkDataFrame:
-    type_map = dict(types or {})
-    fields = []
-    for name in [*columns, target]:
-        if name in type_map:
-            type_cls = type_map[name]
-        elif name in continuous or name == target:
-            type_cls = IntegerType
-        else:
-            type_cls = StringType
-        fields.append(_field(name, type_cls))
-    frame = FakeSparkDataFrame()
-    frame.schema = SimpleNamespace(fields=fields)
-    return frame
-
-
-def _numeric_counts(
-    alias: str,
-    bins: Sequence[tuple[float, float]],
-    null: tuple[float, float] = (0.0, 0.0),
-) -> dict[str, float]:
-    payload = {
-        f"{alias}__null__bad": null[0],
-        f"{alias}__null__n": null[1],
-    }
-    for index, (n_bad, n_total) in enumerate(bins):
-        payload[f"{alias}__b{index}__bad"] = n_bad
-        payload[f"{alias}__b{index}__n"] = n_total
-    return payload
 
 
 # ---------------------------------------------------------------------------
@@ -675,7 +390,7 @@ class TestIvSelectorValidationAndDecisions:
             captured["stage"] = stage
             captured["payload"] = payload
 
-        monkeypatch.setattr(iv_mod, "debug_emit", fake_emit)
+        monkeypatch.setattr(iv_mod, "verbose_emit", fake_emit)
         frame = _frame()
         context = _context(
             frame,
@@ -709,7 +424,7 @@ class TestIvSelectorValidationAndDecisions:
         def fake_emit(_context: object, method: str, stage: str, **payload: object) -> None:
             captured["payload"] = payload
 
-        monkeypatch.setattr(iv_mod, "debug_emit", fake_emit)
+        monkeypatch.setattr(iv_mod, "verbose_emit", fake_emit)
         context = _context(
             _frame(),
             categorical=(),
@@ -722,7 +437,7 @@ class TestIvSelectorValidationAndDecisions:
 
     def test_debug_skipped_when_scores_empty(self, monkeypatch: pytest.MonkeyPatch) -> None:
         calls: list[object] = []
-        monkeypatch.setattr(iv_mod, "debug_emit", lambda *a, **k: calls.append(1))
+        monkeypatch.setattr(iv_mod, "verbose_emit", lambda *a, **k: calls.append(1))
         monkeypatch.setattr(IvSelector, "_compute_iv_pandas", lambda *_a, **_k: {})
         context = _context(_frame(), categorical=(), continuous=("strong",), verbose_iv=True)
         decisions = IvSelector(IvConfig()).select(context, ["strong"])
@@ -733,7 +448,7 @@ class TestIvSelectorValidationAndDecisions:
     def test_debug_not_emitted_when_verbose_disabled(self) -> None:
         context = _context(_frame(), categorical=(), continuous=("strong",), verbose_iv=False)
         IvSelector(IvConfig()).select(context, ["strong"])
-        assert context.debug.events == []
+        assert context.verbose_log.events == []
 
 
 # ---------------------------------------------------------------------------
@@ -849,171 +564,286 @@ class TestIvSelectorPandas:
 # ---------------------------------------------------------------------------
 
 
+def _spark_from_pandas(spark: Any, frame: pd.DataFrame) -> Any:
+    return spark.createDataFrame(frame)
+
+
+def _iv_on_pandas_and_spark(
+    spark: Any,
+    pandas_frame: pd.DataFrame,
+    *,
+    categorical: tuple[str, ...],
+    continuous: tuple[str, ...],
+    candidates: list[str],
+    config: IvConfig,
+    target: str = "response",
+) -> tuple[dict[str, float], dict[str, float], set[str], set[str]]:
+    pandas_ctx = _context(
+        pandas_frame,
+        categorical=categorical,
+        continuous=continuous,
+        target=target,
+    )
+    spark_ctx = _context(
+        _spark_from_pandas(spark, pandas_frame),
+        categorical=categorical,
+        continuous=continuous,
+        target=target,
+        spark=spark,
+    )
+    pandas_dropped = {item.feature for item in IvSelector(config).select(pandas_ctx, candidates)}
+    spark_dropped = {item.feature for item in IvSelector(config).select(spark_ctx, candidates)}
+    return (
+        pandas_ctx.scores["iv"]["values"],
+        spark_ctx.scores["iv"]["values"],
+        pandas_dropped,
+        spark_dropped,
+    )
+
+
 class TestIvSelectorSpark:
-    def test_is_spark_dataframe_detection(self) -> None:
+    def test_is_spark_dataframe_detection(self, spark: Any) -> None:
         pandas_frame = pd.DataFrame({"a": [1]})
         assert _is_spark_dataframe(pandas_frame) is False
-        plain = SimpleNamespace(select=lambda *a: None, agg=lambda *a: None)
+        plain = SimpleNamespace(select=lambda *_a: None, agg=lambda *_a: None)
         assert _is_spark_dataframe(plain) is False
-        sparkish = FakeSparkDataFrame()
-        assert _is_spark_dataframe(sparkish) is True
+        real = spark.createDataFrame([(1,)], ["a"])
+        assert _is_spark_dataframe(real) is True
 
         class Almost:
-            pass
+            def select(self: Almost, *_args: object) -> None:
+                return None
 
-        Almost.__module__ = "pyspark.sql.dataframe"
         missing_agg = Almost()
-        missing_agg.select = lambda *a: None
         assert _is_spark_dataframe(missing_agg) is False
 
-    def test_pyspark_missing_raises_backend_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setitem(sys.modules, "pyspark.sql", None)
-        monkeypatch.setitem(sys.modules, "pyspark", None)
-        train = _spark_train(["strong"], continuous=("strong",))
-        context = _context(train, categorical=(), continuous=("strong",))
-        with pytest.raises(BackendError, match="pyspark is required"):
-            IvSelector(IvConfig()).select(context, ["strong"])
-
-    def test_missing_spark_columns_raise(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["strong"], continuous=("strong",))
-        context = _context(
-            train,
-            categorical=(),
-            continuous=("strong", "absent"),
-        )
+    def test_missing_spark_columns_raise(self, spark: Any) -> None:
+        train = spark.createDataFrame([(1.0, 0)], ["strong", "response"])
+        context = _context(train, categorical=(), continuous=("strong", "absent"), spark=spark)
         with pytest.raises(ExecutionError, match="columns missing from train schema"):
             IvSelector(IvConfig()).select(context, ["absent"])
 
-    def test_non_numeric_continuous_raises(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(
-            ["cat_as_num"],
+    def test_non_numeric_continuous_raises(self, spark: Any) -> None:
+        string_train = spark.createDataFrame(
+            [("a", 0), ("b", 1), ("a", 0), ("b", 1)],
+            ["cat_as_num", "response"],
+        )
+        string_ctx = _context(
+            string_train,
+            categorical=(),
             continuous=("cat_as_num",),
-            types={"cat_as_num": StringType, "response": IntegerType},
+            spark=spark,
         )
-        context = _context(train, categorical=(), continuous=("cat_as_num",))
         with pytest.raises(ExecutionError, match="expected a numeric type"):
-            IvSelector(IvConfig()).select(context, ["cat_as_num"])
+            IvSelector(IvConfig()).select(string_ctx, ["cat_as_num"])
 
-        bool_train = _spark_train(
-            ["flag"],
-            continuous=("flag",),
-            types={"flag": BooleanType, "response": IntegerType},
+        bool_train = spark.createDataFrame(
+            [(True, 0), (False, 1), (True, 0), (False, 1)],
+            ["flag", "response"],
         )
-        bool_context = _context(bool_train, categorical=(), continuous=("flag",))
+        bool_ctx = _context(bool_train, categorical=(), continuous=("flag",), spark=spark)
         with pytest.raises(ExecutionError, match="BooleanType"):
-            IvSelector(IvConfig()).select(bool_context, ["flag"])
+            IvSelector(IvConfig()).select(bool_ctx, ["flag"])
 
-    def test_persist_and_unpersist_when_not_cached(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.as_dict = _numeric_counts("c0", [(2.0, 10.0), (8.0, 10.0)], null=(1.0, 2.0))
-        context = _context(train, categorical=(), continuous=("num",))
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
-        assert train.trace["persist"] == 1
-        assert train.trace["unpersist"] == 1
+    def test_persist_and_unpersist_when_not_cached(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
 
-    def test_already_cached_skips_persist(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.is_cached = True
-        train.as_dict = _numeric_counts("c0", [(2.0, 10.0), (8.0, 10.0)])
-        context = _context(train, categorical=(), continuous=("num",))
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
-        assert train.trace["persist"] == 0
-        assert train.trace["unpersist"] == 0
+        pandas_frame = pd.DataFrame(
+            {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
+        )
+        train = spark.createDataFrame(pandas_frame)
+        calls = {"persist": 0, "unpersist": 0}
+        original_persist = SparkDataFrame.persist
+        original_unpersist = SparkDataFrame.unpersist
 
-    def test_persist_failure_still_computes(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.persist_error = RuntimeError("cannot persist")
-        train.as_dict = _numeric_counts("c0", [(2.0, 10.0), (8.0, 10.0)])
-        context = _context(train, categorical=(), continuous=("num",))
+        def persist(self: Any, *args: Any, **kwargs: Any) -> Any:
+            calls["persist"] += 1
+            return original_persist(self, *args, **kwargs)
+
+        def unpersist(self: Any, *args: Any, **kwargs: Any) -> Any:
+            calls["unpersist"] += 1
+            return original_unpersist(self, *args, **kwargs)
+
+        monkeypatch.setattr(SparkDataFrame, "persist", persist)
+        monkeypatch.setattr(SparkDataFrame, "unpersist", unpersist)
+        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(
+            _context(train, categorical=(), continuous=("num",), spark=spark),
+            ["num"],
+        )
+        assert calls["persist"] >= 1
+        assert calls["unpersist"] >= 1
+
+    def test_already_cached_skips_persist(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
+
+        pandas_frame = pd.DataFrame(
+            {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
+        )
+        train = spark.createDataFrame(pandas_frame)
+        monkeypatch.setattr(SparkDataFrame, "is_cached", True)
+
+        def persist(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            pytest.fail("persist must not run when the prepared frame is cached")
+
+        monkeypatch.setattr(SparkDataFrame, "persist", persist)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
         IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
         assert "num" in context.scores["iv"]["values"]
-        assert train.trace["unpersist"] == 0
 
-    def test_unpersist_failure_is_swallowed(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.unpersist_error = RuntimeError("cannot unpersist")
-        train.as_dict = _numeric_counts("c0", [(2.0, 10.0), (8.0, 10.0)])
-        context = _context(train, categorical=(), continuous=("num",))
+    def test_persist_failure_still_computes(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
+
+        pandas_frame = pd.DataFrame(
+            {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
+        )
+        train = spark.createDataFrame(pandas_frame)
+
+        def persist(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            raise RuntimeError("cannot persist")
+
+        monkeypatch.setattr(SparkDataFrame, "persist", persist)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
+        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
+        assert "num" in context.scores["iv"]["values"]
+
+    def test_unpersist_failure_is_swallowed(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
+
+        pandas_frame = pd.DataFrame(
+            {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
+        )
+        train = spark.createDataFrame(pandas_frame)
+        original_persist = SparkDataFrame.persist
+        calls = {"unpersist": 0}
+
+        def persist(self: Any, *args: Any, **kwargs: Any) -> Any:
+            return original_persist(self, *args, **kwargs)
+
+        def unpersist(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            calls["unpersist"] += 1
+            raise RuntimeError("cannot unpersist")
+
+        monkeypatch.setattr(SparkDataFrame, "persist", persist)
+        monkeypatch.setattr(SparkDataFrame, "unpersist", unpersist)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
         decisions = IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
         assert isinstance(decisions, list)
-        assert train.trace["unpersist"] == 1
+        assert calls["unpersist"] >= 1
+        assert "num" in context.scores["iv"]["values"]
 
-    def test_numeric_iv_matches_information_value(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",), types={"num": DecimalType})
-        bins = [(2.0, 10.0), (8.0, 10.0)]
-        null = (1.0, 2.0)
-        train.as_dict = _numeric_counts("c0", bins, null=null)
-        config = IvConfig(num_bins=2, eps=1e-4, threshold=0.0, relative_error=0.05)
-        context = _context(train, categorical=(), continuous=("num",))
-        IvSelector(config).select(context, ["num"])
-        goods = [10.0 - 2.0, 10.0 - 8.0, 2.0 - 1.0]
-        bads = [2.0, 8.0, 1.0]
-        expected = information_value(goods, bads, config.eps)
-        assert context.scores["iv"]["values"]["num"] == pytest.approx(expected)
-        assert train.trace["approx"][0]["relative_error"] == 0.05
-        assert train.trace["approx"][0]["probabilities"] == [0.5]
-
-    def test_numeric_iv_single_bin_when_no_quantiles(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.quantiles = []
-        train.as_dict = _numeric_counts("c0", [(4.0, 10.0)])
-        context = _context(train, categorical=(), continuous=("num",))
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
-        expected = information_value([6.0, 0.0], [4.0, 0.0], 1e-4)
-        assert context.scores["iv"]["values"]["num"] == pytest.approx(expected)
-
-    def test_numeric_batch_size_splits_agg(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["n0", "n1"], continuous=("n0", "n1"))
-        train.as_dict = {
-            **_numeric_counts("c0", [(1.0, 8.0), (7.0, 8.0)]),
-            **_numeric_counts("c1", [(2.0, 8.0), (6.0, 8.0)]),
-        }
-        context = _context(train, categorical=(), continuous=("n0", "n1"))
-        IvSelector(IvConfig(num_bins=2, batch_size=1, threshold=0.0)).select(
-            context,
-            ["n0", "n1"],
+    def test_numeric_and_drop_set_match_pandas(self, spark: Any) -> None:
+        pandas_frame = _frame(n=240)[["strong", "weak", "response"]]
+        config = IvConfig(threshold=0.02, num_bins=6, relative_error=0.0)
+        pandas_scores, spark_scores, pandas_dropped, spark_dropped = _iv_on_pandas_and_spark(
+            spark,
+            pandas_frame,
+            categorical=(),
+            continuous=("strong", "weak"),
+            candidates=["strong", "weak"],
+            config=config,
         )
-        assert len(train.trace["approx"]) == 1
-        assert train.trace["approx"][0]["aliases"] == ["c0", "c1"]
-        assert train.trace["agg"] == 2
-        assert set(context.scores["iv"]["values"]) == {"n0", "n1"}
+        assert pandas_dropped == spark_dropped
+        assert set(spark_scores) == set(pandas_scores)
+        for name, value in spark_scores.items():
+            assert value == pytest.approx(pandas_scores[name], rel=0.2, abs=1e-6)
 
-    def test_approx_quantile_failure_uses_root_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.approx_error = RuntimeError("quantile exploded\nmore")
-        context = _context(train, categorical=(), continuous=("num",))
+    def test_numeric_batch_size_does_not_change_scores(self, spark: Any) -> None:
+        pandas_frame = pd.DataFrame(
+            {
+                "n0": [0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+                "n1": [1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0],
+                "response": [0, 1, 0, 1, 0, 1, 0, 1],
+            },
+        )
+        train = spark.createDataFrame(pandas_frame)
+        candidates = ["n0", "n1"]
+        one = _context(train, categorical=(), continuous=("n0", "n1"), spark=spark)
+        many = _context(train, categorical=(), continuous=("n0", "n1"), spark=spark)
+        IvSelector(IvConfig(num_bins=2, batch_size=1, threshold=0.0, relative_error=0.0)).select(
+            one,
+            candidates,
+        )
+        IvSelector(IvConfig(num_bins=2, batch_size=50, threshold=0.0, relative_error=0.0)).select(
+            many,
+            candidates,
+        )
+        assert one.scores["iv"]["values"] == many.scores["iv"]["values"]
+
+    def test_approx_quantile_failure_uses_root_cause(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql.dataframe import DataFrameStatFunctions
+
+        train = spark.createDataFrame(
+            pd.DataFrame({"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]}),
+        )
+
+        def boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            raise RuntimeError("quantile exploded\nmore")
+
+        monkeypatch.setattr(DataFrameStatFunctions, "approxQuantile", boom)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
         with pytest.raises(ExecutionError, match=r"approxQuantile failed.*quantile exploded"):
             IvSelector(IvConfig(num_bins=2)).select(context, ["num"])
 
-    def test_numeric_agg_failure_uses_root_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.agg_error = RuntimeError("agg exploded\nmore")
-        context = _context(train, categorical=(), continuous=("num",))
+    def test_numeric_agg_failure_uses_root_cause(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
+
+        train = spark.createDataFrame(
+            pd.DataFrame({"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]}),
+        )
+
+        def boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            raise RuntimeError("agg exploded\nmore")
+
+        monkeypatch.setattr(SparkDataFrame, "agg", boom)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
         with pytest.raises(ExecutionError, match=r"Spark aggregation failed.*agg exploded"):
             IvSelector(IvConfig(num_bins=2)).select(context, ["num"])
 
-    def test_categorical_iv_merges_null_and_other(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["cat"], continuous=())
-        train.cat_rows = [
-            {"feature": "cat", "level": "keep", "n": 50, "n_bad": 10},
-            {"feature": "cat", "level": "rare", "n": 2, "n_bad": 1},
-            {"feature": "cat", "level": None, "n": 6, "n_bad": 6},
-        ]
+    def test_categorical_iv_matches_pandas_with_null_and_rare(self, spark: Any) -> None:
+        pandas_frame = pd.DataFrame(
+            {
+                "cat": ["keep"] * 50 + ["rare"] * 2 + [None] * 6,
+                "response": [0] * 40 + [1] * 10 + [0, 1] + [1] * 6,
+            },
+        )
         config = IvConfig(min_bin_share=0.2, max_levels=None, eps=1e-4, threshold=0.0)
-        context = _context(train, categorical=("cat",), continuous=())
-        IvSelector(config).select(context, ["cat"])
+        pandas_scores, spark_scores, _, _ = _iv_on_pandas_and_spark(
+            spark,
+            pandas_frame,
+            categorical=("cat",),
+            continuous=(),
+            candidates=["cat"],
+            config=config,
+        )
         goods, bads = _merge_categorical_counts(
             [
                 ("keep", 40.0, 10.0),
@@ -1023,164 +853,180 @@ class TestIvSelectorSpark:
             min_bin_share=0.2,
             max_levels=None,
         )
-        assert context.scores["iv"]["values"]["cat"] == pytest.approx(
-            information_value(goods, bads, config.eps),
+        expected = information_value(goods, bads, config.eps)
+        assert pandas_scores["cat"] == pytest.approx(expected)
+        assert spark_scores["cat"] == pytest.approx(pandas_scores["cat"])
+
+    def test_categorical_batch_size_does_not_change_scores(self, spark: Any) -> None:
+        pandas_frame = pd.DataFrame(
+            {
+                "cata": ["a"] * 10 + ["z"] * 10,
+                "catb": ["b"] * 10 + ["z"] * 10,
+                "response": [0, 1] * 10,
+            },
+        )
+        train = spark.createDataFrame(pandas_frame)
+        one = _context(train, categorical=("cata", "catb"), continuous=(), spark=spark)
+        many = _context(train, categorical=("cata", "catb"), continuous=(), spark=spark)
+        IvSelector(IvConfig(batch_size=1, threshold=0.0)).select(one, ["cata", "catb"])
+        IvSelector(IvConfig(batch_size=50, threshold=0.0)).select(many, ["cata", "catb"])
+        assert one.scores["iv"]["values"] == many.scores["iv"]["values"]
+        pandas_ctx = _context(pandas_frame, categorical=("cata", "catb"), continuous=())
+        IvSelector(IvConfig(threshold=0.0)).select(pandas_ctx, ["cata", "catb"])
+        for name in ("cata", "catb"):
+            assert one.scores["iv"]["values"][name] == pytest.approx(
+                pandas_ctx.scores["iv"]["values"][name],
+            )
+
+    def test_categorical_groupby_failure_uses_root_cause(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
+
+        train = spark.createDataFrame(
+            pd.DataFrame({"cat": ["a", "b", "a", "b"], "response": [0, 1, 0, 1]}),
         )
 
-    def test_categorical_union_and_none_counts(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["cata", "catb"], continuous=())
-        train.cat_rows = [
-            {"feature": "cata", "level": "a", "n": 10, "n_bad": 1},
-            {"feature": "cata", "level": "z", "n": 10, "n_bad": 9},
-            {"feature": "catb", "level": "b", "n": None, "n_bad": None},
-        ]
-        context = _context(train, categorical=("cata", "catb"), continuous=())
-        IvSelector(IvConfig(batch_size=50, threshold=0.0)).select(context, ["cata", "catb"])
-        assert train.trace["union"] == 1
-        assert context.scores["iv"]["values"]["catb"] == 0.0
-        assert context.scores["iv"]["values"]["cata"] > 0.0
+        def boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            raise RuntimeError("groupby exploded\nmore")
 
-    def test_categorical_batch_size_one(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["cata", "catb"], continuous=())
-        train.cat_rows = [
-            {"feature": "cata", "level": "a", "n": 10, "n_bad": 1},
-            {"feature": "cata", "level": "z", "n": 10, "n_bad": 9},
-            {"feature": "catb", "level": "b", "n": 10, "n_bad": 1},
-            {"feature": "catb", "level": "z", "n": 10, "n_bad": 9},
-        ]
-        context = _context(train, categorical=("cata", "catb"), continuous=())
-        IvSelector(IvConfig(batch_size=1, threshold=0.0)).select(context, ["cata", "catb"])
-        assert train.trace["union"] == 0
-        assert set(context.scores["iv"]["values"]) == {"cata", "catb"}
-        assert context.scores["iv"]["values"]["cata"] > 0.0
-        assert context.scores["iv"]["values"]["catb"] > 0.0
-
-    def test_categorical_groupby_failure_uses_root_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["cat"], continuous=())
-        train.groupby_error = RuntimeError("groupby exploded\nmore")
-        context = _context(train, categorical=("cat",), continuous=())
+        monkeypatch.setattr(SparkDataFrame, "groupBy", boom)
+        context = _context(train, categorical=("cat",), continuous=(), spark=spark)
         with pytest.raises(ExecutionError, match=r"Spark groupBy failed.*groupby exploded"):
             IvSelector(IvConfig()).select(context, ["cat"])
 
-    def test_inspect_target_failure_uses_root_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.inspect_error = RuntimeError("inspect exploded\nmore")
-        context = _context(train, categorical=(), continuous=("num",))
+    def test_inspect_target_failure_uses_root_cause(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
+
+        train = spark.createDataFrame(
+            pd.DataFrame({"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]}),
+        )
+
+        def boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            raise RuntimeError("inspect exploded\nmore")
+
+        monkeypatch.setattr(SparkDataFrame, "collect", boom)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
         with pytest.raises(ExecutionError, match=r"failed to inspect target.*inspect exploded"):
             IvSelector(IvConfig()).select(context, ["num"])
 
-    def test_spark_binary_target_empty_one_and_three_labels(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        _install_pyspark_stub(monkeypatch)
-        empty = _spark_train(["num"], continuous=("num",))
-        empty.distinct_rows = []
-        empty.as_dict = _numeric_counts("c0", [(5.0, 10.0), (5.0, 10.0)])
-        empty_ctx = _context(empty, categorical=(), continuous=("num",))
+    def test_spark_binary_target_empty_one_and_three_labels(self, spark: Any) -> None:
+        from pyspark.sql.types import DoubleType, IntegerType, StructField, StructType
+
+        empty_schema = StructType(
+            [
+                StructField("num", DoubleType(), True),
+                StructField("response", IntegerType(), True),
+            ],
+        )
+        empty = spark.createDataFrame([(1.0, None), (2.0, None)], empty_schema)
+        empty_ctx = _context(empty, categorical=(), continuous=("num",), spark=spark)
         IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(empty_ctx, ["num"])
         assert "num" in empty_ctx.scores["iv"]["values"]
 
-        single = _spark_train(["num"], continuous=("num",))
-        single.distinct_rows = [(1,)]
-        single.as_dict = _numeric_counts("c0", [(0.0, 10.0), (0.0, 10.0)])
-        single_ctx = _context(single, categorical=(), continuous=("num",))
+        single = spark.createDataFrame(
+            pd.DataFrame({"num": [1.0, 2.0, 3.0, 4.0], "response": [1, 1, 1, 1]}),
+        )
+        single_ctx = _context(single, categorical=(), continuous=("num",), spark=spark)
         IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(single_ctx, ["num"])
-        assert "num" in single_ctx.scores["iv"]["values"]
+        assert single_ctx.scores["iv"]["values"]["num"] == 0.0
 
-        three = _spark_train(["num"], continuous=("num",))
-        three.distinct_rows = [(0,), (1,), (2,)]
-        three_ctx = _context(three, categorical=(), continuous=("num",))
+        three = spark.createDataFrame(
+            pd.DataFrame({"num": [1.0, 2.0, 3.0], "response": [0, 1, 2]}),
+        )
+        three_ctx = _context(three, categorical=(), continuous=("num",), spark=spark)
         with pytest.raises(ExecutionError, match="target must be binary"):
             IvSelector(IvConfig()).select(three_ctx, ["num"])
 
-    def test_spark_string_target_and_null_distinct(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num"], continuous=("num",))
-        train.distinct_rows = [("yes",), (None,), ("no",)]
-        train.as_dict = _numeric_counts("c0", [(2.0, 10.0), (8.0, 10.0)])
-        context = _context(train, categorical=(), continuous=("num",))
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
-        assert context.scores["iv"]["values"]["num"] > 0.0
+    def test_spark_string_target_matches_pandas(self, spark: Any) -> None:
+        pandas_frame = pd.DataFrame(
+            {
+                "num": [0.0, 1.0, 0.0, 1.0, 0.0, 1.0],
+                "response": ["yes", "no", "yes", "no", "yes", "no"],
+            },
+        )
+        pandas_scores, spark_scores, pandas_dropped, spark_dropped = _iv_on_pandas_and_spark(
+            spark,
+            pandas_frame,
+            categorical=(),
+            continuous=("num",),
+            candidates=["num"],
+            config=IvConfig(num_bins=2, threshold=0.0, relative_error=0.0),
+        )
+        assert pandas_dropped == spark_dropped
+        assert spark_scores["num"] == pytest.approx(pandas_scores["num"], rel=0.2, abs=1e-6)
 
-    def test_mixed_numeric_and_categorical_spark(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        train = _spark_train(["num", "cat"], continuous=("num",))
-        train.as_dict = _numeric_counts("c0", [(1.0, 8.0), (7.0, 8.0)])
-        train.cat_rows = [{"feature": "cat", "level": "a", "n": 16, "n_bad": 8}]
-        context = _context(train, categorical=("cat",), continuous=("num",))
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num", "cat"])
-        scores = context.scores["iv"]["values"]
-        assert set(scores) == {"num", "cat"}
-        assert scores["num"] > 0.0
+    def test_mixed_numeric_and_categorical_match_pandas(self, spark: Any) -> None:
+        pandas_frame = _frame(n=240)[["strong", "weak", "cat_signal", "response"]]
+        config = IvConfig(threshold=0.02, num_bins=6, relative_error=0.0)
+        pandas_scores, spark_scores, pandas_dropped, spark_dropped = _iv_on_pandas_and_spark(
+            spark,
+            pandas_frame,
+            categorical=("cat_signal",),
+            continuous=("strong", "weak"),
+            candidates=["strong", "weak", "cat_signal"],
+            config=config,
+        )
+        assert pandas_dropped == spark_dropped
+        assert spark_scores["cat_signal"] == pytest.approx(pandas_scores["cat_signal"])
+        for name in ("strong", "weak"):
+            assert spark_scores[name] == pytest.approx(pandas_scores[name], rel=0.2, abs=1e-6)
 
-    def test_quoted_col_and_count_exprs(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
-        dotted = _quoted_col("foo.bar")
-        assert dotted.name == "`foo.bar`"
-        stripped = _quoted_col("a`b")
-        assert stripped.name == "`ab`"
-        exprs = _count_exprs(FakeCol("cond"), FakeCol("y"), "c0__null")
-        assert [item.name for item in exprs] == ["c0__null__bad", "c0__null__n"]
+    def test_quoted_col_and_count_exprs(self, spark: Any) -> None:
+        from pyspark.sql import functions as F
 
-    def test_spark_binary_target_java_root_cause(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        _install_pyspark_stub(monkeypatch)
+        assert str(_quoted_col("foo.bar")) == str(F.col("`foo.bar`"))
+        assert str(_quoted_col("a`b")) == str(F.col("`ab`"))
+        exprs = _count_exprs(F.lit(True), F.col("y"), "c0__null")
+        row = spark.createDataFrame([(1.0,)], ["y"]).agg(*exprs).collect()[0].asDict()
+        assert "c0__null__bad" in row
+        assert "c0__null__n" in row
+        assert row["c0__null__n"] == 1
+
+    def test_spark_binary_target_java_root_cause(
+        self,
+        spark: Any,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        from pyspark.sql import DataFrame as SparkDataFrame
 
         class JavaFailureError(Exception):
             java_exception = "java.lang.RuntimeException: spark died\nstack"
 
-        train = _spark_train(["num"], continuous=("num",))
-        train.inspect_error = JavaFailureError("wrapper")
-        context = _context(train, categorical=(), continuous=("num",))
+        train = spark.createDataFrame(
+            pd.DataFrame({"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]}),
+        )
+
+        def boom(self: Any, *_args: Any, **_kwargs: Any) -> Any:
+            del self
+            raise JavaFailureError("wrapper")
+
+        monkeypatch.setattr(SparkDataFrame, "collect", boom)
+        context = _context(train, categorical=(), continuous=("num",), spark=spark)
         with pytest.raises(ExecutionError, match=r"java\.lang\.RuntimeException: spark died"):
             IvSelector(IvConfig()).select(context, ["num"])
 
-    @pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-    def test_spark_iv_matches_pandas_drop_set(self) -> None:
-        from pyspark.sql import SparkSession
-
-        pandas_frame = _frame(n=240)
-        spark = (
-            SparkSession.builder.master("local[1]")
-            .appName("test-iv-spark")
-            .config("spark.ui.enabled", "false")
-            .config("spark.driver.host", "127.0.0.1")
-            .getOrCreate()
+    def test_spark_iv_matches_pandas_drop_set(self, spark: Any) -> None:
+        pandas_frame = _frame(n=240)[["strong", "weak", "cat_signal", "response"]]
+        config = IvConfig(threshold=0.02, num_bins=6, relative_error=0.01)
+        pandas_scores, spark_scores, pandas_dropped, spark_dropped = _iv_on_pandas_and_spark(
+            spark,
+            pandas_frame,
+            categorical=("cat_signal",),
+            continuous=("strong", "weak"),
+            candidates=["strong", "weak", "cat_signal"],
+            config=config,
         )
-        spark.sparkContext.setLogLevel("ERROR")
-        try:
-            spark_frame = spark.createDataFrame(
-                pandas_frame[["strong", "weak", "cat_signal", "response"]],
-            )
-            candidates = ["strong", "weak", "cat_signal"]
-            config = IvConfig(threshold=0.02, num_bins=6, relative_error=0.01)
-            pandas_decisions = IvSelector(config).select(
-                _context(
-                    pandas_frame,
-                    categorical=("cat_signal",),
-                    continuous=("strong", "weak"),
-                ),
-                candidates,
-            )
-            spark_decisions = IvSelector(config).select(
-                _context(
-                    spark_frame,
-                    categorical=("cat_signal",),
-                    continuous=("strong", "weak"),
-                    spark=spark,
-                ),
-                candidates,
-            )
-            assert {item.feature for item in pandas_decisions} == {
-                item.feature for item in spark_decisions
-            }
-            assert {item.reason for item in spark_decisions} <= {"low_iv"}
-        finally:
-            spark.stop()
+        assert pandas_dropped == spark_dropped
+        assert set(spark_scores) == {"strong", "weak", "cat_signal"}
 
 
 class TestIvConfigAndPipeline:
@@ -1198,7 +1044,7 @@ class TestIvConfigAndPipeline:
             task_type="binary_classification",
         )
         result = FeatureSelectionPipeline(config).fit_select(
-            FakeSparkSession(),
+            require_spark_session(),
             datasets={"train": frame},
             schema=schema,
             output_dir=tmp_path,

@@ -10,8 +10,9 @@ from pandas.api.types import is_numeric_dtype
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import CorrelationConfig
-from fmlib.feature_selection.debug import emit as debug_emit, enabled as debug_enabled
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.verbose import emit as verbose_emit
+from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 _NUMERIC_SPARK_TYPE_NAMES = frozenset(
     {
@@ -97,12 +98,12 @@ class CorrelationSelector:
         if len(evaluated) < 2:
             return []
 
-        if debug_enabled(context, self.method_name):
+        if verbose_enabled(context, self.method_name):
             off_diag = np.abs(corr_matrix.copy())
             np.fill_diagonal(off_diag, 0.0)
             n_pairs = int(np.sum(off_diag > self.config.threshold) // 2)
             finite = off_diag[np.isfinite(off_diag)]
-            debug_emit(
+            verbose_emit(
                 context,
                 self.method_name,
                 "matrix",

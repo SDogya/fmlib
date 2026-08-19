@@ -9,8 +9,9 @@ import pandas as pd
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import ConstantsConfig
-from fmlib.feature_selection.debug import emit as debug_emit, enabled as debug_enabled
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.verbose import emit as verbose_emit
+from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 # Spark types that cannot be used as countDistinct / groupBy keys for this filter.
 _UNSUPPORTED_SPARK_TYPE_NAMES = frozenset({"MapType", "VariantType"})
@@ -86,14 +87,14 @@ class ConstantsSelector:
                 "Spark inputs are aggregated in-cluster; full toPandas materialisation is not used."
             )
             raise ExecutionError(msg)
-        if debug_enabled(context, self.method_name) and stats:
+        if verbose_enabled(context, self.method_name) and stats:
             frequencies = [frequency for _, frequency in stats.values()]
             uniques = [n_unique for n_unique, _ in stats.values()]
             n_chunks = (
                 (len(columns) + self.config.chunk_size - 1)
                 // self.config.chunk_size
             )
-            debug_emit(
+            verbose_emit(
                 context,
                 self.method_name,
                 "stats",

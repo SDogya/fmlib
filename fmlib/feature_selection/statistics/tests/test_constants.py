@@ -2,22 +2,16 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import ConstantsConfig, FeatureSelectionConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistics.constants import ConstantsSelector
-from fmlib.feature_selection.conftest import FakeSparkSession
-
-
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
 
 
 def _schema() -> FeatureSchema:
@@ -48,7 +42,7 @@ def _frame() -> pd.DataFrame:
 
 def _context(df: pd.DataFrame, config: FeatureSelectionConfig) -> StageContext:
     return StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={"train": df},
         schema=_schema(),
         config=config,
@@ -121,111 +115,85 @@ def test_all_null_column_is_left_to_null_rate_selector() -> None:
     assert decisions == []
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-def test_spark_rejects_map_type_before_collect() -> None:
-    from pyspark.sql import SparkSession
-
+def test_spark_rejects_map_type_before_collect(spark: Any) -> None:
     from fmlib.feature_selection.exceptions import ExecutionError
 
-    spark = (
-        SparkSession.builder.master("local[1]")
-        .appName("test-constants-map")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.host", "127.0.0.1")
-        .getOrCreate()
+    df = spark.createDataFrame([({"a": 1}, 0), ({"a": 1}, 1)], ["m", "response"])
+    schema = FeatureSchema(
+        categorical=(),
+        continuous=("m",),
+        target="response",
+        task_type="binary_classification",
     )
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        df = spark.createDataFrame([({"a": 1}, 0), ({"a": 1}, 1)], ["m", "response"])
-        schema = FeatureSchema(
-            categorical=(),
-            continuous=("m",),
-            target="response",
-            task_type="binary_classification",
-        )
-        config = FeatureSelectionConfig.from_dict(
-            {
-                "statistics": {
-                    "constants": {"max_frequency": 0.99},
-                },
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "statistics": {
+                "constants": {"max_frequency": 0.99},
             },
-        )
-        selector = ConstantsSelector(config.statistics.constants)
-        context = StageContext(
-            spark=spark,
-            datasets={"train": df},
-            schema=schema,
-            config=config,
-            seed=0,
-            candidates=["m"],
-        )
-        with pytest.raises(ExecutionError, match="MapType"):
-            selector.select(context, ["m"])
-    finally:
-        spark.stop()
+        },
+    )
+    selector = ConstantsSelector(config.statistics.constants)
+    context = StageContext(
+        spark=spark,
+        datasets={"train": df},
+        schema=schema,
+        config=config,
+        seed=0,
+        candidates=["m"],
+    )
+    with pytest.raises(ExecutionError, match="MapType"):
+        selector.select(context, ["m"])
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
 def test_spark_default_path_skips_count_distinct_and_chunks_columns(
+    spark: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    from pyspark.sql import SparkSession
     from pyspark.sql import functions as F  # noqa: N812
 
-    spark = (
-        SparkSession.builder.master("local[1]")
-        .appName("test-constants-spark")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.host", "127.0.0.1")
-        .getOrCreate()
+    df = spark.createDataFrame(
+        [(1, 0, 1, 0), (1, 0, 2, 1), (1, 0, 3, 0), (1, 0, 4, 1), (1, 1, 5, 0)],
+        ["foo.bar", "quasi", "good", "response"],
     )
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        df = spark.createDataFrame(
-            [(1, 0, 1, 0), (1, 0, 2, 1), (1, 0, 3, 0), (1, 0, 4, 1), (1, 1, 5, 0)],
-            ["foo.bar", "quasi", "good", "response"],
-        )
-        schema = FeatureSchema(
-            categorical=(),
-            continuous=("foo.bar", "quasi", "good"),
-            target="response",
-            task_type="binary_classification",
-        )
-        config = FeatureSelectionConfig.from_dict(
-            {
-                "statistics": {
-                    "constants": {
-                        "max_frequency": 0.8,
-                        "chunk_size": 1,
-                    },
+    schema = FeatureSchema(
+        categorical=(),
+        continuous=("foo.bar", "quasi", "good"),
+        target="response",
+        task_type="binary_classification",
+    )
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "statistics": {
+                "constants": {
+                    "max_frequency": 0.8,
+                    "chunk_size": 1,
                 },
             },
+        },
+    )
+    selector = ConstantsSelector(config.statistics.constants)
+    context = StageContext(
+        spark=spark,
+        datasets={"train": df},
+        schema=schema,
+        config=config,
+        seed=0,
+        candidates=["foo.bar", "quasi", "good"],
+    )
+    with monkeypatch.context() as patch:
+        patch.setattr(
+            F,
+            "countDistinct",
+            lambda *_args, **_kwargs: pytest.fail("countDistinct must not run without min_unique"),
         )
-        selector = ConstantsSelector(config.statistics.constants)
-        context = StageContext(
-            spark=spark,
-            datasets={"train": df},
-            schema=schema,
-            config=config,
-            seed=0,
-            candidates=["foo.bar", "quasi", "good"],
-        )
-        with monkeypatch.context() as patch:
-            patch.setattr(
-                F,
-                "countDistinct",
-                lambda *_args, **_kwargs: pytest.fail("countDistinct must not run without min_unique"),
-            )
-            decisions = selector.select(context, ["foo.bar", "quasi", "good"])
-        by_feature = {decision.feature: decision for decision in decisions}
-        assert set(by_feature) == {"foo.bar", "quasi"}
-        assert by_feature["foo.bar"].reason == "constant"
-        assert by_feature["quasi"].reason == "quasi_constant"
-        assert by_feature["quasi"].value == 0.8
+        decisions = selector.select(context, ["foo.bar", "quasi", "good"])
+    by_feature = {decision.feature: decision for decision in decisions}
+    assert set(by_feature) == {"foo.bar", "quasi"}
+    assert by_feature["foo.bar"].reason == "constant"
+    assert by_feature["quasi"].reason == "quasi_constant"
+    assert by_feature["quasi"].value == 0.8
 
-        min_unique_selector = ConstantsSelector(ConstantsConfig(max_frequency=1.0, min_unique=4, chunk_size=1))
-        min_unique_decisions = min_unique_selector.select(context, ["quasi", "good"])
-        assert [decision.feature for decision in min_unique_decisions] == ["quasi"]
-        assert min_unique_decisions[0].reason == "too_few_unique"
-    finally:
-        spark.stop()
+    min_unique_selector = ConstantsSelector(ConstantsConfig(max_frequency=1.0, min_unique=4, chunk_size=1))
+    min_unique_decisions = min_unique_selector.select(context, ["quasi", "good"])
+    assert [decision.feature for decision in min_unique_decisions] == ["quasi"]
+    assert min_unique_decisions[0].reason == "too_few_unique"

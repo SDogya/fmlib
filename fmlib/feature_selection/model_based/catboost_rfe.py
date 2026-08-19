@@ -15,11 +15,14 @@ import pandas as pd
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import ModelConfig
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.default_model_param_spaces import (
+    CATBOOST_RFE_SEARCH_SPACE,
+)
 from fmlib.feature_selection.utils.local_data import prepare_mixed_frame, root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
     resolve_optuna_settings,
-    split_parameters,
+    resolve_tuning_space,
     suggest_parameter,
 )
 
@@ -51,10 +54,14 @@ class CatBoostRfeSelector:
     is used for fitting. External ``valid`` and ``test`` splits are never read,
     so they stay usable as an unbiased check of the selected feature set.
 
-    Optuna runs only when ``params.parameters`` contains search-space mappings
-    (``{"type": "int", "min": 4, "max": 8}``); plain scalars are passed to
-    CatBoost unchanged. Both categorical and continuous candidates are evaluated
-    — categorical ones are handed to CatBoost as ``cat_features``.
+    Optuna runs when ``params.optuna_params.enabled`` is true (the default).
+    If ``params.parameters`` contains search-space mappings
+    (``{"type": "int", "min": 4, "max": 8}``), those mappings are the entire
+    grid. If it contains only scalars, the fallback in
+    ``CATBOOST_RFE_SEARCH_SPACE`` is used. ``enabled: false`` skips Optuna and
+    passes scalars to CatBoost unchanged. Both categorical and continuous
+    candidates are evaluated — categorical ones are handed to CatBoost as
+    ``cat_features``.
 
     Args:
         config: Model-based stage settings.
@@ -243,6 +250,16 @@ class CatBoostRfeSelector:
             raise ExecutionError(msg)
 
         try:
+            optuna_settings = resolve_optuna_settings(
+                optuna_params,
+                method_name=self.method_name,
+            )
+            fixed, search_space = resolve_tuning_space(
+                parameters,
+                defaults=CATBOOST_RFE_SEARCH_SPACE,
+                enabled=optuna_settings["enabled"],
+                method_name=self.method_name,
+            )
             options: dict[str, Any] = {
                 "eval_months": int(params.get("eval_months", _DEFAULT_EVAL_MONTHS)),
                 "max_rows": min(
@@ -252,6 +269,9 @@ class CatBoostRfeSelector:
                 "sample_fraction": params.get("sample_fraction"),
                 "num_features_to_select": int(target_count),
                 "parameters": dict(parameters),
+                "fixed_params": fixed,
+                "search_space": search_space,
+                "optuna_enabled": optuna_settings["enabled"],
                 "optuna_params": dict(optuna_params),
                 "feature_selection_params": dict(feature_selection_params),
             }
@@ -339,24 +359,27 @@ def split_out_of_time(
     return fit_frame, eval_frame, [str(period) for period in eval_periods]
 
 
-def _load_backends() -> tuple[Any, Any, Any]:
+def _load_backends(*, require_optuna: bool = True) -> tuple[Any, Any, Any]:
     """Import CatBoost, Optuna and scikit-learn metrics lazily."""
     try:
         from catboost import CatBoostClassifier, Pool
     except ImportError as exc:
         msg = "catboost_rfe: CatBoost is required. Install the catboost optional dependency."
         raise BackendError(msg) from exc
-    try:
-        import optuna
-    except ImportError as exc:
-        msg = "catboost_rfe: Optuna is required. Install the optuna optional dependency."
-        raise BackendError(msg) from exc
-    try:
-        from sklearn.metrics import roc_auc_score
-    except ImportError as exc:
-        msg = "catboost_rfe: scikit-learn is required. Install the scikit-learn optional dependency."
-        raise BackendError(msg) from exc
-    return (CatBoostClassifier, Pool), optuna, roc_auc_score
+    optuna_module: Any = None
+    roc_auc_score: Any = None
+    if require_optuna:
+        try:
+            import optuna as optuna_module
+        except ImportError as exc:
+            msg = "catboost_rfe: Optuna is required. Install the optuna optional dependency."
+            raise BackendError(msg) from exc
+        try:
+            from sklearn.metrics import roc_auc_score
+        except ImportError as exc:
+            msg = "catboost_rfe: scikit-learn is required. Install the scikit-learn optional dependency."
+            raise BackendError(msg) from exc
+    return (CatBoostClassifier, Pool), optuna_module, roc_auc_score
 
 
 def _finalize_parameters(parameters: Mapping[str, Any], *, seed: int) -> dict[str, Any]:
@@ -468,7 +491,7 @@ def run_catboost_rfe(
         time_col: Column used for the out-of-time split.
         eval_months: Number of latest periods reserved for evaluation.
         parameters: Polymorphic CatBoost parameter block (scalars and/or specs).
-        optuna_params: Optuna settings, used only when ``parameters`` holds specs.
+        optuna_params: Optuna settings, used when a search space is resolved.
         feature_selection_params: ``algorithm``, ``steps`` and other ``select_features`` options.
         num_features_to_select: Target feature count for elimination.
         seed: Root reproducibility seed.
@@ -481,7 +504,7 @@ def run_catboost_rfe(
         BackendError: When CatBoost, Optuna or scikit-learn is unavailable.
         ExecutionError: When the split, tuning or elimination fails.
     """
-    backends = _load_backends()
+    backends = _load_backends(require_optuna=False)
     (catboost_classifier, pool_class), _optuna, _roc_auc_score = backends
 
     fit_frame, eval_frame, eval_periods = split_out_of_time(
@@ -505,8 +528,15 @@ def run_catboost_rfe(
         cat_features=categorical,
     )
 
-    fixed, search_space = split_parameters(parameters, method_name=method_name)
+    settings = resolve_optuna_settings(optuna_params, method_name=method_name)
+    fixed, search_space = resolve_tuning_space(
+        parameters,
+        defaults=CATBOOST_RFE_SEARCH_SPACE,
+        enabled=settings["enabled"],
+        method_name=method_name,
+    )
     if search_space:
+        backends = _load_backends(require_optuna=True)
         best_params, best_metric, completed_trials = tune_parameters(
             fit_pool=fit_pool,
             eval_pool=eval_pool,
@@ -528,7 +558,7 @@ def run_catboost_rfe(
         best_params = _finalize_parameters(fixed, seed=seed)
         best_metric = None
         completed_trials = 0
-        logger.info("%s: no parameter ranges configured, skipping Optuna", method_name)
+        logger.info("%s: Optuna disabled or search space empty, skipping tuning", method_name)
 
     selection_params = dict(feature_selection_params)
     algorithm = str(selection_params.pop("algorithm", "RecursiveByLossFunctionChange"))

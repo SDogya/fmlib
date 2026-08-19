@@ -69,6 +69,9 @@ class SelectionResult:
         format_version: Artifact format version.
         datasets_mode: ``single`` or ``mapping`` input mode.
         scores: Optional feature scores/importances by method.
+        verbose_log: In-memory verbose events when ``execution.verbose`` is on.
+            Not written into ``final_results.json``; dumped as ``verbose_log.json``
+            when ``output_dir`` is set.
     """
 
     selected_features: list[str]
@@ -81,6 +84,7 @@ class SelectionResult:
     format_version: int = FORMAT_VERSION
     datasets_mode: str = "single"
     scores: dict[str, Any] = field(default_factory=dict)
+    verbose_log: Optional[dict[str, Any]] = None
 
     def to_dict(self: SelectionResult) -> dict[str, Any]:
         """Serialize the artifact to a JSON-compatible dictionary.
@@ -228,6 +232,27 @@ class SelectionResult:
         return projected
 
 
+def stage_backends_for_config(config: Any) -> dict[str, str]:
+    """Spark backend tag for every stage that will run."""
+    from fmlib.feature_selection.backends.spark import SPARK_CAPABILITIES
+
+    backends: dict[str, str] = {}
+    preprocessing = config.preprocessing
+    if (
+        preprocessing.feature_drop.enabled
+        or preprocessing.random_feature_drop.enabled
+        or preprocessing.row_sample.enabled
+    ):
+        backends["preprocessing"] = SPARK_CAPABILITIES.name
+    if config.statistics.order:
+        backends["statistics"] = SPARK_CAPABILITIES.name
+    if config.model.enabled:
+        backends["model"] = SPARK_CAPABILITIES.name
+    if config.precise.enabled:
+        backends["precise"] = SPARK_CAPABILITIES.name
+    return backends
+
+
 def _save_intermediate_result(
     remaining: list[str],
     decisions: list[FeatureDecision],
@@ -246,8 +271,6 @@ def _save_intermediate_result(
         output_dir: Directory to save results.
         context: Stage context with schema and config.
     """
-    from fmlib.feature_selection.registry import stage_backends_for_config
-
     stage_backends = stage_backends_for_config(context.config)
     result = SelectionResult(
         selected_features=list(remaining),

@@ -10,8 +10,9 @@ import pandas as pd
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import IvConfig
-from fmlib.feature_selection.debug import emit as debug_emit, enabled as debug_enabled
 from fmlib.feature_selection.exceptions import BackendError, ConfigError, ExecutionError
+from fmlib.feature_selection.utils.verbose import emit as verbose_emit
+from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 _NUMERIC_SPARK_TYPE_NAMES = frozenset(
     {
@@ -115,13 +116,13 @@ class IvSelector:
             "values": dict(iv_scores),
         }
 
-        if debug_enabled(context, self.method_name) and iv_scores:
+        if verbose_enabled(context, self.method_name) and iv_scores:
             values = list(iv_scores.values())
             n_low = sum(1 for value in values if value < self.config.threshold)
             n_high = 0
             if self.config.max_threshold is not None:
                 n_high = sum(1 for value in values if value > self.config.max_threshold)
-            debug_emit(
+            verbose_emit(
                 context,
                 self.method_name,
                 "stats",

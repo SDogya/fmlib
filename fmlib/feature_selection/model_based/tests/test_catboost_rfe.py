@@ -1,26 +1,32 @@
 """Tests for the CatBoost RFE selector and its helpers.
 
-CatBoost, Optuna and scikit-learn are optional dependencies, so tests here cover
-the pure-python parts: option resolution, guards, the out-of-time split, the
-mixed-type materialization, and decision building with a patched core.
+Guards, out-of-time split, mixed materialization and YAML stay local. The
+decision-building test trains a tiny real CatBoost RFE; missing CatBoost fails
+the run instead of skipping.
 """
 
 from __future__ import annotations
-
-from typing import Any
 
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
-from fmlib.feature_selection.model_based import catboost_rfe as catboost_rfe_module
 from fmlib.feature_selection.model_based.catboost_rfe import CatBoostRfeSelector, split_out_of_time
 from fmlib.feature_selection.schema import FeatureSchema
+from fmlib.feature_selection.utils.default_model_param_spaces import CATBOOST_RFE_SEARCH_SPACE
 from fmlib.feature_selection.utils.local_data import prepare_mixed_frame
 
-_PARAMETERS = {"depth": 6, "iterations": 10}
+_PARAMETERS = {"depth": 4, "iterations": 20}
+
+
+def _require_catboost() -> None:
+    try:
+        import catboost  # noqa: F401
+    except ImportError as exc:
+        pytest.fail(f"Install the catboost extra. Root cause: {exc}")
 
 
 def _frame(n_rows: int = 60, months: tuple[str, ...] = ("2024-01", "2024-02", "2024-03")) -> pd.DataFrame:
@@ -65,7 +71,7 @@ def _context(
         },
     )
     return StageContext(
-        spark=None,
+        spark=require_spark_session(),
         datasets={"train": frame},
         schema=schema,
         config=config,
@@ -201,42 +207,81 @@ def test_select_is_noop_when_candidates_fit_target() -> None:
     assert context.scores["catboost_rfe"]["skipped"] is True
 
 
-def test_select_builds_decisions_and_scores(monkeypatch: pytest.MonkeyPatch) -> None:
-    context = _context(_frame(), schema=_schema(), max_features=1)
+def test_select_builds_decisions_and_scores() -> None:
+    _require_catboost()
+    context = _context(
+        _frame(),
+        schema=_schema(),
+        params={
+            "parameters": _PARAMETERS,
+            "optuna_params": {"enabled": False},
+        },
+        max_features=1,
+    )
     selector = CatBoostRfeSelector(context.config.model)
-
-    def fake_run(frame: pd.DataFrame, **kwargs: Any) -> dict[str, Any]:
-        assert "month_part" in frame.columns
-        assert kwargs["categorical_cols"] == ["cat_a"]
-        assert kwargs["num_features_to_select"] == 1
-        assert kwargs["seed"] == 42
-        return {
-            "selected_features": ["num_a"],
-            "eliminated_features": ["cat_a", "num_b"],
-            "best_params": {"depth": 6},
-            "best_metric": None,
-            "optuna_trials": 0,
-            "algorithm": "RecursiveByLossFunctionChange",
-            "num_features_to_select": 1,
-            "eval_periods": ["2024-03"],
-            "fit_rows": 40,
-            "eval_rows": 20,
-            "loss_graph": None,
-        }
-
-    monkeypatch.setattr(catboost_rfe_module, "run_catboost_rfe", fake_run)
     decisions = selector.select(context, ["cat_a", "num_a", "num_b"])
 
     kept = [item.feature for item in decisions if item.keep]
     dropped = [item.feature for item in decisions if not item.keep]
-    assert kept == ["num_a"]
-    assert dropped == ["cat_a", "num_b"]
-    assert [item.value for item in decisions if item.feature == "cat_a"] == [1.0]
+    assert len(kept) == 1
+    assert set(dropped) == {"cat_a", "num_a", "num_b"} - set(kept)
+    assert {item.feature for item in decisions} == {"cat_a", "num_a", "num_b"}
+    assert all(item.reason == "catboost_rfe_selected" for item in decisions if item.keep)
+    assert all(item.reason == "catboost_rfe_eliminated" for item in decisions if not item.keep)
+    assert all(item.value is not None and item.value >= 1.0 for item in decisions if not item.keep)
 
     scores = context.scores["catboost_rfe"]
     assert scores["eval_strategy"] == "out_of_time"
     assert scores["eval_periods"] == ["2024-03"]
     assert scores["categorical_evaluated"] == ["cat_a"]
+    assert set(scores["selected_features"]) == set(kept)
+
+
+# --- search space ----------------------------------------------------------
+
+
+def test_scalar_parameters_fall_back_to_the_default_grid() -> None:
+    context = _context(_frame(), schema=_schema())
+    options = CatBoostRfeSelector(context.config.model)._resolve_options(context)
+
+    assert options["optuna_enabled"] is True
+    assert options["fixed_params"] == _PARAMETERS
+    assert "depth" not in options["search_space"]
+    assert options["search_space"]["learning_rate"] == CATBOOST_RFE_SEARCH_SPACE["learning_rate"]
+
+
+def test_a_yaml_mapping_replaces_the_default_grid() -> None:
+    context = _context(
+        _frame(),
+        schema=_schema(),
+        params={
+            "parameters": {
+                "iterations": 10,
+                "depth": {"type": "int", "min": 4, "max": 6},
+            },
+        },
+    )
+    options = CatBoostRfeSelector(context.config.model)._resolve_options(context)
+
+    assert options["search_space"] == {"depth": {"type": "int", "min": 4, "max": 6}}
+    assert "learning_rate" not in options["search_space"]
+    assert options["fixed_params"] == {"iterations": 10}
+
+
+def test_optuna_disabled_clears_the_search_space() -> None:
+    context = _context(
+        _frame(),
+        schema=_schema(),
+        params={
+            "parameters": _PARAMETERS,
+            "optuna_params": {"enabled": False},
+        },
+    )
+    options = CatBoostRfeSelector(context.config.model)._resolve_options(context)
+
+    assert options["optuna_enabled"] is False
+    assert options["search_space"] == {}
+    assert options["fixed_params"] == _PARAMETERS
 
 
 # --- config validation -----------------------------------------------------

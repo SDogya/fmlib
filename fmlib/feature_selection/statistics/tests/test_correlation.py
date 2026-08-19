@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import CorrelationConfig, FeatureSelectionConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import ExecutionError
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistics.correlation import CorrelationSelector
-from fmlib.feature_selection.conftest import FakeSparkSession
 
 
 def _context(
@@ -28,21 +30,13 @@ def _context(
         task_type="binary_classification",
     )
     return StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={"train": frame},
         schema=schema,
         config=config,
         seed=0,
         candidates=schema.candidate_features(),
     )
-
-
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
 
 
 def _frame() -> pd.DataFrame:
@@ -153,62 +147,50 @@ def test_execution_max_local_rows_caps_correlation_max_rows() -> None:
     assert [decision.feature for decision in selector.select(context, ["first", "second"])] == ["second"]
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
 def test_spark_uses_ml_correlation_on_limited_rows_without_to_pandas(
+    spark: Any,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     from pyspark.sql import DataFrame as SparkDataFrame
-    from pyspark.sql import SparkSession
 
-    spark = (
-        SparkSession.builder.master("local[1]")
-        .appName("test-correlation-row-limit")
-        .config("spark.ui.enabled", "false")
-        .config("spark.driver.host", "127.0.0.1")
-        .getOrCreate()
+    frame = spark.createDataFrame(
+        [
+            (
+                str(index % 2),
+                float(index),
+                float(index) if index < 4 else float((index * 7) % 11),
+                float(index % 3),
+                index % 2,
+            )
+            for index in range(20)
+        ],
+        ["category", "first", "second", "independent", "response"],
     )
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        frame = spark.createDataFrame(
-            [
-                (
-                    str(index % 2),
-                    float(index),
-                    float(index) if index < 4 else float((index * 7) % 11),
-                    float(index % 3),
-                    index % 2,
-                )
-                for index in range(20)
-            ],
-            ["category", "first", "second", "independent", "response"],
-        )
-        selector = CorrelationSelector(CorrelationConfig(max_rows=4, threshold=0.9))
-        monkeypatch.setattr(
-            SparkDataFrame,
-            "toPandas",
-            lambda *_args, **_kwargs: pytest.fail("Spark correlation must not call toPandas"),
-        )
+    selector = CorrelationSelector(CorrelationConfig(max_rows=4, threshold=0.9))
+    monkeypatch.setattr(
+        SparkDataFrame,
+        "toPandas",
+        lambda *_args, **_kwargs: pytest.fail("Spark correlation must not call toPandas"),
+    )
 
-        decisions = selector.select(_context(frame), ["first", "second", "independent"])
+    decisions = selector.select(_context(frame), ["first", "second", "independent"])
 
-        assert [decision.feature for decision in decisions] == ["second"]
-        assert decisions[0].value == 1.0
+    assert [decision.feature for decision in decisions] == ["second"]
+    assert decisions[0].value == 1.0
 
-        bad_schema = FeatureSchema(
-            categorical=(),
-            continuous=("category", "first"),
-            target="response",
-            task_type="binary_classification",
-        )
-        bad_context = StageContext(
-            spark=spark,
-            datasets={"train": frame},
-            schema=bad_schema,
-            config=FeatureSelectionConfig(),
-            seed=0,
-            candidates=["category", "first"],
-        )
-        with pytest.raises(ExecutionError, match=r"FeatureSchema\.continuous.*category:StringType"):
-            selector.select(bad_context, ["category", "first"])
-    finally:
-        spark.stop()
+    bad_schema = FeatureSchema(
+        categorical=(),
+        continuous=("category", "first"),
+        target="response",
+        task_type="binary_classification",
+    )
+    bad_context = StageContext(
+        spark=spark,
+        datasets={"train": frame},
+        schema=bad_schema,
+        config=FeatureSelectionConfig(),
+        seed=0,
+        candidates=["category", "first"],
+    )
+    with pytest.raises(ExecutionError, match=r"FeatureSchema\.continuous.*category:StringType"):
+        selector.select(bad_context, ["category", "first"])

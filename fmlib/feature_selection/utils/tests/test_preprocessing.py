@@ -2,17 +2,19 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 import numpy as np
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.exceptions import ConfigError
+from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.utils.local_data import sample_frame_rows
 from fmlib.feature_selection.utils.preprocessing import (
     apply_random_feature_drop,
     apply_row_sample,
 )
-from fmlib.feature_selection.schema import FeatureSchema
 
 
 def _schema() -> FeatureSchema:
@@ -193,56 +195,31 @@ def test_regression_requires_non_stratified_row_sampling() -> None:
         )
 
 
-def _pyspark_available() -> bool:
-    try:
-        import pyspark  # noqa: F401
-    except ImportError:
-        return False
-    return True
+def test_spark_row_sample_guard_and_uniform_cap(spark: Any) -> None:
+    frame = spark.createDataFrame(
+        [(float(index), index % 2) for index in range(20)],
+        ["first", "response"],
+    )
 
+    unchanged, original_rows, unchanged_rows = sample_frame_rows(
+        frame,
+        target_col="response",
+        max_rows=100,
+        stratified=True,
+        seed=42,
+        method_name="row_sample",
+    )
+    sampled, _, sampled_rows = sample_frame_rows(
+        frame,
+        target_col="response",
+        max_rows=7,
+        stratified=False,
+        seed=42,
+        method_name="row_sample",
+    )
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-def test_spark_row_sample_guard_and_uniform_cap() -> None:
-    from pyspark.sql import SparkSession
-
-    try:
-        spark = (
-            SparkSession.builder.master("local[1]")
-            .appName("test-preprocessing-row-sample")
-            .config("spark.ui.enabled", "false")
-            .config("spark.driver.host", "127.0.0.1")
-            .getOrCreate()
-        )
-    except Exception as exc:  # noqa: BLE001 - optional local Spark runtime
-        pytest.skip(f"Spark runtime unavailable: {exc}")
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        frame = spark.createDataFrame(
-            [(float(index), index % 2) for index in range(20)],
-            ["first", "response"],
-        )
-
-        unchanged, original_rows, unchanged_rows = sample_frame_rows(
-            frame,
-            target_col="response",
-            max_rows=100,
-            stratified=True,
-            seed=42,
-            method_name="row_sample",
-        )
-        sampled, _, sampled_rows = sample_frame_rows(
-            frame,
-            target_col="response",
-            max_rows=7,
-            stratified=False,
-            seed=42,
-            method_name="row_sample",
-        )
-
-        assert original_rows == 20
-        assert unchanged_rows == 20
-        assert unchanged.count() == 20
-        assert sampled_rows == 7
-        assert sampled.count() == 7
-    finally:
-        spark.stop()
+    assert original_rows == 20
+    assert unchanged_rows == 20
+    assert unchanged.count() == 20
+    assert sampled_rows == 7
+    assert sampled.count() == 7

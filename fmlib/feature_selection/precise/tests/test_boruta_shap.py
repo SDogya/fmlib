@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.util
 from typing import Any
 
 import numpy as np
@@ -12,6 +11,7 @@ import pytest
 import fmlib.feature_selection.precise.boruta_shap as boruta_module
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, PreciseConfig
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.precise.boruta_shap import (
     BorutaShapSelector,
@@ -19,7 +19,6 @@ from fmlib.feature_selection.precise.boruta_shap import (
 )
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.utils.optuna_space import build_sampler
-from fmlib.feature_selection.conftest import FakeSparkSession
 
 
 def _frame(n_rows: int = 20) -> pd.DataFrame:
@@ -64,7 +63,7 @@ def _context(
         task_type=task_type,
     )
     return StageContext(
-        spark=FakeSparkSession(),
+        spark=require_spark_session(),
         datasets={"train": frame},
         schema=schema,
         config=config,
@@ -101,170 +100,33 @@ def _mock_selector_core(
     monkeypatch.setattr(selector, "_run_boruta_selection", fake_run)
 
 
-class _FakeTrial:
-    def __init__(self: _FakeTrial) -> None:
-        self.params: dict[str, Any] = {}
-
-    def suggest_int(self: _FakeTrial, name: str, minimum: int, _maximum: int) -> int:
-        self.params[name] = minimum
-        return minimum
-
-    def suggest_float(
-        self: _FakeTrial,
-        name: str,
-        minimum: float,
-        _maximum: float,
-        *,
-        log: bool,
-    ) -> float:
-        del log
-        self.params[name] = minimum
-        return minimum
-
-    def suggest_categorical(
-        self: _FakeTrial,
-        name: str,
-        values: list[Any],
-    ) -> Any:
-        self.params[name] = values[0]
-        return values[0]
-
-
-class _FakeStudy:
-    def __init__(self: _FakeStudy) -> None:
-        self.best_params: dict[str, Any] = {}
-        self.best_value = 0.0
-
-    def optimize(
-        self: _FakeStudy,
-        objective: Any,
-        *,
-        n_trials: int,
-        show_progress_bar: bool,
-        timeout: int | None = None,
-    ) -> None:
-        assert n_trials >= 1
-        assert timeout is None or timeout >= 1
-        assert show_progress_bar is False
-        trial = _FakeTrial()
-        self.best_value = objective(trial)
-        self.best_params = dict(trial.params)
-
-
-class _FakeSampler:
-    def __init__(self: _FakeSampler, **kwargs: Any) -> None:
-        self.kwargs = kwargs
-
-
-class _FakeSamplers:
-    TPESampler = _FakeSampler
-    RandomSampler = _FakeSampler
-    GridSampler = _FakeSampler
-
-
-class _FakeOptuna:
-    samplers = _FakeSamplers()
-    last_study: _FakeStudy | None = None
-
-    @classmethod
-    def create_study(
-        cls: type[_FakeOptuna],
-        *,
-        direction: str,
-        sampler: Any,
-    ) -> _FakeStudy:
-        assert direction == "maximize"
-        assert sampler is not None
-        cls.last_study = _FakeStudy()
-        return cls.last_study
-
-
-class _FakeModel:
-    instances: list[_FakeModel] = []
-
-    def __init__(self: _FakeModel, **params: Any) -> None:
-        self.params = params
-        self.fit_kwargs: dict[str, Any] = {}
-        self.__class__.instances.append(self)
-
-    def fit(
-        self: _FakeModel,
-        _features: pd.DataFrame,
-        _target: pd.Series,
-        **kwargs: Any,
-    ) -> _FakeModel:
-        self.fit_kwargs = kwargs
-        return self
-
-    def predict_proba(self: _FakeModel, features: pd.DataFrame) -> np.ndarray:
-        probabilities = np.linspace(0.2, 0.8, len(features))
-        return np.column_stack([1.0 - probabilities, probabilities])
-
-
-class _FakeBoruta:
-    last_instance: _FakeBoruta | None = None
-
-    def __init__(self: _FakeBoruta, **kwargs: Any) -> None:
-        self.init_kwargs = kwargs
-        self.fit_kwargs: dict[str, Any] = {}
-        self.accepted = ["first"]
-        self.rejected: list[str] = []
-        self.tentative = ["second"]
-        self.rough_called = False
-        self.__class__.last_instance = self
-
-    def fit(self: _FakeBoruta, **kwargs: Any) -> None:
-        self.fit_kwargs = kwargs
-
-    def TentativeRoughFix(self: _FakeBoruta) -> None:  # noqa: N802
-        self.rough_called = True
-        self.rejected = ["second"]
-
-
-def _fake_train_test_split(
-    features: pd.DataFrame,
-    target: pd.Series,
-    **kwargs: Any,
-) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
-    assert kwargs["stratify"] is target
-    assert kwargs["test_size"] == 0.2
-    return (
-        features.iloc[:-4],
-        features.iloc[-4:],
-        target.iloc[:-4],
-        target.iloc[-4:],
-    )
-
-
-def _fake_backends() -> _Backends:
-    return _Backends(
-        boruta_class=_FakeBoruta,
-        model_class=_FakeModel,
-        optuna_module=_FakeOptuna,
-        roc_auc_score=lambda _target, _predictions: 0.81,
-        train_test_split=_fake_train_test_split,
-    )
-
-
-def _boruta_stack_available() -> bool:
-    if boruta_module.BorutaShap is None or boruta_module.optuna is None:
-        return False
+def _require_boruta_stack() -> None:
+    """Fail immediately when the Boruta extra is missing. Do not skip."""
     try:
         import lightgbm  # noqa: F401
+        import optuna  # noqa: F401
         import sklearn  # noqa: F401
-    except Exception:  # noqa: BLE001 - optional binary dependencies
-        return False
-    return True
+        from BorutaShap import BorutaShap  # noqa: F401
+    except Exception as exc:  # noqa: BLE001 - missing extra must fail the run
+        pytest.fail(
+            "Install the boruta extra (BorutaShap, lightgbm, optuna, sklearn). "
+            f"Root cause: {exc}",
+        )
+    if boruta_module.BorutaShap is None or boruta_module.optuna is None:
+        pytest.fail("Install the boruta extra (BorutaShap, lightgbm, optuna, sklearn).")
 
 
-def _pyspark_available() -> bool:
-    return importlib.util.find_spec("pyspark") is not None
-
-
-@pytest.fixture(autouse=True)
-def _reset_fake_state() -> None:
-    _FakeModel.instances = []
-    _FakeBoruta.last_instance = None
+def _tiny_boruta_params(model_type: str = "rf", **overrides: Any) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "model_type": model_type,
+        "n_trials": 1,
+        "boruta_trials": 2,
+        "max_rows": 40,
+        "parameters": {"n_estimators": 8, "max_depth": 3},
+        "optuna_params": {"enabled": False, "n_trials": 1, "n_startup_trials": 1},
+    }
+    payload.update(overrides)
+    return payload
 
 
 def test_selector_is_boruta_shap() -> None:
@@ -396,6 +258,7 @@ def test_options_support_both_models_and_execution_cap(
     assert options["n_startup_trials"] == 2
     assert options["boruta_trials"] == 7
     assert options["sampler"] == "RANDOM"
+    assert options["optuna_enabled"] is True
 
 
 def test_scalar_parameters_are_accepted_and_split_from_ranges() -> None:
@@ -466,77 +329,122 @@ def test_runtime_option_validation_for_direct_precise_config(
 
 
 @pytest.mark.parametrize("model_type", ["lgbm", "rf"])
-def test_mock_core_runs_tuning_and_boruta_for_both_models(
+def test_core_runs_boruta_for_both_models(
+    monkeypatch: pytest.MonkeyPatch,
     model_type: str,
 ) -> None:
-    context = _context(
-        _frame(),
-        params={
-            "model_type": model_type,
-            "n_trials": 1,
-            "boruta_trials": 3,
-            "max_rows": 20,
-        },
-    )
+    _require_boruta_stack()
+    frame = _frame(40)
+    context = _context(frame, params=_tiny_boruta_params(model_type))
     selector = BorutaShapSelector(context.config.precise)
     options = selector._resolve_options(context)
+    backends = selector._load_backends(model_type, require_optuna=False)
+    original_boruta = backends.boruta_class
+    built: list[dict[str, Any]] = []
+    original_build = selector._build_model
+    rough_calls = {"n": 0}
+    fit_columns: list[list[str]] = []
 
+    def spy_build(
+        model_class: Any,
+        received_type: str,
+        parameters: Any,
+        seed: int,
+    ) -> Any:
+        model = original_build(model_class, received_type, parameters, seed)
+        built.append({"model_type": received_type, "params": dict(model.get_params())})
+        return model
+
+    def spy_boruta(**kwargs: Any) -> Any:
+        instance = original_boruta(**kwargs)
+        original_rough = instance.TentativeRoughFix
+        original_fit = instance.fit
+
+        def wrapped_rough(*args: Any, **inner: Any) -> Any:
+            rough_calls["n"] += 1
+            return original_rough(*args, **inner)
+
+        def wrapped_fit(*args: Any, **inner: Any) -> Any:
+            frame = inner.get("X", args[0] if args else None)
+            if hasattr(frame, "columns"):
+                fit_columns.append(list(frame.columns))
+            return original_fit(*args, **inner)
+
+        instance.TentativeRoughFix = wrapped_rough
+        instance.fit = wrapped_fit
+        return instance
+
+    monkeypatch.setattr(selector, "_build_model", spy_build)
     details = selector._run_boruta_selection(
-        train=_frame(),
+        train=frame,
         target_col="response",
         feature_cols=["first", "second"],
         options=options,
         seed=17,
-        backends=_fake_backends(),
+        backends=_Backends(
+            boruta_class=spy_boruta,
+            model_class=backends.model_class,
+            optuna_module=backends.optuna_module,
+            roc_auc_score=backends.roc_auc_score,
+            train_test_split=backends.train_test_split,
+        ),
     )
 
-    assert details["accepted"] == ["first"]
-    assert details["rejected"] == ["second"]
-    assert details["best_auc"] == 0.81
-    assert len(_FakeModel.instances) == 2
-    assert all(model.params["random_state"] == 17 for model in _FakeModel.instances)
+    covered = set(details["accepted"]) | set(details["rejected"]) | set(details["tentative"])
+    assert covered == {"first", "second"}
+    assert rough_calls["n"] == 1
+    assert fit_columns == [["first", "second"]]
+    assert built
+    assert all(item["params"]["random_state"] == 17 for item in built)
     if model_type == "lgbm":
-        assert "eval_set" in _FakeModel.instances[0].fit_kwargs
-        assert _FakeModel.instances[0].params["objective"] == "binary"
+        assert built[0]["params"]["objective"] == "binary"
     else:
-        assert _FakeModel.instances[0].fit_kwargs == {}
-        assert "objective" not in _FakeModel.instances[0].params
-
-    boruta = _FakeBoruta.last_instance
-    assert boruta is not None
-    assert boruta.init_kwargs["importance_measure"] == "shap"
-    assert boruta.init_kwargs["classification"] is True
-    assert boruta.init_kwargs["model"] is _FakeModel.instances[-1]
-    assert boruta.fit_kwargs["n_trials"] == 3
-    assert boruta.fit_kwargs["random_state"] == 17
-    assert boruta.fit_kwargs["verbose"] is False
-    assert boruta.fit_kwargs["X"].columns.tolist() == ["first", "second"]
-    assert boruta.rough_called is True
+        assert "objective" not in built[0]["params"] or built[0]["params"]["objective"] is None
 
 
-def test_tentative_rough_fix_can_be_disabled() -> None:
+def test_tentative_rough_fix_can_be_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _require_boruta_stack()
+    frame = _frame(40)
     context = _context(
-        _frame(),
-        params={
-            "tentative_fix_method": None,
-            "n_trials": 1,
-            "boruta_trials": 2,
-        },
+        frame,
+        params=_tiny_boruta_params(tentative_fix_method=None),
     )
     selector = BorutaShapSelector(context.config.precise)
+    backends = selector._load_backends("rf", require_optuna=False)
+    original_boruta = backends.boruta_class
+    rough_calls = {"n": 0}
+
+    def spy_boruta(**kwargs: Any) -> Any:
+        instance = original_boruta(**kwargs)
+        original_rough = instance.TentativeRoughFix
+
+        def wrapped_rough(*args: Any, **inner: Any) -> Any:
+            rough_calls["n"] += 1
+            return original_rough(*args, **inner)
+
+        instance.TentativeRoughFix = wrapped_rough
+        return instance
 
     details = selector._run_boruta_selection(
-        train=_frame(),
+        train=frame,
         target_col="response",
         feature_cols=["first", "second"],
         options=selector._resolve_options(context),
         seed=17,
-        backends=_fake_backends(),
+        backends=_Backends(
+            boruta_class=spy_boruta,
+            model_class=backends.model_class,
+            optuna_module=backends.optuna_module,
+            roc_auc_score=backends.roc_auc_score,
+            train_test_split=backends.train_test_split,
+        ),
     )
 
-    assert details["tentative"] == ["second"]
-    assert _FakeBoruta.last_instance is not None
-    assert _FakeBoruta.last_instance.rough_called is False
+    covered = set(details["accepted"]) | set(details["rejected"]) | set(details["tentative"])
+    assert covered == {"first", "second"}
+    assert rough_calls["n"] == 0
 
 
 def test_search_spaces_match_models_and_drop_invalid_bootstrap() -> None:
@@ -561,7 +469,7 @@ def test_search_spaces_match_models_and_drop_invalid_bootstrap() -> None:
 
     assert "bootstrap_type" not in lgbm_space
     assert lgbm_space["n_estimators"]["min"] == 10
-    assert "num_leaves" in lgbm_space
+    assert set(lgbm_space) == {"n_estimators"}
     assert "min_samples_split" in rf_space
     assert "num_leaves" not in rf_space
 
@@ -577,10 +485,14 @@ def test_scalar_parameters_are_pinned_and_leave_the_search_space() -> None:
     assert "boosting_type" not in space
     assert "learning_rate" not in space
     assert space["n_estimators"]["min"] == 10
-    assert "num_leaves" in space
+    assert "num_leaves" not in space
+    assert set(space) == {"n_estimators"}
 
 
 def test_grid_sampler_uses_finite_custom_values() -> None:
+    _require_boruta_stack()
+    import optuna
+
     search_space = {
         "max_depth": {
             "values": [3, 5],
@@ -588,7 +500,7 @@ def test_grid_sampler_uses_finite_custom_values() -> None:
     }
 
     sampler = build_sampler(
-        _FakeOptuna,
+        optuna,
         sampler_name="GRID",
         search_space=search_space,
         seed=17,
@@ -596,7 +508,21 @@ def test_grid_sampler_uses_finite_custom_values() -> None:
         method_name="boruta_shap",
     )
 
-    assert sampler.kwargs["search_space"] == {"max_depth": [3, 5]}
+    assert type(sampler).__name__ == "GridSampler"
+    study = optuna.create_study(direction="maximize", sampler=sampler)
+    study.optimize(lambda trial: float(trial.suggest_categorical("max_depth", [3, 5])), n_trials=2)
+    assert study.best_params["max_depth"] in {3, 5}
+
+
+def test_optuna_disabled_clears_the_search_space() -> None:
+    context = _context(
+        _frame(),
+        params={"optuna_params": {"enabled": False}},
+    )
+    options = BorutaShapSelector(context.config.precise)._resolve_options(context)
+
+    assert options["optuna_enabled"] is False
+    assert options["search_space"] == {}
 
 
 def test_missing_boruta_and_optuna_raise_backend_errors(
@@ -614,8 +540,10 @@ def test_missing_boruta_and_optuna_raise_backend_errors(
 
 
 def test_core_rejects_single_class_and_all_null_features() -> None:
+    _require_boruta_stack()
     selector = BorutaShapSelector(_context(_frame()).config.precise)
-    options = selector._resolve_options(_context(_frame()))
+    options = selector._resolve_options(_context(_frame(), params=_tiny_boruta_params()))
+    backends = selector._load_backends("rf", require_optuna=False)
     single_class = _frame().assign(response=0)
     with pytest.raises(ExecutionError, match="exactly two"):
         selector._run_boruta_selection(
@@ -624,7 +552,7 @@ def test_core_rejects_single_class_and_all_null_features() -> None:
             feature_cols=["first", "second"],
             options=options,
             seed=17,
-            backends=_fake_backends(),
+            backends=backends,
         )
 
     all_null = _frame().assign(first=np.nan)
@@ -635,82 +563,62 @@ def test_core_rejects_single_class_and_all_null_features() -> None:
             feature_cols=["first", "second"],
             options=options,
             seed=17,
-            backends=_fake_backends(),
+            backends=backends,
         )
 
     tiny = _frame(4)
+    tiny_context = _context(
+        tiny,
+        params=_tiny_boruta_params(
+            parameters={"n_estimators": {"type": "int", "min": 8, "max": 10}},
+            optuna_params={"enabled": True, "n_trials": 1, "n_startup_trials": 1},
+        ),
+    )
+    tiny_options = selector._resolve_options(tiny_context)
     with pytest.raises(ExecutionError, match="too small"):
         selector._run_boruta_selection(
             train=tiny,
             target_col="response",
             feature_cols=["first", "second"],
-            options=options,
+            options=tiny_options,
             seed=17,
-            backends=_fake_backends(),
+            backends=selector._load_backends("rf", require_optuna=True),
         )
 
 
-@pytest.mark.skipif(not _pyspark_available(), reason="pyspark not installed")
-def test_spark_core_uses_shared_materialization_and_supports_dots() -> None:
-    from pyspark.sql import SparkSession
+def test_spark_core_uses_shared_materialization_and_supports_dots(spark: Any) -> None:
+    _require_boruta_stack()
+    frame = spark.createDataFrame(
+        [
+            (float(index), float(index * 2), index % 2)
+            for index in range(40)
+        ],
+        ["foo.bar", "second", "response"],
+    )
+    context = _context(
+        pd.DataFrame(),
+        categorical=(),
+        continuous=("foo.bar", "second"),
+        params=_tiny_boruta_params(),
+    )
+    selector = BorutaShapSelector(context.config.precise)
+    backends = selector._load_backends("rf", require_optuna=False)
 
-    try:
-        spark = (
-            SparkSession.builder.master("local[1]")
-            .appName("test-boruta-shap-preparation")
-            .config("spark.ui.enabled", "false")
-            .config("spark.driver.host", "127.0.0.1")
-            .getOrCreate()
-        )
-    except Exception as exc:  # noqa: BLE001 - optional local Spark runtime
-        pytest.skip(f"Spark runtime unavailable: {exc}")
-    spark.sparkContext.setLogLevel("ERROR")
-    try:
-        frame = spark.createDataFrame(
-            [
-                (float(index), float(index * 2), index % 2)
-                for index in range(20)
-            ],
-            ["foo.bar", "second", "response"],
-        )
-        context = _context(
-            pd.DataFrame(),
-            categorical=(),
-            continuous=("foo.bar", "second"),
-            params={
-                "model_type": "rf",
-                "n_trials": 1,
-                "boruta_trials": 2,
-                "max_rows": 20,
-            },
-        )
-        selector = BorutaShapSelector(context.config.precise)
+    details = selector._run_boruta_selection(
+        train=frame,
+        target_col="response",
+        feature_cols=["foo.bar", "second"],
+        options=selector._resolve_options(context),
+        seed=17,
+        backends=backends,
+    )
 
-        details = selector._run_boruta_selection(
-            train=frame,
-            target_col="response",
-            feature_cols=["foo.bar", "second"],
-            options=selector._resolve_options(context),
-            seed=17,
-            backends=_fake_backends(),
-        )
-
-        assert details["accepted"] == []
-        boruta = _FakeBoruta.last_instance
-        assert boruta is not None
-        assert boruta.fit_kwargs["X"].columns.tolist() == [
-            "foo.bar",
-            "second",
-        ]
-    finally:
-        spark.stop()
+    covered = set(details["accepted"]) | set(details["rejected"]) | set(details["tentative"])
+    assert covered == {"foo.bar", "second"}
 
 
-@pytest.mark.skipif(
-    not _boruta_stack_available(),
-    reason="BorutaShap, LightGBM, Optuna, and sklearn are required",
-)
-def test_pandas_end_to_end_with_optional_boruta_stack() -> None:
+def test_pandas_end_to_end_with_boruta_stack() -> None:
+    _require_boruta_stack()
     rng = np.random.default_rng(31)
     target = np.tile([0, 1], 50)
     frame = pd.DataFrame(
@@ -725,12 +633,7 @@ def test_pandas_end_to_end_with_optional_boruta_stack() -> None:
         frame,
         categorical=("category",),
         continuous=("signal", "noise"),
-        params={
-            "model_type": "lgbm",
-            "n_trials": 1,
-            "boruta_trials": 3,
-            "max_rows": len(frame),
-        },
+        params=_tiny_boruta_params("lgbm", max_rows=len(frame), boruta_trials=3),
     )
 
     decisions = BorutaShapSelector(context.config.precise).select(

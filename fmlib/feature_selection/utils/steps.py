@@ -13,16 +13,15 @@ from fmlib.feature_selection.base import (
 )
 from fmlib.feature_selection.config import (
     FeatureDropConfig,
-    FeatureSelectionConfig,
     RandomFeatureDropConfig,
     RowSampleConfig,
 )
-from fmlib.feature_selection.debug import debug_span
 from fmlib.feature_selection.utils.feature_drop import apply_feature_drop_file
 from fmlib.feature_selection.utils.preprocessing import (
     apply_random_feature_drop,
     apply_row_sample,
 )
+from fmlib.feature_selection.utils.verbose import verbose_span
 
 _PREPROCESSING_STAGE = "preprocessing"
 
@@ -41,16 +40,16 @@ class FeatureDropStep:
         candidates: Sequence[str],
     ) -> list[str]:
         feature_drop = self.settings
-        debug = context.debug
+        recorder = context.verbose_log
         start: dict[str, Any] = {}
-        if debug.enabled(self.method_name):
+        if recorder.enabled(self.method_name):
             start = {
                 "n_candidates_in": len(candidates),
                 "strict": feature_drop.strict,
                 "step_index": context.step_index,
-                "datasets": debug.snapshot_datasets(context.datasets, count_rows=False),
+                "datasets": recorder.snapshot_datasets(context.datasets, count_rows=False),
             }
-        with debug_span(debug, self.method_name, **start) as span:
+        with verbose_span(recorder, self.method_name, **start) as span:
             datasets, schema, report = apply_feature_drop_file(
                 context.datasets,
                 context.schema,
@@ -65,7 +64,7 @@ class FeatureDropStep:
                     n_dropped=len(report.dropped),
                     n_unknown=len(report.unknown),
                     n_candidates_out=len(schema.candidate_features()),
-                    datasets=debug.snapshot_datasets(context.datasets, count_rows=False),
+                    datasets=recorder.snapshot_datasets(context.datasets, count_rows=False),
                 )
         decisions = [
             FeatureDecision(
@@ -110,17 +109,17 @@ class RandomFeatureDropStep:
         candidates: Sequence[str],
     ) -> list[str]:
         random_drop = self.settings
-        debug = context.debug
+        recorder = context.verbose_log
         start: dict[str, Any] = {}
-        if debug.enabled(self.method_name):
+        if recorder.enabled(self.method_name):
             start = {
                 "n_candidates_in": len(candidates),
                 "n_features": random_drop.n_features,
                 "step_index": context.step_index,
-                "datasets": debug.snapshot_datasets(context.datasets, count_rows=False),
+                "datasets": recorder.snapshot_datasets(context.datasets, count_rows=False),
             }
         used_seed = step_seed(context)
-        with debug_span(debug, self.method_name, **start) as span:
+        with verbose_span(recorder, self.method_name, **start) as span:
             datasets, schema, report = apply_random_feature_drop(
                 context.datasets,
                 context.schema,
@@ -133,7 +132,7 @@ class RandomFeatureDropStep:
                 span.update(
                     n_dropped=len(report.dropped),
                     n_candidates_out=len(schema.candidate_features()),
-                    datasets=debug.snapshot_datasets(context.datasets, count_rows=False),
+                    datasets=recorder.snapshot_datasets(context.datasets, count_rows=False),
                 )
         decisions = [
             FeatureDecision(
@@ -173,17 +172,17 @@ class RowSampleStep:
         candidates: Sequence[str],
     ) -> list[str]:
         row_sample = self.settings
-        debug = context.debug
+        recorder = context.verbose_log
         start: dict[str, Any] = {}
-        if debug.enabled(self.method_name):
+        if recorder.enabled(self.method_name):
             start = {
                 "max_rows": row_sample.max_rows,
                 "stratified": row_sample.stratified,
                 "step_index": context.step_index,
-                "datasets": debug.snapshot_datasets(context.datasets, count_rows=False),
+                "datasets": recorder.snapshot_datasets(context.datasets, count_rows=False),
             }
         used_seed = step_seed(context)
-        with debug_span(debug, self.method_name, **start) as span:
+        with verbose_span(recorder, self.method_name, **start) as span:
             datasets, report = apply_row_sample(
                 context.datasets,
                 context.schema,
@@ -204,7 +203,7 @@ class RowSampleStep:
                         }
                         for split in report.splits
                     },
-                    datasets=debug.snapshot_datasets(context.datasets, count_rows=False),
+                    datasets=recorder.snapshot_datasets(context.datasets, count_rows=False),
                 )
         context.scores[self.method_name] = {
             "max_rows": report.max_rows,
@@ -220,16 +219,3 @@ class RowSampleStep:
         }
         context.candidates = list(candidates)
         return list(candidates)
-
-
-def build_utils_steps(config: FeatureSelectionConfig) -> list[Any]:
-    """Enabled utils in fixed order: feature_drop, random_feature_drop, row_sample."""
-    preprocessing = config.preprocessing
-    steps: list[Any] = []
-    if preprocessing.feature_drop.enabled:
-        steps.append(FeatureDropStep(preprocessing.feature_drop))
-    if preprocessing.random_feature_drop.enabled:
-        steps.append(RandomFeatureDropStep(preprocessing.random_feature_drop))
-    if preprocessing.row_sample.enabled:
-        steps.append(RowSampleStep(preprocessing.row_sample))
-    return steps

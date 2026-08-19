@@ -16,12 +16,14 @@ import pandas as pd
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import ModelConfig
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.default_model_param_spaces import (
+    LIGHTGBM_SEARCH_SPACE,
+)
 from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
-    build_search_space,
     resolve_optuna_settings,
-    split_parameters,
+    resolve_tuning_space,
     suggest_parameter,
 )
 
@@ -41,14 +43,7 @@ OPTUNA_MODES = frozenset({"global", "per_fold"})
 
 _DEFAULT_N_TRIALS = 20
 
-DEFAULT_SEARCH_SPACE: dict[str, dict[str, Any]] = {
-    "n_estimators": {"type": "int", "min": 100, "max": 500},
-    "learning_rate": {"type": "float", "min": 0.01, "max": 0.2, "log": True},
-    "max_depth": {"type": "int", "min": 3, "max": 8},
-    "num_leaves": {"type": "int", "min": 8, "max": 64},
-    "subsample": {"type": "float", "min": 0.6, "max": 1.0},
-    "colsample_bytree": {"type": "float", "min": 0.6, "max": 1.0},
-}
+DEFAULT_SEARCH_SPACE: dict[str, dict[str, Any]] = LIGHTGBM_SEARCH_SPACE
 
 
 class LightGbmSelector:
@@ -67,10 +62,11 @@ class LightGbmSelector:
     categorical candidates pass through the model stage unchanged. Fold
     training never ships code or packages to Spark executors.
 
-    The Optuna search space defaults to ``DEFAULT_SEARCH_SPACE`` and can be
-    overridden per parameter through ``params.parameters``: a mapping such as
-    ``{"type": "int", "min": 16, "max": 128}`` replaces the corresponding
-    default, a scalar is passed to LightGBM unchanged instead of being tuned.
+    The Optuna search space defaults to ``DEFAULT_SEARCH_SPACE`` when
+    ``params.parameters`` has no mapping entries. Any mapping in that block
+    fully replaces the fallback: unspecified default keys are not mixed in.
+    A scalar is passed to LightGBM unchanged instead of being tuned.
+    ``params.optuna_params.enabled: false`` skips Optuna entirely.
 
     Args:
         config: Model-stage settings. Method-specific ``params`` override the
@@ -128,7 +124,7 @@ class LightGbmSelector:
             return []
 
         options = self._resolve_options(context)
-        self._load_backends()
+        self._load_backends(require_optuna=bool(options["search_space"]))
 
         try:
             details = self._select_robust_features(
@@ -197,6 +193,7 @@ class LightGbmSelector:
             "lgbm_threshold": options["lgbm_threshold"],
             "shap_threshold": options["shap_threshold"],
             "optuna_mode": options["optuna_mode"],
+            "optuna_enabled": options["optuna_enabled"],
             "search_space": options["search_space"],
             "fixed_params": options["fixed_params"],
             "fold_execution": "driver",
@@ -212,6 +209,8 @@ class LightGbmSelector:
 
     def _load_backends(
         self: LightGbmSelector,
+        *,
+        require_optuna: bool = True,
     ) -> tuple[Any, Any, Any]:
         """Load optional model dependencies."""
         try:
@@ -226,7 +225,7 @@ class LightGbmSelector:
         if shap is None:
             msg = "lightgbm: SHAP is required. Install the shap optional dependency."
             raise BackendError(msg)
-        if optuna is None:
+        if require_optuna and optuna is None:
             msg = (
                 "lightgbm: Optuna is required. Install the optuna optional "
                 "dependency."
@@ -276,19 +275,18 @@ class LightGbmSelector:
                 "optuna_mode": str(
                     params.get("optuna_mode", "global"),
                 ).lower(),
+                "optuna_enabled": optuna_settings["enabled"],
                 "n_jobs": n_jobs,
                 "shap_max_rows": int(params.get("shap_max_rows", 5_000)),
             }
-            fixed, overrides = split_parameters(
+            fixed, search_space = resolve_tuning_space(
                 params.get("parameters", {}),
+                defaults=DEFAULT_SEARCH_SPACE,
+                enabled=optuna_settings["enabled"],
                 method_name=self.method_name,
             )
             options["fixed_params"] = fixed
-            options["search_space"] = build_search_space(
-                DEFAULT_SEARCH_SPACE,
-                overrides=overrides,
-                fixed=fixed,
-            )
+            options["search_space"] = search_space
             sample_fraction = options["sample_fraction"]
             if sample_fraction is not None:
                 options["sample_fraction"] = float(sample_fraction)
@@ -411,19 +409,27 @@ class LightGbmSelector:
             raise ExecutionError(msg)
 
         global_best_params: dict[str, Any] | None = None
+        effective_space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
         if optuna_mode == "global":
-            global_best_params = tune_parameters(
-                feature_matrix,
-                target,
-                n_trials=n_trials,
-                seed=seed,
-                n_jobs=n_jobs,
-                search_space=search_space,
-                fixed_params=fixed_params,
-                n_startup_trials=n_startup_trials,
-                sampler=sampler,
-                timeout=timeout,
-            )
+            if effective_space:
+                global_best_params = tune_parameters(
+                    feature_matrix,
+                    target,
+                    n_trials=n_trials,
+                    seed=seed,
+                    n_jobs=n_jobs,
+                    search_space=effective_space,
+                    fixed_params=fixed_params,
+                    n_startup_trials=n_startup_trials,
+                    sampler=sampler,
+                    timeout=timeout,
+                )
+            else:
+                global_best_params = _finalize_parameters(
+                    fixed_params or {},
+                    seed=seed,
+                    n_jobs=n_jobs,
+                )
         folds = StratifiedKFold(
             n_splits=n_folds,
             shuffle=True,
@@ -546,18 +552,26 @@ class LightGbmSelector:
         valid_matrix = feature_matrix[valid_indices]
 
         if optuna_mode == "per_fold":
-            best_params = tune_parameters(
-                train_matrix,
-                train_target,
-                n_trials=n_trials,
-                seed=seed,
-                n_jobs=n_jobs,
-                search_space=search_space,
-                fixed_params=fixed_params,
-                n_startup_trials=n_startup_trials,
-                sampler=sampler,
-                timeout=timeout,
-            )
+            fold_space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
+            if fold_space:
+                best_params = tune_parameters(
+                    train_matrix,
+                    train_target,
+                    n_trials=n_trials,
+                    seed=seed,
+                    n_jobs=n_jobs,
+                    search_space=fold_space,
+                    fixed_params=fixed_params,
+                    n_startup_trials=n_startup_trials,
+                    sampler=sampler,
+                    timeout=timeout,
+                )
+            else:
+                best_params = _finalize_parameters(
+                    fixed_params or {},
+                    seed=seed,
+                    n_jobs=n_jobs,
+                )
         elif global_params is not None:
             best_params = _finalize_parameters(
                 global_params,

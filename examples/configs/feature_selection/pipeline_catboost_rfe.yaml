@@ -71,8 +71,9 @@ model:
     max_rows: 500000
     sample_fraction: 0.1     # доля от max_rows: 500000 × 0.1 = 50k строк на обучение
 
-    # Мапа → перебирается Optuna. Скаляр → уходит в CatBoost как есть.
-    # Если мап нет ни одной, Optuna не запускается совсем.
+    # Мапа → вся сетка Optuna (дефолтный файл не подмешивается).
+    # Скаляр → уходит в CatBoost как есть.
+    # Нет мап и enabled: true → CATBOOST_RFE_SEARCH_SPACE.
     parameters:
       iterations: 2000
       loss_function: Logloss
@@ -101,6 +102,7 @@ model:
         max: 200
 
     optuna_params:
+      enabled: true
       n_trials: 20           # ниже 12–15 опускаться не стоит, выше 25 отдача мала
       n_startup_trials: 8    # случайные попытки до включения TPE
       sampler: TPE           # TPE | RANDOM | GRID
@@ -146,6 +148,7 @@ precise:
         max: 64
 
     optuna_params:
+      enabled: true
       n_trials: 20
       n_startup_trials: 5
       sampler: TPE

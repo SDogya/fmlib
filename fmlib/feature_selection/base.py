@@ -5,9 +5,10 @@ from __future__ import annotations
 import hashlib
 import random
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence
 
-from fmlib.feature_selection.debug import DebugRecorder, default_recorder
+from fmlib.feature_selection.utils.verbose import VerboseRecorder, default_verbose_recorder
 
 
 @dataclass(frozen=True)
@@ -73,9 +74,10 @@ class StageContext:
         scores: Mapping of selector method names to their importance scores.
         datasets_mode: Whether input was a single frame or split mapping.
         decisions: Decisions accumulated across completed pipeline stages.
-        debug: Per-method verbose recorder. Silent unless ``execution.verbose``.
+        verbose_log: Per-method verbose recorder. Silent unless ``execution.verbose``.
         step_index: 0-based position of the current pipeline step.
         run_seed: Seed for this step. ``None`` uses ``seed``.
+        output_dir: Optional directory for per-method intermediate artifacts.
         local_numeric_sample: Cached driver-local numeric frame shared by
             LightGBM and BorutaSHAP when sample knobs match.
     """
@@ -89,9 +91,10 @@ class StageContext:
     scores: dict[str, Any] = field(default_factory=dict)
     datasets_mode: str = "mapping"
     decisions: list[FeatureDecision] = field(default_factory=list)
-    debug: DebugRecorder = field(default_factory=default_recorder)
+    verbose_log: VerboseRecorder = field(default_factory=default_verbose_recorder)
     step_index: int = 0
     run_seed: Optional[int] = None
+    output_dir: Optional[Path] = None
     local_numeric_sample: Optional[Any] = None
 
 
@@ -100,6 +103,29 @@ def step_seed(context: StageContext) -> int:
     if context.run_seed is None:
         return context.seed
     return context.run_seed
+
+
+def persist_step_artifact(
+    context: StageContext,
+    remaining: Sequence[str],
+    *,
+    stage_name: str,
+    method_name: str,
+) -> None:
+    """Write a per-method artifact when ``context.output_dir`` is set."""
+    output_dir = context.output_dir
+    if output_dir is None:
+        return
+    from fmlib.feature_selection.result import _save_intermediate_result
+
+    _save_intermediate_result(
+        remaining=list(remaining),
+        decisions=context.decisions,
+        stage_name=stage_name,
+        method_name=method_name,
+        output_dir=output_dir,
+        context=context,
+    )
 
 
 class Selector(Protocol):
