@@ -1,0 +1,84 @@
+preprocessing:
+  feature_drop:
+    enabled: false
+    # Relative paths are resolved from this YAML file.
+    path: null
+    strict: false
+  random_feature_drop:
+    enabled: false
+    n_features: 20
+  row_sample:
+    enabled: false
+    max_rows: 100_000
+    stratified: true
+
+statistics:
+  order:
+    - psi
+  null_rate:
+    threshold: 0.95
+  low_variance:
+    min_variance: 0.00001
+    scale_method: "minmax"
+  constants:
+    max_frequency: 0.95
+    chunk_size: 250
+  correlation:
+    threshold: 0.95
+    max_rows: 500_000
+  psi:
+    mode: month_over_month
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part
+    test_months: 1
+    eps: 1e-4
+    relative_error: 0.001
+    batch_size: 50
+    n_jobs: -1
+  iv:
+    threshold: 0.02
+    num_bins: 10
+    max_threshold: null
+    eps: 1e-4
+    min_bin_share: 0.0
+    max_levels: 50
+    relative_error: 0.001
+    batch_size: 50
+
+model:
+  enabled: true
+  method: lightgbm
+  params:
+    lgbm_threshold: 0.85
+    shap_threshold: 0.85
+    n_folds: 5
+    optuna_mode: global
+    n_jobs: -1
+    shap_max_rows: 5000
+    max_rows: 1_000_000
+    sample_fraction: null
+    optuna_params:
+      n_trials: 100
+      timeout: 3600
+      sampler: TPE
+  selection:
+    max_features: 150
+  cross_validation:
+    strategy: stratified
+    folds: 5
+    metric: roc_auc
+
+precise:
+  enabled: false
+  method: none
+
+execution:
+  seed: 42
+  allow_local_fallback: true
+  # Used by stages that still materialise locally (e.g. correlation). Unused by constants.
+  max_local_rows: 1000000
+  local_memory_limit: 4
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true

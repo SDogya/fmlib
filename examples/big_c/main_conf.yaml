@@ -1,0 +1,198 @@
+# Полный конфиг FeatureSelectionPipeline.
+# Здесь только то, что реально исполняется. Заглушки не включены:
+#   model.method: lasso | random_forest
+#   statistics.stability_classifier
+#
+# Пайплайн: preprocessing (если enabled) → statistics.order → model → precise.
+# Дубликаты в statistics.order запрещены. Параметры методов — в их блоках,
+# не в списке order. Model и precise — ровно один method, включаются enabled.
+#
+# Schema (FeatureSchema) в YAML не живёт — передаётся в fit_select().
+# Для lightgbm / boruta_shap / iv нужен task_type='binary_classification' и target.
+# output_dir — аргумент fit_select(), не поле этого файла.
+#
+# Optuna только из params.optuna_params (n_trials, n_startup_trials, sampler, timeout).
+
+preprocessing:
+  feature_drop:
+    enabled: false
+    # Список имён из txt (по одному в строке; пустые и # игнорируются)
+    # или JSON артефакта SelectionResult: final_results.json / *_results.json.
+    # Из JSON берутся dropped_features. Относительный path — от этого YAML.
+    path: null
+    # true: ошибка, если имя не в кандидатах schema.
+    # false: пропустить и записать в scores.feature_drop.unknown.
+    strict: false
+
+  random_feature_drop:
+    enabled: false
+    # Тестовый детерминированный дроп случайных кандидатов.
+    # Target / ids / time / split / fold не трогаются.
+    n_features: 20
+
+  row_sample:
+    enabled: false
+    # Независимо режет train / valid / test. Если строк ≤ max_rows — не режет.
+    max_rows: 100_000
+    # true: стратификация по target (только классификация).
+    # false: равномерный сэмпл; для regression обязательно false.
+    stratified: true
+
+statistics:
+  order:
+    - null_rate
+    - constants
+    - low_variance
+    - correlation
+    - psi
+    # iv — binary_classification + target; параметры в statistics.iv
+    # - iv
+
+  null_rate:
+    # Дроп, если доля null строго выше порога. Диапазон [0, 1].
+    threshold: 0.95
+
+  constants:
+    # Дроп квазиконстант при доле доминирующего значения ≥ порога. [0, 1].
+    max_frequency: 0.95
+    # Доп. правило: минимум уникальных значений; null — выкл.
+    min_unique: null
+    # Сколько колонок в одном Spark-агрегате.
+    chunk_size: 250
+
+  low_variance:
+    # Только FeatureSchema.continuous. Категориальные проходят дальше.
+    min_variance: 0.00001
+    # standard | minmax | robust
+    scale_method: minmax
+
+  correlation:
+    # Только continuous. Категориальные не считаются.
+    # pearson | spearman
+    method: pearson
+    threshold: 0.95
+    # original_order: дроп более позднего кандидата.
+    # null_rate: дроп с большей долей null; ничья → original_order.
+    tie_break: original_order
+    # Реальный лимит: min(max_rows, execution.max_local_rows).
+    max_rows: 500_000
+
+  psi:
+    # month_over_month: нужен FeatureSchema.time.
+    # train_valid: нужен datasets['valid'] или FeatureSchema.split.
+    #   (код ищет test-сплит как datasets['test'], не 'valid'.)
+    mode: month_over_month
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part
+    test_months: 1
+    # Pandas PSI: сглаживание вероятностей.
+    eps: 1e-4
+    # Spark PSI: относительная ошибка квантилей.
+    relative_error: 0.001
+    # Сколько колонок в одном Spark-батче.
+    batch_size: 50
+    # Потоки Pandas PSI. -1 = все ядра драйвера.
+    n_jobs: -1
+    # Потолок строк для сэмпла PSI; null — все доступные.
+    subsample_rows: null
+
+  iv:
+    # Дроп, если IV строго ниже порога. Классика: 0.02 = бесполезный признак.
+    # Нужен binary_classification и target.
+    threshold: 0.02
+    # Число квантильных корзин для continuous. Категориальные — по значениям.
+    num_bins: 10
+    # Верхняя отсечка; null — выкл. Подозрительно большой IV (утечка / почти ID).
+    max_threshold: null
+    # Сглаживание долей good/bad в WoE.
+    eps: 1e-4
+    # Слить категориальные уровни с долей строк ниже порога в other. 0 — выкл.
+    min_bin_share: 0.0
+    # Максимум отдельных не-null уровней категории; хвост → other. null — выкл.
+    max_levels: 50
+    # Spark approxQuantile.
+    relative_error: 0.001
+    # Сколько колонок в одном Spark-агрегате.
+    batch_size: 50
+
+model:
+  enabled: true
+  # Единственный реализованный метод.
+  method: lightgbm
+  params:
+    # Пересечение кумулятивных importances LightGBM и SHAP. (0, 1].
+    # Выше порог → больше фичей остаётся.
+    lgbm_threshold: 0.85
+    shap_threshold: 0.85
+    # Число стратифицированных фолдов на драйвере. Минимум 2.
+    # Если ключа нет — берётся cross_validation.folds.
+    n_folds: 5
+    # global: одна Optuna на всём train, общие параметры для фолдов.
+    # per_fold: Optuna внутри каждого фолда только на outer-train.
+    optuna_mode: global
+    # Потоки LightGBM на драйвере, не Optuna. -1 = все ядра.
+    n_jobs: -1
+    # Максимум строк валидации для SHAP в каждом фолде.
+    shap_max_rows: 5000
+    # Материализация Spark→pandas. Фолды идут только на драйвере.
+    # Эффективный лимит: min(max_rows, execution.max_local_rows).
+    max_rows: 250_000
+    # Доп. доля (0, 1]; null — только max_rows.
+    sample_fraction: null
+    optuna_params:
+      n_trials: 20
+      timeout: 3600
+      sampler: TPE
+  cross_validation:
+    # LightGBM всегда делает stratified K-Fold + AUC.
+    # strategy / metric в рантайме не читаются, folds — fallback для n_folds.
+    folds: 5
+
+precise:
+  enabled: false
+  # none — стадию пропустить.
+  # boruta_shap — финальный отбор continuous (binary_classification).
+  method: none
+  params:
+    # lgbm | rf
+    model_type: lgbm
+    # Эффективный лимит: min(max_rows, execution.max_local_rows).
+    max_rows: 100_000
+    sample_fraction: null
+    # Итерации Boruta по shadow-features.
+    boruta_trials: 20
+    # rough — TentativeRoughFix; null — tentative оставить tentative.
+    tentative_fix_method: rough
+    optuna_params:
+      n_trials: 5
+      timeout: 3600
+      sampler: TPE
+      n_startup_trials: 3
+      # GRID требует finite values у каждого кастомного параметра:
+      # parameters:
+      #   max_depth:
+      #     values: [3, 5, 7]
+      # Иначе опциональные overrides пространства:
+      # parameters:
+      #   n_estimators:
+      #     type: int
+      #     min: 100
+      #     max: 500
+      #   learning_rate:
+      #     type: float
+      #     min: 0.01
+      #     max: 0.1
+      #     log: true
+
+execution:
+  # Корень сидов: сэмплы, Optuna, CV, модели, SHAP, Boruta.
+  seed: 42
+  # Жёсткий потолок pandas-материализации (correlation, lightgbm, boruta).
+  max_local_rows: 250_000
+  # false — тихо; true — все методы.
+  # Или карта по методам. Debug не делает Spark count/collect.
+  # Пишет размеры (pandas), тайминги, счётчики. Имена дропнутых фичей сюда не
+  # попадают — они уже в JSON артефактах стадий. При output_dir пишется
+  # debug_log.json даже если шаг упал.
+  verbose: false

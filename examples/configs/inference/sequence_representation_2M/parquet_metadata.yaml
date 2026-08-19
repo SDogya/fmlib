@@ -1,0 +1,26 @@
+epk_id: {}
+evt_attr_15:
+    feature: true
+    sequential: true
+    sequence_length: 128
+    padding: 0
+evt_attr_9:
+    sequential: true
+    sequence_length: 128
+    padding: 0
+channel_group:
+    sequential: true
+    sequence_length: 128
+    padding: 0
+sale_product_class_id:
+    sequential: true
+    sequence_length: 128
+    padding: 0
+evt_dttm:
+    sequential: true
+    sequence_length: 128
+    padding: 0
+event_ids:
+    sequential: true
+    sequence_length: 128
+    padding: 0

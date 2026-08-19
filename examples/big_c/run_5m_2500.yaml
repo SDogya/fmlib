@@ -1,0 +1,133 @@
+# Прогон FS: ~5 млн строк, ~2500 кандидатов → цель ~100 фичей.
+# row_sample выключен: статистики (null/const/var/psi/iv) идут по всем строкам.
+# correlation и lightgbm сами ограничивают строки на драйвере (иначе OOM) —
+# это не стартовый сабсемпл пайплайна.
+#
+# Schema в YAML не живёт — передаётся в fit_select().
+# Нужны: binary_classification, target.
+# psi: FeatureSchema.time (month_over_month). Нет time — выкинь psi из statistics.order.
+# iv / lightgbm / boruta_shap: target обязателен.
+#
+# LightGBM / boruta_shap смотрят только continuous. Категории, пережившие iv, остаются.
+# model.selection.max_features LightGBM не читает: ширину задают
+# lgbm_threshold / shap_threshold (выше порог → больше фичей).
+#   вышло >150 → 0.75; вышло <60 → 0.85.
+#
+# Бюджет ~8 часов на датасет:
+#   Spark-статистики ~1–2 ч
+#   LightGBM Optuna до 4 ч + 5 фолдов с SHAP
+#   BorutaSHAP в конце на уже узком наборе (~100 continuous)
+# timeout режет только Optuna, не фолды и не итерации Boruta.
+
+statistics:
+  order:
+    - null_rate
+    - constants
+    - low_variance
+    - iv
+    - psi
+    - correlation
+
+  null_rate:
+    threshold: 0.95
+
+  constants:
+    max_frequency: 0.95
+    min_unique: null
+    chunk_size: 200
+
+  low_variance:
+    min_variance: 0.00001
+    scale_method: minmax
+
+  iv:
+    # 0.02 = мусор; 0.05 ещё режет очень слабые, в т.ч. категориальные.
+    threshold: 0.05
+    num_bins: 10
+    # Почти идеальный предиктор / ID. null — не резать сверху.
+    max_threshold: 3.0
+    eps: 1e-4
+    min_bin_share: 0.01
+    max_levels: 40
+    relative_error: 0.001
+    # На 2500 колонок не раздувать один Spark-agg.
+    batch_size: 25
+
+  psi:
+    mode: month_over_month
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part
+    test_months: 1
+    eps: 1e-4
+    relative_error: 0.001
+    batch_size: 40
+    n_jobs: -1
+    subsample_rows: null
+
+  correlation:
+    method: pearson
+    threshold: 0.95
+    tie_break: null_rate
+    # После iv колонок меньше; 300k строк хватает на корреляции.
+    max_rows: 300_000
+
+model:
+  enabled: true
+  method: lightgbm
+  params:
+    lgbm_threshold: 0.80
+    shap_threshold: 0.80
+    n_folds: 5
+    optuna_mode: global
+    n_jobs: 8
+    shap_max_rows: 8000
+    max_rows: 1_000_000
+    sample_fraction: null
+    optuna_params:
+      n_trials: 40
+      timeout: 14400
+      sampler: TPE
+  cross_validation:
+    strategy: stratified
+    folds: 5
+    metric: roc_auc
+
+precise:
+  enabled: true
+  method: boruta_shap
+  params:
+    model_type: lgbm
+    # LightGBM и Boruta берут по 1 млн строк на драйвере.
+    # При тех же max_rows/seed Boruta переиспользует sample LightGBM.
+    max_rows: 1_000_000
+    n_jobs: 8
+    sample_fraction: null
+    # Итерации Boruta (сравнение с shadow-features).
+    boruta_trials: 30
+    tentative_fix_method: rough
+    optuna_params:
+      n_trials: 20
+      timeout: 3600
+      sampler: TPE
+      n_startup_trials: 5
+
+execution:
+  seed: 42
+  allow_local_fallback: true
+  # Потолок pandas-материализации. Иначе lightgbm/boruta упрутся в 300k.
+  max_local_rows: 1_000_000
+  local_memory_limit: 32
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true
+  verbose:
+    pipeline: true
+    null_rate: true
+    constants: true
+    low_variance: true
+    iv: true
+    psi: true
+    correlation: true
+    lightgbm: true
+    boruta_shap: true

@@ -1,0 +1,30 @@
+epk_id: {}
+report_dt: {}
+date_stamp:
+  sequential: true
+  sequence_length: 2048
+  padding: 0
+dir_token:
+  sequential: true
+  sequence_length: 2048
+  padding: 0
+ecom_token:
+  sequential: true
+  sequence_length: 2048
+  padding: 0
+mcc_token:
+  sequential: true
+  sequence_length: 2048
+  padding: 0
+brand_token:
+  sequential: true
+  sequence_length: 2048
+  padding: 0
+city_token:
+  sequential: true
+  sequence_length: 2048
+  padding: 0
+amt_token:
+  sequential: true
+  sequence_length: 2048
+  padding: 0

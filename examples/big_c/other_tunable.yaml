@@ -1,0 +1,180 @@
+# Annotated copy of other.yaml.
+# Comments describe parameters that are currently wired into production code.
+# Pipeline: preprocessing (if enabled) → statistics.order → model → precise.
+
+preprocessing:
+  feature_drop:
+    enabled: false
+    # One feature per line (blank / # ignored), or a SelectionResult JSON
+    # (final_results.json / *_results.json). JSON uses dropped_features.
+    # Relative paths are resolved from this YAML directory.
+    path: ../untitled.txt
+    # true: fail on names absent from FeatureSchema candidates.
+    # false: ignore them and record them in scores.feature_drop.unknown.
+    strict: false
+  random_feature_drop:
+    enabled: false
+    # Test-only deterministic random candidate removal.
+    # Target, ids, time, split, fold and other service columns are never used.
+    n_features: 20
+  row_sample:
+    enabled: false
+    # Applied independently to train/valid/test when enabled.
+    max_rows: 100_000
+    # true: preserve target proportions (classification only).
+    # false: uniform random sample; use this for regression.
+    stratified: true
+
+statistics:
+  order:
+    - psi
+  null_rate:
+    # Drop when null share is strictly above this value, range [0, 1].
+    threshold: 0.95
+
+  constants:
+    # Drop quasi-constant columns at or above this dominant-value share.
+    max_frequency: 0.95
+    # Optional hard minimum unique-value count; null disables the rule.
+    min_unique: null
+    # Number of columns processed in one Spark aggregation batch.
+    chunk_size: 250
+
+  low_variance:
+    # Applied only to FeatureSchema.continuous.
+    min_variance: 0.00001
+    # standard | minmax | robust
+    scale_method: minmax
+
+  correlation:
+    # pearson | spearman
+    method: pearson
+    threshold: 0.95
+    # original_order | null_rate
+    tie_break: original_order
+    # Effective limit is min(max_rows, execution.max_local_rows).
+    max_rows: 500_000
+
+  psi:
+    # month_over_month needs FeatureSchema.time.
+    # train_valid needs a valid split or FeatureSchema.split.
+    mode: month_over_month
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part
+    test_months: 1
+    eps: 1e-4
+    relative_error: 0.001
+    batch_size: 50
+    n_jobs: -1
+    # Optional cap for PSI sampling; null uses all available rows.
+    subsample_rows: null
+
+  iv:
+    # Drop when IV is strictly below this value. Classic cutoff: 0.02.
+    # Requires binary_classification and a target column.
+    threshold: 0.02
+    # Quantile bins for continuous features. Categorical uses distinct levels.
+    num_bins: 10
+    # Optional upper cut; null disables. Very high IV often means leakage / ID.
+    max_threshold: null
+    # Smoothing inside the WoE logarithm.
+    eps: 1e-4
+    # Merge categorical levels below this row share into other. 0 disables.
+    min_bin_share: 0.0
+    # Keep at most this many non-null categorical levels; tail → other.
+    max_levels: 50
+    relative_error: 0.001
+    batch_size: 50
+
+  stability_classifier:
+    # This selector is still a stub.
+    metric: roc_auc
+    threshold: 0.8
+
+model:
+  enabled: true
+  # Implemented: lightgbm, catboost_rfe.
+  # Stubs: lasso, random_forest.
+  method: lightgbm
+  params:
+    # Keep the intersection under both cumulative-importance thresholds.
+    # Higher values generally retain more features. Range: (0, 1].
+    lgbm_threshold: 0.85
+    shap_threshold: 0.85
+    # Stratified K-Fold count, minimum 2. Prefer cross_validation.folds.
+    n_folds: 5
+    # global: one Optuna run on driver, shared params for all folds.
+    # per_fold: independent Optuna run for every fold on outer-train rows.
+    optuna_mode: global
+    # CPU threads for LightGBM on the driver. -1 uses all driver cores.
+    n_jobs: -1
+    # Maximum validation rows used by SHAP inside each driver fold.
+    shap_max_rows: 5000
+    # Spark sample is materialized locally after this cap.
+    # Effective limit is min(max_rows, execution.max_local_rows).
+    max_rows: 250_000
+    # Optional extra fraction in (0, 1]; null disables fractional sampling.
+    sample_fraction: null
+    optuna_params:
+      n_trials: 20
+      timeout: 3600
+      sampler: TPE
+  selection:
+    # Generic config field; LightGbmSelector currently does not apply it.
+    max_features: 150
+  cross_validation:
+    # LightGbmSelector currently always uses stratified ROC-AUC.
+    strategy: stratified
+    # Used as fallback when params.n_folds is absent.
+    folds: 5
+    metric: roc_auc
+
+precise:
+  enabled: false
+  # none | boruta_shap
+  method: none
+  params:
+    # lgbm | rf
+    model_type: lgbm
+    # Effective limit is min(max_rows, execution.max_local_rows).
+    max_rows: 100_000
+    sample_fraction: null
+    # Boruta shadow-feature iteration count.
+    boruta_trials: 20
+    # rough | null
+    tentative_fix_method: rough
+    optuna_params:
+      n_trials: 5
+      timeout: 3600
+      sampler: TPE
+      n_startup_trials: 3
+    # Optional search-space overrides:
+    # parameters:
+    #   n_estimators:
+    #     type: int
+    #     min: 100
+    #     max: 500
+    #   learning_rate:
+    #     type: float
+    #     min: 0.01
+    #     max: 0.1
+    #     log: true
+    #
+    # GRID requires explicit finite values for every custom parameter:
+    # parameters:
+    #   max_depth:
+    #     values: [3, 5, 7]
+
+execution:
+  # Root seed propagated to sampling, Optuna, CV, models, SHAP, and Boruta.
+  seed: 42
+  allow_local_fallback: true
+  # Global hard cap for selectors that materialize pandas data.
+  max_local_rows: 250_000
+  # Informational capacity setting; no byte-level guard is currently enforced.
+  local_memory_limit: 4
+  local_sample:
+    # Local LightGBM/Boruta preparation currently uses stratified sampling.
+    strategy: stratified
+    cache_intermediate: true

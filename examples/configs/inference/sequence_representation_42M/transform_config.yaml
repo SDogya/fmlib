@@ -1,0 +1,58 @@
+model:
+  _target_: fmlib.nn.transforms.make_for_sequence_representation
+  padding_mask_inp_name: "txn_evt_attr_9_mask"
+  time_encoding: "delta"
+  change_padding: True
+  events_meta:
+    evk_vnv_channel_group:
+      n_classes: 10
+      type: categorical
+      event_id: 2
+    evk_vnv_evt_attr_1:
+      n_classes: 3
+      type: categorical
+      event_id: 2
+    evk_vnv_sale_product_class_id:
+      n_classes: 38
+      type: categorical
+      event_id: 2
+    evk_vnv_sale_type_id:
+      n_classes: 22
+      type: categorical
+      event_id: 2
+    holidays_evt_attr_1:
+      n_classes: 87
+      type: categorical
+      event_id: null
+    pos_geo_evt_attr_1:
+      n_classes: 87
+      type: categorical
+      event_id: null
+    txn_evt_attr_4:
+      n_classes: 3
+      type: categorical
+      event_id: [0, 1]
+    txn_evt_attr_5:
+      n_classes: 3
+      type: categorical
+      event_id: [0, 1]
+    txn_evt_attr_15:
+      n_classes: 1
+      type: numeric
+      event_id: [0, 1]
+    txn_evt_attr_9:
+      n_classes: 684
+      type: categorical
+      event_id: [0, 1]
+    txn_evt_attr_1:
+      n_classes: 429
+      type: categorical
+      event_id: 1
+    txn_evt_attr_2:
+      n_classes: 4
+      type: categorical
+      event_id: 1
+    txn_evt_attr_3:
+      n_classes: 44
+      type: categorical
+      event_id: 1

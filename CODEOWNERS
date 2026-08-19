@@ -1,0 +1,6 @@
+@@@core-review-group    @19586412 @21582431 # Kulandin Denis, Kulikov Nikita
+@@@managers             @19550972           # Smirnov Michael
+
+@@@FallbackOwners       @@managers          # Fallback for holidays, sick leaves, etc.
+
+*                       @@core-review-group # Global code owners

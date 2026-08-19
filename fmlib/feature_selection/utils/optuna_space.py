@@ -1,0 +1,267 @@
+"""Shared Optuna search-space helpers for model-based selectors.
+
+Parameter blocks are polymorphic: a scalar value is used as-is, a mapping
+describes a search space entry. This mirrors the convention already used by
+``precise.params.parameters`` in the BorutaSHAP selector.
+"""
+
+from __future__ import annotations
+
+from typing import Any, Mapping, Optional
+
+from fmlib.feature_selection.exceptions import ExecutionError
+
+SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
+PARAMETER_TYPES = frozenset({"int", "float", "categorical"})
+
+
+def split_parameters(
+    parameters: Mapping[str, Any],
+    *,
+    method_name: str,
+) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
+    """Split a parameter block into fixed values and a search space.
+
+    Args:
+        parameters: Mapping of parameter name to a scalar or a specification.
+        method_name: Selector name used in error messages.
+
+    Returns:
+        Tuple of ``(fixed, search_space)``. ``fixed`` holds scalars passed to the
+        model unchanged, ``search_space`` holds mappings tuned by Optuna.
+
+    Raises:
+        ExecutionError: When the block is not a mapping.
+    """
+    if not isinstance(parameters, Mapping):
+        msg = f"{method_name}: params.parameters must be a mapping."
+        raise ExecutionError(msg)
+
+    fixed: dict[str, Any] = {}
+    search_space: dict[str, dict[str, Any]] = {}
+    for name, value in parameters.items():
+        key = str(name)
+        if isinstance(value, Mapping):
+            search_space[key] = dict(value)
+        else:
+            fixed[key] = value
+    return fixed, search_space
+
+
+def build_search_space(
+    defaults: Mapping[str, Mapping[str, Any]],
+    *,
+    overrides: Mapping[str, Mapping[str, Any]],
+    fixed: Mapping[str, Any],
+) -> dict[str, dict[str, Any]]:
+    """Merge built-in ranges with config overrides and drop pinned parameters.
+
+    A parameter given as a scalar in the config is pinned: it must leave the
+    search space entirely, otherwise Optuna keeps suggesting values for it and
+    the suggestion silently wins over the configured constant.
+
+    Args:
+        defaults: Built-in search space of the selector.
+        overrides: Search-space entries coming from ``params.parameters``.
+        fixed: Scalar entries coming from ``params.parameters``.
+
+    Returns:
+        Search space to hand to Optuna.
+    """
+    space = {str(name): dict(spec) for name, spec in defaults.items()}
+    space.update({str(name): dict(spec) for name, spec in overrides.items()})
+    for name in fixed:
+        space.pop(str(name), None)
+    return space
+
+
+def _bounds(specification: Mapping[str, Any], name: str, method_name: str) -> tuple[Any, Any]:
+    """Read the low/high bounds of a specification, accepting both dialects."""
+    low = specification.get("min", specification.get("low"))
+    high = specification.get("max", specification.get("high"))
+    if low is None or high is None:
+        msg = f"{method_name}: parameter {name!r} must define 'min' and 'max' (or 'low' and 'high')."
+        raise ExecutionError(msg)
+    return low, high
+
+
+def suggest_parameter(
+    trial: Any,
+    name: str,
+    specification: Mapping[str, Any],
+    *,
+    method_name: str,
+) -> Any:
+    """Generate one Optuna suggestion from a parameter specification.
+
+    Supported forms::
+
+        {"type": "int", "min": 4, "max": 8}
+        {"type": "float", "min": 0.01, "max": 0.3, "log": true}
+        {"type": "categorical", "values": ["a", "b"]}
+        {"values": ["a", "b"]}
+
+    Args:
+        trial: Active Optuna trial.
+        name: Parameter name.
+        specification: Search space entry.
+        method_name: Selector name used in error messages.
+
+    Returns:
+        Suggested value for this trial.
+
+    Raises:
+        ExecutionError: When the specification is malformed.
+    """
+    has_values = "values" in specification
+    parameter_type = str(
+        specification.get("type", "categorical" if has_values else "float"),
+    )
+    if parameter_type not in PARAMETER_TYPES:
+        msg = (
+            f"{method_name}: parameter {name!r} has unsupported type={parameter_type!r}. "
+            f"Expected one of: {sorted(PARAMETER_TYPES)}."
+        )
+        raise ExecutionError(msg)
+
+    if has_values and parameter_type != "categorical":
+        # Optuna samples an explicit set only through suggest_categorical, so a
+        # numeric type cannot be honoured together with 'values'. Refuse instead
+        # of silently ignoring one of the two keys.
+        msg = (
+            f"{method_name}: parameter {name!r} combines 'values' with type={parameter_type!r}. "
+            "An explicit list is always a categorical choice: use type='categorical' or omit 'type'."
+        )
+        raise ExecutionError(msg)
+
+    if parameter_type == "categorical":
+        values = specification.get("values")
+        if not isinstance(values, (list, tuple)) or not values:
+            msg = f"{method_name}: categorical parameter {name!r} must define a non-empty 'values' list."
+            raise ExecutionError(msg)
+        return trial.suggest_categorical(name, list(values))
+
+    low, high = _bounds(specification, name, method_name)
+    try:
+        if parameter_type == "int":
+            # log is passed only when requested: integer search spaces rarely use it,
+            # and omitting it keeps the call compatible with simpler trial objects.
+            if specification.get("log", False):
+                return trial.suggest_int(name, int(low), int(high), log=True)
+            return trial.suggest_int(name, int(low), int(high))
+        return trial.suggest_float(
+            name,
+            float(low),
+            float(high),
+            log=bool(specification.get("log", False)),
+        )
+    except (TypeError, ValueError) as exc:
+        msg = f"{method_name}: parameter {name!r} has invalid bounds: {exc}."
+        raise ExecutionError(msg) from exc
+
+
+def resolve_optuna_settings(
+    optuna_params: Any,
+    *,
+    method_name: str,
+    n_trials: int = 20,
+    n_startup_trials: int = 10,
+    sampler: str = "TPE",
+    timeout: Optional[int] = None,
+) -> dict[str, Any]:
+    """Read the shared ``params.optuna_params`` block.
+
+    Every selector that tunes with Optuna accepts the same four keys, so a new
+    method only has to call this and hand the result to :func:`build_sampler`
+    and ``study.optimize``.
+
+    Args:
+        optuna_params: Raw ``params.optuna_params`` mapping from the config.
+        method_name: Selector name used in error messages.
+        n_trials: Fallback trial count for this selector.
+        n_startup_trials: Fallback random startup trials for ``TPE``.
+        sampler: Fallback sampler name.
+        timeout: Fallback wall-clock limit in seconds, ``None`` for unlimited.
+
+    Returns:
+        Mapping with ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``.
+
+    Raises:
+        ExecutionError: When the block or one of its values is invalid.
+    """
+    if not isinstance(optuna_params, Mapping):
+        msg = f"{method_name}: params.optuna_params must be a mapping."
+        raise ExecutionError(msg)
+
+    raw_timeout = optuna_params.get("timeout", timeout)
+    try:
+        settings: dict[str, Any] = {
+            "n_trials": int(optuna_params.get("n_trials", n_trials)),
+            "n_startup_trials": int(
+                optuna_params.get("n_startup_trials", n_startup_trials),
+            ),
+            "sampler": str(optuna_params.get("sampler", sampler)).upper(),
+            "timeout": None if raw_timeout is None else int(raw_timeout),
+        }
+    except (TypeError, ValueError) as exc:
+        msg = f"{method_name}: invalid params.optuna_params value. Root cause: {exc}."
+        raise ExecutionError(msg) from exc
+
+    for name in ("n_trials", "n_startup_trials"):
+        if settings[name] < 1:
+            msg = f"{method_name}: optuna_params.{name} must be at least 1."
+            raise ExecutionError(msg)
+    if settings["timeout"] is not None and settings["timeout"] < 1:
+        msg = f"{method_name}: optuna_params.timeout must be at least 1 second or null."
+        raise ExecutionError(msg)
+    if settings["sampler"] not in SAMPLERS:
+        msg = (
+            f"{method_name}: optuna_params.sampler must be one of {sorted(SAMPLERS)}; "
+            f"got {settings['sampler']!r}."
+        )
+        raise ExecutionError(msg)
+    return settings
+
+
+def build_sampler(
+    optuna_module: Any,
+    *,
+    sampler_name: str,
+    search_space: Mapping[str, Mapping[str, Any]],
+    seed: int,
+    n_startup_trials: int,
+    method_name: str,
+) -> Any:
+    """Build an Optuna sampler seeded for reproducibility.
+
+    Args:
+        optuna_module: Imported ``optuna`` module.
+        sampler_name: ``TPE``, ``RANDOM``, or ``GRID``.
+        search_space: Parsed search space, required for ``GRID``.
+        seed: Deterministic sampler seed.
+        n_startup_trials: Random startup trials for ``TPE``.
+        method_name: Selector name used in error messages.
+
+    Returns:
+        Configured Optuna sampler.
+
+    Raises:
+        ExecutionError: When the sampler is unsupported or ``GRID`` is not finite.
+    """
+    normalized = str(sampler_name).upper()
+    if normalized not in SAMPLERS:
+        msg = f"{method_name}: sampler must be one of {sorted(SAMPLERS)}; got {sampler_name!r}."
+        raise ExecutionError(msg)
+
+    if normalized == "RANDOM":
+        return optuna_module.samplers.RandomSampler(seed=seed)
+    if normalized == "GRID":
+        grid: dict[str, list[Any]] = {}
+        for name, specification in search_space.items():
+            values = specification.get("values")
+            if not isinstance(values, (list, tuple)) or not values:
+                msg = f"{method_name}: GRID sampler requires parameter {name!r} to define a non-empty 'values' list."
+                raise ExecutionError(msg)
+            grid[name] = list(values)
+        return optuna_module.samplers.GridSampler(search_space=grid, seed=seed)
+    return optuna_module.samplers.TPESampler(seed=seed, n_startup_trials=n_startup_trials)

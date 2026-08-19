@@ -1,0 +1,17 @@
+epk_id: {}
+bucket_num: {}
+target_attr_1: {}
+target_attr_2: {}
+target_attr_3: {}
+cat_features:
+    sequential: true
+    sequence_length: 54
+    padding: 0
+num_features:
+    sequential: true
+    sequence_length: 189
+    padding: 0
+seq_hidden_state:
+    sequential: true
+    sequence_length: 128
+    padding: 0

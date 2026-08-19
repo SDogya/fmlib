@@ -1,0 +1,76 @@
+epk_id: {}
+evk_vnv_channel_group:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+evk_vnv_evt_attr_1:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+evk_vnv_sale_product_class_id:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+evk_vnv_sale_type_id:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+holidays_evt_attr_1:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+pos_geo_evt_attr_1:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_4:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_5:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_15:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_9:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_1:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_2:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+txn_evt_attr_3:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+event_ids:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+evt_dttm:
+    feature: true
+    sequential: true
+    sequence_length: 2048
+    padding: 0

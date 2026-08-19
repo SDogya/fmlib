@@ -1,0 +1,37 @@
+statistics:
+  order:
+    - iv
+  iv:
+    threshold: 0.02
+    num_bins: 10
+    max_threshold: null
+    eps: 1e-4
+    min_bin_share: 0.0
+    max_levels: 50
+    relative_error: 0.001
+    batch_size: 50
+
+model:
+  enabled: false
+  # Still a stub until a real model selector is filled in.
+  method: lasso
+  params: {}
+  selection:
+    max_features: 100
+  cross_validation:
+    strategy: stratified
+    folds: 5
+    metric: roc_auc
+
+precise:
+  enabled: false
+  method: none
+
+execution:
+  seed: 42
+  allow_local_fallback: true
+  max_local_rows: 1000000
+  local_memory_limit: 4
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true

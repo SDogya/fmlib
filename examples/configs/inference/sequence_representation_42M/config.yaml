@@ -1,0 +1,307 @@
+weights_path: "large_final.bin"
+model:
+  _target_: fmlib.nn.models.SequenceRepresentationModel
+  embedding:
+    _target_: fmlib.nn.embedding.EventEmbedding
+    embedding_dim: 512
+    columns_meta:
+      evk_vnv_channel_group:
+        cardinality: 10
+        type: categorical
+        event_id: 2
+      evk_vnv_evt_attr_1:
+        cardinality: 3
+        type: categorical
+        event_id: 2
+      evk_vnv_sale_product_class_id:
+        cardinality: 38
+        type: categorical
+        event_id: 2
+      evk_vnv_sale_type_id:
+        cardinality: 22
+        type: categorical
+        event_id: 2
+      holidays_evt_attr_1:
+        cardinality: 87
+        type: categorical
+        event_id: null
+      pos_geo_evt_attr_1:
+        cardinality: 87
+        type: categorical
+        event_id: null
+      txn_evt_attr_4:
+        cardinality: 3
+        type: categorical
+        event_id: [0, 1]
+      txn_evt_attr_5:
+        cardinality: 3
+        type: categorical
+        event_id: [0, 1]
+      txn_evt_attr_15:
+        cardinality: 1
+        type: numerical
+        event_id: [0, 1]
+      txn_evt_attr_9:
+        cardinality: 684
+        type: categorical
+        event_id: [0, 1]
+      txn_evt_attr_1:
+        cardinality: 429
+        type: categorical
+        event_id: 1
+      txn_evt_attr_2:
+        cardinality: 4
+        type: categorical
+        event_id: 1
+      txn_evt_attr_3:
+        cardinality: 44
+        type: categorical
+        event_id: 1
+  time_embedding:
+    _target_: fmlib.nn.embedding.LinearEmbedding
+    embedding_dim: ${model.embedding.embedding_dim}
+    feature_count: 1
+  feature_encoder_block:
+    _target_: fmlib.nn.blocks.EventEncoderBlock
+    hidden_dim: ${model.embedding.embedding_dim}
+    attn_dropout: 0.0
+    dropout: 0.1
+    ffn:
+      _target_: fmlib.nn.blocks.FeatureFFN
+      model_dim: ${model.embedding.embedding_dim}
+      linear_dim: 2048
+      feature_dim: 14 # количество признаков + 1 (если есть time_embedding)
+      dropout: ${model.feature_encoder_block.dropout}
+    attention:
+      _target_: fmlib.nn.blocks.IntraFeatureAttention
+      hidden_size: ${model.embedding.embedding_dim}
+  transformer_model:
+    _target_: transformers.GPT2Model
+    config:
+      _target_: transformers.GPT2Config
+      n_positions: 2048
+      vocab_size: 0 # может быть любое значение, так как nn.Embedding gpt мы не используем
+      n_embd: ${model.embedding.embedding_dim}
+      n_layer: 12
+      n_head: 8
+      pad_token_id: 0
+      bos_token_id: 1
+      eos_token_id: 2
+  aggregation_layer:
+    _target_: fmlib.nn.utils.agg.Sum
+  event_names:
+    - "evk_vnv_channel_group"
+    - "evk_vnv_evt_attr_1"
+    - "evk_vnv_sale_product_class_id"
+    - "evk_vnv_sale_type_id"
+    - "holidays_evt_attr_1"
+    - "pos_geo_evt_attr_1"
+    - "txn_evt_attr_4"
+    - "txn_evt_attr_5"
+    - "txn_evt_attr_15"
+    - "txn_evt_attr_9"
+    - "txn_evt_attr_1"
+    - "txn_evt_attr_2"
+    - "txn_evt_attr_3"
+  output_names:
+    - "logits"
+    - "last_hidden_state"
+
+weights_mapping:
+  # GPT2
+  backbone.h.0.attn.c_attn.bias:   "transformer_model.h.0.attn.c_attn.bias"
+  backbone.h.0.attn.c_attn.weight: "transformer_model.h.0.attn.c_attn.weight"
+  backbone.h.0.attn.c_proj.bias:   "transformer_model.h.0.attn.c_proj.bias"
+  backbone.h.0.attn.c_proj.weight: "transformer_model.h.0.attn.c_proj.weight"
+  backbone.h.0.ln_1.bias:          "transformer_model.h.0.ln_1.bias"
+  backbone.h.0.ln_1.weight:        "transformer_model.h.0.ln_1.weight"
+  backbone.h.0.ln_2.bias:          "transformer_model.h.0.ln_2.bias"
+  backbone.h.0.mlp.c_fc.bias:      "transformer_model.h.0.mlp.c_fc.bias"
+  backbone.h.0.mlp.c_fc.weight:    "transformer_model.h.0.mlp.c_fc.weight"
+  backbone.h.0.ln_2.weight:        "transformer_model.h.0.ln_2.weight"
+  backbone.h.0.mlp.c_proj.bias:    "transformer_model.h.0.mlp.c_proj.bias"
+  backbone.h.0.mlp.c_proj.weight:  "transformer_model.h.0.mlp.c_proj.weight"
+
+  backbone.h.1.attn.c_attn.bias:   "transformer_model.h.1.attn.c_attn.bias"
+  backbone.h.1.attn.c_attn.weight: "transformer_model.h.1.attn.c_attn.weight"
+  backbone.h.1.attn.c_proj.bias:   "transformer_model.h.1.attn.c_proj.bias"
+  backbone.h.1.attn.c_proj.weight: "transformer_model.h.1.attn.c_proj.weight"
+  backbone.h.1.ln_1.bias:          "transformer_model.h.1.ln_1.bias"
+  backbone.h.1.ln_1.weight:        "transformer_model.h.1.ln_1.weight"
+  backbone.h.1.ln_2.bias:          "transformer_model.h.1.ln_2.bias"
+  backbone.h.1.mlp.c_fc.bias:      "transformer_model.h.1.mlp.c_fc.bias"
+  backbone.h.1.mlp.c_fc.weight:    "transformer_model.h.1.mlp.c_fc.weight"
+  backbone.h.1.ln_2.weight:        "transformer_model.h.1.ln_2.weight"
+  backbone.h.1.mlp.c_proj.bias:    "transformer_model.h.1.mlp.c_proj.bias"
+  backbone.h.1.mlp.c_proj.weight:  "transformer_model.h.1.mlp.c_proj.weight"
+
+  backbone.h.2.attn.c_attn.bias:   "transformer_model.h.2.attn.c_attn.bias"
+  backbone.h.2.attn.c_attn.weight: "transformer_model.h.2.attn.c_attn.weight"
+  backbone.h.2.attn.c_proj.bias:   "transformer_model.h.2.attn.c_proj.bias"
+  backbone.h.2.attn.c_proj.weight: "transformer_model.h.2.attn.c_proj.weight"
+  backbone.h.2.ln_1.bias:          "transformer_model.h.2.ln_1.bias"
+  backbone.h.2.ln_1.weight:        "transformer_model.h.2.ln_1.weight"
+  backbone.h.2.ln_2.bias:          "transformer_model.h.2.ln_2.bias"
+  backbone.h.2.mlp.c_fc.bias:      "transformer_model.h.2.mlp.c_fc.bias"
+  backbone.h.2.mlp.c_fc.weight:    "transformer_model.h.2.mlp.c_fc.weight"
+  backbone.h.2.ln_2.weight:        "transformer_model.h.2.ln_2.weight"
+  backbone.h.2.mlp.c_proj.bias:    "transformer_model.h.2.mlp.c_proj.bias"
+  backbone.h.2.mlp.c_proj.weight:  "transformer_model.h.2.mlp.c_proj.weight"
+
+  backbone.h.3.attn.c_attn.bias:   "transformer_model.h.3.attn.c_attn.bias"
+  backbone.h.3.attn.c_attn.weight: "transformer_model.h.3.attn.c_attn.weight"
+  backbone.h.3.attn.c_proj.bias:   "transformer_model.h.3.attn.c_proj.bias"
+  backbone.h.3.attn.c_proj.weight: "transformer_model.h.3.attn.c_proj.weight"
+  backbone.h.3.ln_1.bias:          "transformer_model.h.3.ln_1.bias"
+  backbone.h.3.ln_1.weight:        "transformer_model.h.3.ln_1.weight"
+  backbone.h.3.ln_2.bias:          "transformer_model.h.3.ln_2.bias"
+  backbone.h.3.mlp.c_fc.bias:      "transformer_model.h.3.mlp.c_fc.bias"
+  backbone.h.3.mlp.c_fc.weight:    "transformer_model.h.3.mlp.c_fc.weight"
+  backbone.h.3.ln_2.weight:        "transformer_model.h.3.ln_2.weight"
+  backbone.h.3.mlp.c_proj.bias:    "transformer_model.h.3.mlp.c_proj.bias"
+  backbone.h.3.mlp.c_proj.weight:  "transformer_model.h.3.mlp.c_proj.weight"
+
+  backbone.h.4.attn.c_attn.bias:   "transformer_model.h.4.attn.c_attn.bias"
+  backbone.h.4.attn.c_attn.weight: "transformer_model.h.4.attn.c_attn.weight"
+  backbone.h.4.attn.c_proj.bias:   "transformer_model.h.4.attn.c_proj.bias"
+  backbone.h.4.attn.c_proj.weight: "transformer_model.h.4.attn.c_proj.weight"
+  backbone.h.4.ln_1.bias:          "transformer_model.h.4.ln_1.bias"
+  backbone.h.4.ln_1.weight:        "transformer_model.h.4.ln_1.weight"
+  backbone.h.4.ln_2.bias:          "transformer_model.h.4.ln_2.bias"
+  backbone.h.4.mlp.c_fc.bias:      "transformer_model.h.4.mlp.c_fc.bias"
+  backbone.h.4.mlp.c_fc.weight:    "transformer_model.h.4.mlp.c_fc.weight"
+  backbone.h.4.ln_2.weight:        "transformer_model.h.4.ln_2.weight"
+  backbone.h.4.mlp.c_proj.bias:    "transformer_model.h.4.mlp.c_proj.bias"
+  backbone.h.4.mlp.c_proj.weight:  "transformer_model.h.4.mlp.c_proj.weight"
+
+  backbone.h.5.attn.c_attn.bias:   "transformer_model.h.5.attn.c_attn.bias"
+  backbone.h.5.attn.c_attn.weight: "transformer_model.h.5.attn.c_attn.weight"
+  backbone.h.5.attn.c_proj.bias:   "transformer_model.h.5.attn.c_proj.bias"
+  backbone.h.5.attn.c_proj.weight: "transformer_model.h.5.attn.c_proj.weight"
+  backbone.h.5.ln_1.bias:          "transformer_model.h.5.ln_1.bias"
+  backbone.h.5.ln_1.weight:        "transformer_model.h.5.ln_1.weight"
+  backbone.h.5.ln_2.bias:          "transformer_model.h.5.ln_2.bias"
+  backbone.h.5.mlp.c_fc.bias:      "transformer_model.h.5.mlp.c_fc.bias"
+  backbone.h.5.mlp.c_fc.weight:    "transformer_model.h.5.mlp.c_fc.weight"
+  backbone.h.5.ln_2.weight:        "transformer_model.h.5.ln_2.weight"
+  backbone.h.5.mlp.c_proj.bias:    "transformer_model.h.5.mlp.c_proj.bias"
+  backbone.h.5.mlp.c_proj.weight:  "transformer_model.h.5.mlp.c_proj.weight"
+
+  backbone.h.6.attn.c_attn.bias:   "transformer_model.h.6.attn.c_attn.bias"
+  backbone.h.6.attn.c_attn.weight: "transformer_model.h.6.attn.c_attn.weight"
+  backbone.h.6.attn.c_proj.bias:   "transformer_model.h.6.attn.c_proj.bias"
+  backbone.h.6.attn.c_proj.weight: "transformer_model.h.6.attn.c_proj.weight"
+  backbone.h.6.ln_1.bias:          "transformer_model.h.6.ln_1.bias"
+  backbone.h.6.ln_1.weight:        "transformer_model.h.6.ln_1.weight"
+  backbone.h.6.ln_2.bias:          "transformer_model.h.6.ln_2.bias"
+  backbone.h.6.mlp.c_fc.bias:      "transformer_model.h.6.mlp.c_fc.bias"
+  backbone.h.6.mlp.c_fc.weight:    "transformer_model.h.6.mlp.c_fc.weight"
+  backbone.h.6.ln_2.weight:        "transformer_model.h.6.ln_2.weight"
+  backbone.h.6.mlp.c_proj.bias:    "transformer_model.h.6.mlp.c_proj.bias"
+  backbone.h.6.mlp.c_proj.weight:  "transformer_model.h.6.mlp.c_proj.weight"
+
+  backbone.h.7.attn.c_attn.bias:   "transformer_model.h.7.attn.c_attn.bias"
+  backbone.h.7.attn.c_attn.weight: "transformer_model.h.7.attn.c_attn.weight"
+  backbone.h.7.attn.c_proj.bias:   "transformer_model.h.7.attn.c_proj.bias"
+  backbone.h.7.attn.c_proj.weight: "transformer_model.h.7.attn.c_proj.weight"
+  backbone.h.7.ln_1.bias:          "transformer_model.h.7.ln_1.bias"
+  backbone.h.7.ln_1.weight:        "transformer_model.h.7.ln_1.weight"
+  backbone.h.7.ln_2.bias:          "transformer_model.h.7.ln_2.bias"
+  backbone.h.7.mlp.c_fc.bias:      "transformer_model.h.7.mlp.c_fc.bias"
+  backbone.h.7.mlp.c_fc.weight:    "transformer_model.h.7.mlp.c_fc.weight"
+  backbone.h.7.ln_2.weight:        "transformer_model.h.7.ln_2.weight"
+  backbone.h.7.mlp.c_proj.bias:    "transformer_model.h.7.mlp.c_proj.bias"
+  backbone.h.7.mlp.c_proj.weight:  "transformer_model.h.7.mlp.c_proj.weight"
+
+  backbone.h.8.attn.c_attn.bias:   "transformer_model.h.8.attn.c_attn.bias"
+  backbone.h.8.attn.c_attn.weight: "transformer_model.h.8.attn.c_attn.weight"
+  backbone.h.8.attn.c_proj.bias:   "transformer_model.h.8.attn.c_proj.bias"
+  backbone.h.8.attn.c_proj.weight: "transformer_model.h.8.attn.c_proj.weight"
+  backbone.h.8.ln_1.bias:          "transformer_model.h.8.ln_1.bias"
+  backbone.h.8.ln_1.weight:        "transformer_model.h.8.ln_1.weight"
+  backbone.h.8.ln_2.bias:          "transformer_model.h.8.ln_2.bias"
+  backbone.h.8.mlp.c_fc.bias:      "transformer_model.h.8.mlp.c_fc.bias"
+  backbone.h.8.mlp.c_fc.weight:    "transformer_model.h.8.mlp.c_fc.weight"
+  backbone.h.8.ln_2.weight:        "transformer_model.h.8.ln_2.weight"
+  backbone.h.8.mlp.c_proj.bias:    "transformer_model.h.8.mlp.c_proj.bias"
+  backbone.h.8.mlp.c_proj.weight:  "transformer_model.h.8.mlp.c_proj.weight"
+
+  backbone.h.9.attn.c_attn.bias:   "transformer_model.h.9.attn.c_attn.bias"
+  backbone.h.9.attn.c_attn.weight: "transformer_model.h.9.attn.c_attn.weight"
+  backbone.h.9.attn.c_proj.bias:   "transformer_model.h.9.attn.c_proj.bias"
+  backbone.h.9.attn.c_proj.weight: "transformer_model.h.9.attn.c_proj.weight"
+  backbone.h.9.ln_1.bias:          "transformer_model.h.9.ln_1.bias"
+  backbone.h.9.ln_1.weight:        "transformer_model.h.9.ln_1.weight"
+  backbone.h.9.ln_2.bias:          "transformer_model.h.9.ln_2.bias"
+  backbone.h.9.mlp.c_fc.bias:      "transformer_model.h.9.mlp.c_fc.bias"
+  backbone.h.9.mlp.c_fc.weight:    "transformer_model.h.9.mlp.c_fc.weight"
+  backbone.h.9.ln_2.weight:        "transformer_model.h.9.ln_2.weight"
+  backbone.h.9.mlp.c_proj.bias:    "transformer_model.h.9.mlp.c_proj.bias"
+  backbone.h.9.mlp.c_proj.weight:  "transformer_model.h.9.mlp.c_proj.weight"
+
+  backbone.h.10.attn.c_attn.bias:   "transformer_model.h.10.attn.c_attn.bias"
+  backbone.h.10.attn.c_attn.weight: "transformer_model.h.10.attn.c_attn.weight"
+  backbone.h.10.attn.c_proj.bias:   "transformer_model.h.10.attn.c_proj.bias"
+  backbone.h.10.attn.c_proj.weight: "transformer_model.h.10.attn.c_proj.weight"
+  backbone.h.10.ln_1.bias:          "transformer_model.h.10.ln_1.bias"
+  backbone.h.10.ln_1.weight:        "transformer_model.h.10.ln_1.weight"
+  backbone.h.10.ln_2.bias:          "transformer_model.h.10.ln_2.bias"
+  backbone.h.10.mlp.c_fc.bias:      "transformer_model.h.10.mlp.c_fc.bias"
+  backbone.h.10.mlp.c_fc.weight:    "transformer_model.h.10.mlp.c_fc.weight"
+  backbone.h.10.ln_2.weight:        "transformer_model.h.10.ln_2.weight"
+  backbone.h.10.mlp.c_proj.bias:    "transformer_model.h.10.mlp.c_proj.bias"
+  backbone.h.10.mlp.c_proj.weight:  "transformer_model.h.10.mlp.c_proj.weight"
+
+  backbone.h.11.attn.c_attn.bias:   "transformer_model.h.11.attn.c_attn.bias"
+  backbone.h.11.attn.c_attn.weight: "transformer_model.h.11.attn.c_attn.weight"
+  backbone.h.11.attn.c_proj.bias:   "transformer_model.h.11.attn.c_proj.bias"
+  backbone.h.11.attn.c_proj.weight: "transformer_model.h.11.attn.c_proj.weight"
+  backbone.h.11.ln_1.bias:          "transformer_model.h.11.ln_1.bias"
+  backbone.h.11.ln_1.weight:        "transformer_model.h.11.ln_1.weight"
+  backbone.h.11.ln_2.bias:          "transformer_model.h.11.ln_2.bias"
+  backbone.h.11.mlp.c_fc.bias:      "transformer_model.h.11.mlp.c_fc.bias"
+  backbone.h.11.mlp.c_fc.weight:    "transformer_model.h.11.mlp.c_fc.weight"
+  backbone.h.11.ln_2.weight:        "transformer_model.h.11.ln_2.weight"
+  backbone.h.11.mlp.c_proj.bias:    "transformer_model.h.11.mlp.c_proj.bias"
+  backbone.h.11.mlp.c_proj.weight:  "transformer_model.h.11.mlp.c_proj.weight"
+
+  backbone.ln_f.bias:   "transformer_model.ln_f.bias"
+  backbone.ln_f.weight: "transformer_model.ln_f.weight"
+  backbone.wpe.weight:  "transformer_model.wpe.weight"
+  backbone.wte.weight:  "transformer_model.wte.weight"
+
+  # Feature Encoder
+  feature_encoder.agg.attn.w_v.bias:   "feature_encoder_block.multi_head_attn.w_v.bias"
+  feature_encoder.agg.attn.w_v.weight: "feature_encoder_block.multi_head_attn.w_v.weight"
+  feature_encoder.agg.attn.w_q.bias:   "feature_encoder_block.multi_head_attn.w_q.bias"
+  feature_encoder.agg.attn.w_q.weight: "feature_encoder_block.multi_head_attn.w_q.weight"
+  feature_encoder.agg.attn.w_k.bias:   "feature_encoder_block.multi_head_attn.w_k.bias"
+  feature_encoder.agg.attn.w_k.weight: "feature_encoder_block.multi_head_attn.w_k.weight"
+  feature_encoder.agg.attn.output.bias:   "feature_encoder_block.multi_head_attn.output.bias"
+  feature_encoder.agg.attn.output.weight: "feature_encoder_block.multi_head_attn.output.weight"
+  feature_encoder.agg.ffn.0.bias:         "feature_encoder_block.ffn.w1.bias"
+  feature_encoder.agg.ffn.0.weight:       "feature_encoder_block.ffn.w1.weight"
+  feature_encoder.agg.ffn.2.bias:         "feature_encoder_block.ffn.norm.bias"
+  feature_encoder.agg.ffn.2.weight:       "feature_encoder_block.ffn.norm.weight"
+  feature_encoder.agg.ffn.4.bias:         "feature_encoder_block.ffn.w2.bias"
+  feature_encoder.agg.ffn.4.weight:       "feature_encoder_block.ffn.w2.weight"
+  feature_encoder.agg.ffn.5.bias:         "feature_encoder_block.ffn.last_norm.bias"
+  feature_encoder.agg.ffn.5.weight:       "feature_encoder_block.ffn.last_norm.weight"
+
+  feature_encoder.embedding.embedding_layer.evk_vnv_channel_group.weight:         "embedding.embedding_layer.evk_vnv_channel_group.weight"
+  feature_encoder.embedding.embedding_layer.evk_vnv_evt_attr_1.weight:            "embedding.embedding_layer.evk_vnv_evt_attr_1.weight"
+  feature_encoder.embedding.embedding_layer.evk_vnv_sale_product_class_id.weight: "embedding.embedding_layer.evk_vnv_sale_product_class_id.weight"
+  feature_encoder.embedding.embedding_layer.evk_vnv_sale_type_id.weight:          "embedding.embedding_layer.evk_vnv_sale_type_id.weight"
+  feature_encoder.embedding.embedding_layer.holidays_evt_attr_1.weight:           "embedding.embedding_layer.holidays_evt_attr_1.weight"
+  feature_encoder.embedding.embedding_layer.pos_geo_evt_attr_1.weight:            "embedding.embedding_layer.pos_geo_evt_attr_1.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_4.weight:                "embedding.embedding_layer.txn_evt_attr_4.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_5.weight:                "embedding.embedding_layer.txn_evt_attr_5.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_15.weight:               "embedding.embedding_layer.txn_evt_attr_15.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_15.bias:                 "embedding.embedding_layer.txn_evt_attr_15.bias"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_9.weight:                "embedding.embedding_layer.txn_evt_attr_9.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_1.weight:                "embedding.embedding_layer.txn_evt_attr_1.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_2.weight:                "embedding.embedding_layer.txn_evt_attr_2.weight"
+  feature_encoder.embedding.embedding_layer.txn_evt_attr_3.weight:                "embedding.embedding_layer.txn_evt_attr_3.weight"
+
+  feature_encoder.time_encoding_layer.bias: "time_embedding.bias"
+  feature_encoder.time_encoding_layer.weight: "time_embedding.weight"

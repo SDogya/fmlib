@@ -1,0 +1,156 @@
+# Полный пайплайн: statistics → catboost_rfe → boruta_shap.
+#
+# statistics.order задаёт состав и порядок фильтров. Метод, не попавший
+# в список, не запускается, даже если его блок параметров описан ниже.
+#
+# Оценка времени на ~2500 признаках и 700k строк: statistics — минуты,
+# catboost_rfe — часы (основной вклад — Optuna), boruta_shap — часы
+# (основной вклад — SHAP по строкам). См. комментарии в блоках.
+
+preprocessing:
+  feature_drop:
+    enabled: false
+    path: null               # текстовый файл со списком признаков к исключению
+    strict: false            # true — падать, если признака из файла нет в схеме
+  random_feature_drop:
+    enabled: false           # только для тестовых прогонов
+    n_features: 0
+  row_sample:
+    enabled: false           # только для тестовых прогонов
+    max_rows: null
+    stratified: true
+
+statistics:
+  order:
+    - null_rate
+    - constants
+    - low_variance
+    - correlation
+
+  null_rate:
+    threshold: 0.95          # доля пропусков, выше которой признак отбрасывается
+
+  constants:
+    max_frequency: 0.98      # доля самого частого значения
+    chunk_size: 1000         # колонок за один Spark-запрос
+
+  low_variance:
+    min_variance: 0.01
+    # scale_method: standard делает дисперсию равной 1 для всех колонок,
+    # и min_variance перестаёт работать. Нужен minmax или robust.
+    scale_method: robust
+
+  correlation:
+    threshold: 0.95
+    tie_break: null_rate     # кого выбрасывать из коррелирующей пары
+    # Берёт ПЕРВЫЕ max_rows строк через .limit(), а не случайную выборку.
+    # На данных, партиционированных по времени, это первые месяцы.
+    max_rows: 500000
+
+  # Блоки ниже описаны, но в order их нет — не запустятся.
+  # psi роняет прогон на строковых категориальных: approxQuantile
+  # вызывается по всем кандидатам без фильтрации по типу.
+  psi:
+    mode: month_over_month
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part
+    test_months: 1
+
+  iv:
+    threshold: 0.02          # ниже — признак не несёт сигнала
+    max_threshold: 1.5       # выше — подозрение на утечку таргета
+    num_bins: 10
+
+model:
+  enabled: true
+  method: catboost_rfe
+
+  params:
+    eval_months: 1           # последние N периодов schema.time → out-of-time eval
+    max_rows: 500000
+    sample_fraction: 0.1     # доля от max_rows: 500000 × 0.1 = 50k строк на обучение
+
+    # Мапа → перебирается Optuna. Скаляр → уходит в CatBoost как есть.
+    # Если мап нет ни одной, Optuna не запускается совсем.
+    parameters:
+      iterations: 2000
+      loss_function: Logloss
+      eval_metric: AUC
+      early_stopping_rounds: 100
+      use_best_model: true
+      max_ctr_complexity: 1  # отключает комбинации категориальных; иначе комбинаторный рост
+      task_type: CPU
+      boosting_type: Plain   # Ordered точнее на малых выборках, но заметно медленнее
+      depth:
+        type: int
+        min: 4
+        max: 7               # верхняя граница сильно влияет на время трайла
+      learning_rate:
+        type: float
+        min: 0.03            # ниже 0.03 early stopping не срабатывает и трайл идёт до конца
+        max: 0.15
+        log: true
+      l2_leaf_reg:
+        type: float
+        min: 1.0
+        max: 10.0
+      min_data_in_leaf:
+        type: int
+        min: 20
+        max: 200
+
+    optuna_params:
+      n_trials: 20           # ниже 12–15 опускаться не стоит, выше 25 отдача мала
+      n_startup_trials: 8    # случайные попытки до включения TPE
+      sampler: TPE           # TPE | RANDOM | GRID
+      timeout: 3600          # секунды или null; страховка от затянувшегося перебора
+
+    feature_selection_params:
+      algorithm: RecursiveByLossFunctionChange
+      steps: 20              # больше шагов — точнее траектория, дольше прогон
+
+  selection:
+    max_features: 200        # целевое число признаков после элиминации
+
+  cross_validation:
+    strategy: stratified     # group и time_based объявлены, но не реализованы
+    folds: 3
+    metric: roc_auc
+
+precise:
+  enabled: true
+  method: boruta_shap
+
+  params:
+    model_type: lgbm         # lgbm | rf
+    # Стоимость BorutaSHAP определяется СТРОКАМИ, а не признаками:
+    # SHAP считается по каждой строке. 700k → около 5 часов, 250k → около 2.
+    max_rows: 250000
+    sample_fraction: null
+    boruta_trials: 50        # итераций с теневыми признаками; меньше — больше tentative
+    tentative_fix_method: rough   # rough | null
+
+    # boruta_shap оценивает только continuous — категориальные до него не доходят.
+    parameters:
+      boosting_type: gbdt    # скаляр: фиксируем. Без этого в переборе есть dart,
+                             # который не поддерживает раннюю остановку и растягивает трайл
+      learning_rate:
+        type: float
+        min: 0.01
+        max: 0.1
+        log: true
+      num_leaves:
+        type: int
+        min: 16
+        max: 64
+
+    optuna_params:
+      n_trials: 20
+      n_startup_trials: 5
+      sampler: TPE
+      timeout: 3600
+
+execution:
+  seed: 42                   # доходит до сэмплирования, Optuna и random_seed моделей
+  max_local_rows: 1000000    # общий потолок, срезает params.max_rows сверху

@@ -1,0 +1,592 @@
+seed: 42
+
+parameters:
+  vocab: 5760
+  pos_vocab: 384
+  ffn_dim: 2048
+  hidden_dim: 512
+  num_heads: 8
+  local_model_layers: 2
+  main_model_layers: 15
+  patch_size: 86400
+  local_attn_res: 300
+  drop_rate: 0.1
+
+model:
+  _target_: fmlib.nn.models.DLTClassification
+  base_model:
+    _target_: fmlib.nn.utils.freeze.freeze_model
+    model:
+      _target_: fmlib.nn.models.DLTBody
+      embedding_layer:
+        _target_: torch.nn.Embedding
+        num_embeddings: ${parameters.vocab}
+        embedding_dim: ${parameters.hidden_dim}
+      pos_embedding_layer:
+        _target_: torch.nn.Embedding
+        num_embeddings: ${parameters.pos_vocab}
+        embedding_dim: ${parameters.hidden_dim}
+      input_encoder:
+        _target_: fmlib.nn.blocks.RotaryEncoderBlock
+        num_heads: ${parameters.num_heads}
+        hidden_dim: ${parameters.hidden_dim}
+        dropout: ${parameters.drop_rate}
+        use_rotary: False
+        ffn: 
+          _target_: fmlib.nn.blocks.DropoutLastPositionWiseFFN
+          linear_dim: ${parameters.ffn_dim}
+          model_dim: ${parameters.hidden_dim}
+          dropout: ${parameters.drop_rate}
+      local_cross_encoder:
+        _target_: fmlib.nn.blocks.RotaryCrossEncoderModel
+        encoder_layer_template:
+          _target_: fmlib.nn.blocks.RotaryEncoderBlock
+          num_heads: ${parameters.num_heads}
+          hidden_dim: ${parameters.hidden_dim}
+          dropout: ${parameters.drop_rate}
+          use_rotary: True
+          ffn: ${model.base_model.model.input_encoder.ffn}
+        cross_layer_template:
+          _target_: fmlib.nn.blocks.CrossEncoderBlock
+          num_heads: ${parameters.num_heads}
+          hidden_dim: ${parameters.hidden_dim}
+          dropout: ${parameters.drop_rate}
+          ffn: ${model.base_model.model.input_encoder.ffn}
+        num_layers: ${parameters.local_model_layers}
+      patches_decoder:
+        _target_: fmlib.nn.blocks.RotaryDecoderModel
+        layer_template:
+          _target_: fmlib.nn.blocks.RotaryEncoderBlock
+          num_heads: ${parameters.num_heads}
+          hidden_dim: ${parameters.hidden_dim}
+          dropout: ${parameters.drop_rate}
+          use_rotary: True
+          ffn: ${model.base_model.model.input_encoder.ffn}
+        num_layers: ${parameters.main_model_layers}
+        hidden_dim: ${parameters.hidden_dim}
+        dropout: ${parameters.drop_rate}
+      hidden_dim: ${parameters.hidden_dim}
+      patch_size: ${parameters.patch_size}
+      local_attn_res: ${parameters.local_attn_res}
+      dropout: ${parameters.drop_rate}
+  output_layer_template:
+    _target_: fmlib.nn.models.heads.DLTClassificationHead
+    hid_dim: ${parameters.hidden_dim}
+  output_layers:
+    - vacation_home_d30
+    - vacation_russia_d30
+
+training_step_callbacks:
+  _target_: fmlib.training.callbacks.step.GroupedStepCallback
+  callbacks: []
+
+validation_step_callbacks:
+  _target_: fmlib.training.callbacks.step.GroupedStepCallback
+  callbacks:
+    - _target_: fmlib.training.callbacks.step.RocAucCallback
+      output_slice: 
+        - _target_: hydra.utils.get_object
+          path: builtins.Ellipsis
+        - 1
+      metric_name: "roc_auc_home_d30"
+      target_name: "vacation_home_d30"
+      output_name: "vacation_home_d30"
+      target_mask_name: "vacation_home_d30_mask"
+    - _target_: fmlib.training.callbacks.step.RocAucCallback
+      output_slice: 
+        - _target_: hydra.utils.get_object
+          path: builtins.Ellipsis
+        - 1
+      metric_name: "roc_auc_russia_d30"
+      target_name: "vacation_russia_d30"
+      output_name: "vacation_russia_d30"
+      target_mask_name: "vacation_russia_d30_mask"
+    - _target_: fmlib.training.callbacks.step.AtFixedCallback
+      output_slice: 
+        - _target_: hydra.utils.get_object
+          path: builtins.Ellipsis
+        - 1
+      fixed_recalls: [0.01 , 0.05, 0.1, 0.25, 0.5, 0.9]
+      fixed_precisions: [0.1, 0.25, 0.5, 0.75, 0.9]
+      target_name: "vacation_home_d30"
+      output_name: "vacation_home_d30"
+      target_mask_name: "vacation_home_d30_mask"
+      precision_at_recall_template: "precision_home_d30@{recall}"
+      recall_at_precision_template: "recall_home_d30@{precision}"
+    - _target_: fmlib.training.callbacks.step.AtFixedCallback
+      output_slice: 
+        - _target_: hydra.utils.get_object
+          path: builtins.Ellipsis
+        - 1
+      fixed_recalls: [0.01 , 0.05, 0.1, 0.25, 0.5, 0.9]
+      fixed_precisions: [0.1, 0.25, 0.5, 0.75, 0.9]
+      target_name: "vacation_russia_d30"
+      output_name: "vacation_russia_d30"
+      target_mask_name: "vacation_russia_d30_mask"
+      precision_at_recall_template: "precision_russia_d30@{recall}"
+      recall_at_precision_template: "recall_russia_d30@{precision}"
+
+optimizer:
+  _target_: torch.optim.Adam
+  lr: 0.0001
+
+scheduler:
+  _target_: transformers.optimization.get_scheduler
+  name: cosine
+  num_warmup_steps: 1
+  num_training_steps: 30
+
+accelerator:
+  _target_: accelerate.Accelerator
+
+training_transform:
+  _target_: fmlib.nn.transforms.make_for_dlt
+  bypass: ["epk_id", "report_dt", "vacation_home_d30", "vacation_russia_d30", "vacation_home_d30_mask", "vacation_russia_d30_mask"]
+  mask_proba: 0.1
+
+validation_transform:
+  _target_: fmlib.nn.transforms.make_for_dlt
+  bypass: ["epk_id", "report_dt", "vacation_home_d30", "vacation_russia_d30", "vacation_home_d30_mask", "vacation_russia_d30_mask"]
+
+autocast:
+  _target_: fmlib.training.utils.autocast.make_autocast_wrapper
+  do_autocast: True
+
+losses:
+  _target_: fmlib.nn.losses.CombinedLoss
+  losses:
+    home_d30_loss:
+      _target_: fmlib.nn.losses.custom.CELoss
+      target_type:
+        _target_: hydra.utils.get_object
+        path: torch.int64
+      target_name: "vacation_home_d30"
+      output_name: "vacation_home_d30"
+    russia_d30_loss:
+      _target_: fmlib.nn.losses.custom.CELoss
+      target_type:
+        _target_: hydra.utils.get_object
+        path: torch.int64
+      target_name: "vacation_russia_d30"
+      output_name: "vacation_russia_d30"
+
+metadata:
+  epk_id: {}
+  report_dt: {}
+  vacation_home_d30: {}
+  vacation_russia_d30: {}
+  date_stamp:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+  dir_token:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+  ecom_token:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+  mcc_token:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+  brand_token:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+  city_token:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+  amt_token:
+    sequential: true
+    sequence_length: 2048
+    padding: 0
+
+training_data:
+  _target_: fmlib.data.io.parquet_dataset.ParquetDataset
+  source: "/home/datalab/nfs/romashka_train_data_multitarget"
+  metadata: ${metadata}
+  partition_size: 4096
+  batch_size: 16
+  generator:
+    _target_: fmlib.utils.generator.make_seeded_generator
+    seed: ${seed}
+
+validation_data:
+  _target_: fmlib.data.io.parquet_dataset.ParquetDataset
+  source: "/home/datalab/nfs/romashka_test_data_multitarget"
+  metadata: ${metadata}
+  partition_size: 4096
+  batch_size: 16
+
+epoch_callbacks:
+  _target_: fmlib.training.callbacks.epoch.GroupedEpochCallback
+  callbacks:
+    - _target_: fmlib.training.callbacks.epoch.EarlyStoppingCallback
+      metric_to_track: "roc_auc_home_d30"
+      patience: 6
+    - _target_: fmlib.training.callbacks.epoch.LoggingEpochCallback
+    - _target_: fmlib.training.callbacks.epoch.SaveCheckpointCallback
+      base_path: "/home/datalab/nfs/checkpoints/test_dlt_home_d30"
+      metric_to_track: "precision_home_d30@0.1"
+      num_checkpoints: 2
+    - _target_: fmlib.training.callbacks.epoch.SaveCheckpointCallback
+      base_path: "/home/datalab/nfs/checkpoints/test_dlt_russia_d30"
+      metric_to_track: "precision_russia_d30@0.1"
+      num_checkpoints: 2
+
+epoch_iterable:
+  _target_: fmlib.training.callbacks.epoch.EarlyStoppingIterable
+  max_iter: 20
+
+weights_ignore_pattern: "output_layers.*"
+
+weights_mapping:
+  # Input Encoder
+  base_model.input_encoder.ln_0.bias:   base_model.input_encoder.input_norm.bias
+  base_model.input_encoder.ln_0.weight:   base_model.input_encoder.input_norm.weight
+  base_model.input_encoder.ln_1.bias:   base_model.input_encoder.attention_norm.bias
+  base_model.input_encoder.ln_1.weight:   base_model.input_encoder.attention_norm.weight
+  base_model.input_encoder.mlp.0.bias:   base_model.input_encoder.ffn.up_proj.bias
+  base_model.input_encoder.mlp.0.weight:   base_model.input_encoder.ffn.up_proj.weight
+  base_model.input_encoder.mlp.2.bias:   base_model.input_encoder.ffn.down_proj.bias
+  base_model.input_encoder.mlp.2.weight:   base_model.input_encoder.ffn.down_proj.weight
+  base_model.input_encoder.self_attn.k_layer.bias:   base_model.input_encoder.self_attn.key_layer.bias
+  base_model.input_encoder.self_attn.k_layer.weight:   base_model.input_encoder.self_attn.key_layer.weight
+  base_model.input_encoder.self_attn.q_layer.bias:   base_model.input_encoder.self_attn.query_layer.bias
+  base_model.input_encoder.self_attn.q_layer.weight:   base_model.input_encoder.self_attn.query_layer.weight
+  base_model.input_encoder.self_attn.v_layer.bias:   base_model.input_encoder.self_attn.value_layer.bias
+  base_model.input_encoder.self_attn.v_layer.weight:   base_model.input_encoder.self_attn.value_layer.weight
+
+  # Cross Encoder Layers
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.k_layer.bias: base_model.local_cross_encoder.cross_layers.0.cross_attn.key_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.k_layer.weight: base_model.local_cross_encoder.cross_layers.0.cross_attn.key_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.proj_layer.bias: base_model.local_cross_encoder.cross_layers.0.cross_attn.proj_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.proj_layer.weight: base_model.local_cross_encoder.cross_layers.0.cross_attn.proj_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.q_layer.bias: base_model.local_cross_encoder.cross_layers.0.cross_attn.query_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.q_layer.weight: base_model.local_cross_encoder.cross_layers.0.cross_attn.query_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.v_layer.bias: base_model.local_cross_encoder.cross_layers.0.cross_attn.value_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.cross_attn.v_layer.weight: base_model.local_cross_encoder.cross_layers.0.cross_attn.value_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.ln_0.bias: base_model.local_cross_encoder.cross_layers.0.query_norm.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.ln_0.weight: base_model.local_cross_encoder.cross_layers.0.query_norm.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.ln_1.bias: base_model.local_cross_encoder.cross_layers.0.key_value_norm.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.ln_1.weight: base_model.local_cross_encoder.cross_layers.0.key_value_norm.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.ln_2.bias: base_model.local_cross_encoder.cross_layers.0.attention_norm.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.ln_2.weight: base_model.local_cross_encoder.cross_layers.0.attention_norm.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.mlp.0.bias: base_model.local_cross_encoder.cross_layers.0.ffn.up_proj.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.mlp.0.weight: base_model.local_cross_encoder.cross_layers.0.ffn.up_proj.weight
+  base_model.local_cross_encoder.cross_attn_layers.0.mlp.2.bias: base_model.local_cross_encoder.cross_layers.0.ffn.down_proj.bias
+  base_model.local_cross_encoder.cross_attn_layers.0.mlp.2.weight: base_model.local_cross_encoder.cross_layers.0.ffn.down_proj.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.k_layer.bias: base_model.local_cross_encoder.cross_layers.1.cross_attn.key_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.k_layer.weight: base_model.local_cross_encoder.cross_layers.1.cross_attn.key_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.proj_layer.bias: base_model.local_cross_encoder.cross_layers.1.cross_attn.proj_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.proj_layer.weight: base_model.local_cross_encoder.cross_layers.1.cross_attn.proj_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.q_layer.bias: base_model.local_cross_encoder.cross_layers.1.cross_attn.query_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.q_layer.weight: base_model.local_cross_encoder.cross_layers.1.cross_attn.query_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.v_layer.bias: base_model.local_cross_encoder.cross_layers.1.cross_attn.value_layer.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.cross_attn.v_layer.weight: base_model.local_cross_encoder.cross_layers.1.cross_attn.value_layer.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.ln_0.bias: base_model.local_cross_encoder.cross_layers.1.query_norm.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.ln_0.weight: base_model.local_cross_encoder.cross_layers.1.query_norm.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.ln_1.bias: base_model.local_cross_encoder.cross_layers.1.key_value_norm.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.ln_1.weight: base_model.local_cross_encoder.cross_layers.1.key_value_norm.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.ln_2.bias: base_model.local_cross_encoder.cross_layers.1.attention_norm.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.ln_2.weight: base_model.local_cross_encoder.cross_layers.1.attention_norm.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.mlp.0.bias: base_model.local_cross_encoder.cross_layers.1.ffn.up_proj.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.mlp.0.weight: base_model.local_cross_encoder.cross_layers.1.ffn.up_proj.weight
+  base_model.local_cross_encoder.cross_attn_layers.1.mlp.2.bias: base_model.local_cross_encoder.cross_layers.1.ffn.down_proj.bias
+  base_model.local_cross_encoder.cross_attn_layers.1.mlp.2.weight: base_model.local_cross_encoder.cross_layers.1.ffn.down_proj.weight
+  base_model.local_cross_encoder.layers.0.ln_0.bias: base_model.local_cross_encoder.encoder_layers.0.input_norm.bias
+  base_model.local_cross_encoder.layers.0.ln_0.weight: base_model.local_cross_encoder.encoder_layers.0.input_norm.weight
+  base_model.local_cross_encoder.layers.0.ln_1.bias: base_model.local_cross_encoder.encoder_layers.0.attention_norm.bias
+  base_model.local_cross_encoder.layers.0.ln_1.weight: base_model.local_cross_encoder.encoder_layers.0.attention_norm.weight
+  base_model.local_cross_encoder.layers.0.mlp.0.bias: base_model.local_cross_encoder.encoder_layers.0.ffn.up_proj.bias
+  base_model.local_cross_encoder.layers.0.mlp.0.weight: base_model.local_cross_encoder.encoder_layers.0.ffn.up_proj.weight
+  base_model.local_cross_encoder.layers.0.mlp.2.bias: base_model.local_cross_encoder.encoder_layers.0.ffn.down_proj.bias
+  base_model.local_cross_encoder.layers.0.mlp.2.weight: base_model.local_cross_encoder.encoder_layers.0.ffn.down_proj.weight
+  base_model.local_cross_encoder.layers.0.rotary_emb.inv_freq: base_model.local_cross_encoder.encoder_layers.0.rotary_emb.inv_freq
+  base_model.local_cross_encoder.layers.0.self_attn.k_layer.bias: base_model.local_cross_encoder.encoder_layers.0.self_attn.key_layer.bias
+  base_model.local_cross_encoder.layers.0.self_attn.k_layer.weight: base_model.local_cross_encoder.encoder_layers.0.self_attn.key_layer.weight
+  base_model.local_cross_encoder.layers.0.self_attn.proj_layer.bias: base_model.local_cross_encoder.encoder_layers.0.self_attn.proj_layer.bias
+  base_model.local_cross_encoder.layers.0.self_attn.proj_layer.weight: base_model.local_cross_encoder.encoder_layers.0.self_attn.proj_layer.weight
+  base_model.local_cross_encoder.layers.0.self_attn.q_layer.bias: base_model.local_cross_encoder.encoder_layers.0.self_attn.query_layer.bias
+  base_model.local_cross_encoder.layers.0.self_attn.q_layer.weight: base_model.local_cross_encoder.encoder_layers.0.self_attn.query_layer.weight
+  base_model.local_cross_encoder.layers.0.self_attn.v_layer.bias: base_model.local_cross_encoder.encoder_layers.0.self_attn.value_layer.bias
+  base_model.local_cross_encoder.layers.0.self_attn.v_layer.weight: base_model.local_cross_encoder.encoder_layers.0.self_attn.value_layer.weight
+  base_model.local_cross_encoder.layers.1.ln_0.bias: base_model.local_cross_encoder.encoder_layers.1.input_norm.bias
+  base_model.local_cross_encoder.layers.1.ln_0.weight: base_model.local_cross_encoder.encoder_layers.1.input_norm.weight
+  base_model.local_cross_encoder.layers.1.ln_1.bias: base_model.local_cross_encoder.encoder_layers.1.attention_norm.bias
+  base_model.local_cross_encoder.layers.1.ln_1.weight: base_model.local_cross_encoder.encoder_layers.1.attention_norm.weight
+  base_model.local_cross_encoder.layers.1.mlp.0.bias: base_model.local_cross_encoder.encoder_layers.1.ffn.up_proj.bias
+  base_model.local_cross_encoder.layers.1.mlp.0.weight: base_model.local_cross_encoder.encoder_layers.1.ffn.up_proj.weight
+  base_model.local_cross_encoder.layers.1.mlp.2.bias: base_model.local_cross_encoder.encoder_layers.1.ffn.down_proj.bias
+  base_model.local_cross_encoder.layers.1.mlp.2.weight: base_model.local_cross_encoder.encoder_layers.1.ffn.down_proj.weight
+  base_model.local_cross_encoder.layers.1.rotary_emb.inv_freq: base_model.local_cross_encoder.encoder_layers.1.rotary_emb.inv_freq
+  base_model.local_cross_encoder.layers.1.self_attn.k_layer.bias: base_model.local_cross_encoder.encoder_layers.1.self_attn.key_layer.bias
+  base_model.local_cross_encoder.layers.1.self_attn.k_layer.weight: base_model.local_cross_encoder.encoder_layers.1.self_attn.key_layer.weight
+  base_model.local_cross_encoder.layers.1.self_attn.proj_layer.bias: base_model.local_cross_encoder.encoder_layers.1.self_attn.proj_layer.bias
+  base_model.local_cross_encoder.layers.1.self_attn.proj_layer.weight: base_model.local_cross_encoder.encoder_layers.1.self_attn.proj_layer.weight
+  base_model.local_cross_encoder.layers.1.self_attn.q_layer.bias: base_model.local_cross_encoder.encoder_layers.1.self_attn.query_layer.bias
+  base_model.local_cross_encoder.layers.1.self_attn.q_layer.weight: base_model.local_cross_encoder.encoder_layers.1.self_attn.query_layer.weight
+  base_model.local_cross_encoder.layers.1.self_attn.v_layer.bias: base_model.local_cross_encoder.encoder_layers.1.self_attn.value_layer.bias
+  base_model.local_cross_encoder.layers.1.self_attn.v_layer.weight: base_model.local_cross_encoder.encoder_layers.1.self_attn.value_layer.weight
+
+  # Patch Decoder
+  base_model.Model.decoder.0.ln_0.bias: base_model.patches_decoder.decoder.0.input_norm.bias
+  base_model.Model.decoder.0.ln_0.weight: base_model.patches_decoder.decoder.0.input_norm.weight
+  base_model.Model.decoder.0.ln_1.bias: base_model.patches_decoder.decoder.0.attention_norm.bias
+  base_model.Model.decoder.0.ln_1.weight: base_model.patches_decoder.decoder.0.attention_norm.weight
+  base_model.Model.decoder.0.mlp.0.bias: base_model.patches_decoder.decoder.0.ffn.up_proj.bias
+  base_model.Model.decoder.0.mlp.0.weight: base_model.patches_decoder.decoder.0.ffn.up_proj.weight
+  base_model.Model.decoder.0.mlp.2.bias: base_model.patches_decoder.decoder.0.ffn.down_proj.bias
+  base_model.Model.decoder.0.mlp.2.weight: base_model.patches_decoder.decoder.0.ffn.down_proj.weight
+  base_model.Model.decoder.0.rotary_emb.inv_freq: base_model.patches_decoder.decoder.0.rotary_emb.inv_freq
+  base_model.Model.decoder.0.self_attn.k_layer.bias: base_model.patches_decoder.decoder.0.self_attn.key_layer.bias
+  base_model.Model.decoder.0.self_attn.k_layer.weight: base_model.patches_decoder.decoder.0.self_attn.key_layer.weight
+  base_model.Model.decoder.0.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.0.self_attn.proj_layer.bias
+  base_model.Model.decoder.0.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.0.self_attn.proj_layer.weight
+  base_model.Model.decoder.0.self_attn.q_layer.bias: base_model.patches_decoder.decoder.0.self_attn.query_layer.bias
+  base_model.Model.decoder.0.self_attn.q_layer.weight: base_model.patches_decoder.decoder.0.self_attn.query_layer.weight
+  base_model.Model.decoder.0.self_attn.v_layer.bias: base_model.patches_decoder.decoder.0.self_attn.value_layer.bias
+  base_model.Model.decoder.0.self_attn.v_layer.weight: base_model.patches_decoder.decoder.0.self_attn.value_layer.weight
+  base_model.Model.decoder.1.ln_0.bias: base_model.patches_decoder.decoder.1.input_norm.bias
+  base_model.Model.decoder.1.ln_0.weight: base_model.patches_decoder.decoder.1.input_norm.weight
+  base_model.Model.decoder.1.ln_1.bias: base_model.patches_decoder.decoder.1.attention_norm.bias
+  base_model.Model.decoder.1.ln_1.weight: base_model.patches_decoder.decoder.1.attention_norm.weight
+  base_model.Model.decoder.1.mlp.0.bias: base_model.patches_decoder.decoder.1.ffn.up_proj.bias
+  base_model.Model.decoder.1.mlp.0.weight: base_model.patches_decoder.decoder.1.ffn.up_proj.weight
+  base_model.Model.decoder.1.mlp.2.bias: base_model.patches_decoder.decoder.1.ffn.down_proj.bias
+  base_model.Model.decoder.1.mlp.2.weight: base_model.patches_decoder.decoder.1.ffn.down_proj.weight
+  base_model.Model.decoder.1.rotary_emb.inv_freq: base_model.patches_decoder.decoder.1.rotary_emb.inv_freq
+  base_model.Model.decoder.1.self_attn.k_layer.bias: base_model.patches_decoder.decoder.1.self_attn.key_layer.bias
+  base_model.Model.decoder.1.self_attn.k_layer.weight: base_model.patches_decoder.decoder.1.self_attn.key_layer.weight
+  base_model.Model.decoder.1.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.1.self_attn.proj_layer.bias
+  base_model.Model.decoder.1.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.1.self_attn.proj_layer.weight
+  base_model.Model.decoder.1.self_attn.q_layer.bias: base_model.patches_decoder.decoder.1.self_attn.query_layer.bias
+  base_model.Model.decoder.1.self_attn.q_layer.weight: base_model.patches_decoder.decoder.1.self_attn.query_layer.weight
+  base_model.Model.decoder.1.self_attn.v_layer.bias: base_model.patches_decoder.decoder.1.self_attn.value_layer.bias
+  base_model.Model.decoder.1.self_attn.v_layer.weight: base_model.patches_decoder.decoder.1.self_attn.value_layer.weight
+  base_model.Model.decoder.10.ln_0.bias: base_model.patches_decoder.decoder.10.input_norm.bias
+  base_model.Model.decoder.10.ln_0.weight: base_model.patches_decoder.decoder.10.input_norm.weight
+  base_model.Model.decoder.10.ln_1.bias: base_model.patches_decoder.decoder.10.attention_norm.bias
+  base_model.Model.decoder.10.ln_1.weight: base_model.patches_decoder.decoder.10.attention_norm.weight
+  base_model.Model.decoder.10.mlp.0.bias: base_model.patches_decoder.decoder.10.ffn.up_proj.bias
+  base_model.Model.decoder.10.mlp.0.weight: base_model.patches_decoder.decoder.10.ffn.up_proj.weight
+  base_model.Model.decoder.10.mlp.2.bias: base_model.patches_decoder.decoder.10.ffn.down_proj.bias
+  base_model.Model.decoder.10.mlp.2.weight: base_model.patches_decoder.decoder.10.ffn.down_proj.weight
+  base_model.Model.decoder.10.rotary_emb.inv_freq: base_model.patches_decoder.decoder.10.rotary_emb.inv_freq
+  base_model.Model.decoder.10.self_attn.k_layer.bias: base_model.patches_decoder.decoder.10.self_attn.key_layer.bias
+  base_model.Model.decoder.10.self_attn.k_layer.weight: base_model.patches_decoder.decoder.10.self_attn.key_layer.weight
+  base_model.Model.decoder.10.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.10.self_attn.proj_layer.bias
+  base_model.Model.decoder.10.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.10.self_attn.proj_layer.weight
+  base_model.Model.decoder.10.self_attn.q_layer.bias: base_model.patches_decoder.decoder.10.self_attn.query_layer.bias
+  base_model.Model.decoder.10.self_attn.q_layer.weight: base_model.patches_decoder.decoder.10.self_attn.query_layer.weight
+  base_model.Model.decoder.10.self_attn.v_layer.bias: base_model.patches_decoder.decoder.10.self_attn.value_layer.bias
+  base_model.Model.decoder.10.self_attn.v_layer.weight: base_model.patches_decoder.decoder.10.self_attn.value_layer.weight
+  base_model.Model.decoder.11.ln_0.bias: base_model.patches_decoder.decoder.11.input_norm.bias
+  base_model.Model.decoder.11.ln_0.weight: base_model.patches_decoder.decoder.11.input_norm.weight
+  base_model.Model.decoder.11.ln_1.bias: base_model.patches_decoder.decoder.11.attention_norm.bias
+  base_model.Model.decoder.11.ln_1.weight: base_model.patches_decoder.decoder.11.attention_norm.weight
+  base_model.Model.decoder.11.mlp.0.bias: base_model.patches_decoder.decoder.11.ffn.up_proj.bias
+  base_model.Model.decoder.11.mlp.0.weight: base_model.patches_decoder.decoder.11.ffn.up_proj.weight
+  base_model.Model.decoder.11.mlp.2.bias: base_model.patches_decoder.decoder.11.ffn.down_proj.bias
+  base_model.Model.decoder.11.mlp.2.weight: base_model.patches_decoder.decoder.11.ffn.down_proj.weight
+  base_model.Model.decoder.11.rotary_emb.inv_freq: base_model.patches_decoder.decoder.11.rotary_emb.inv_freq
+  base_model.Model.decoder.11.self_attn.k_layer.bias: base_model.patches_decoder.decoder.11.self_attn.key_layer.bias
+  base_model.Model.decoder.11.self_attn.k_layer.weight: base_model.patches_decoder.decoder.11.self_attn.key_layer.weight
+  base_model.Model.decoder.11.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.11.self_attn.proj_layer.bias
+  base_model.Model.decoder.11.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.11.self_attn.proj_layer.weight
+  base_model.Model.decoder.11.self_attn.q_layer.bias: base_model.patches_decoder.decoder.11.self_attn.query_layer.bias
+  base_model.Model.decoder.11.self_attn.q_layer.weight: base_model.patches_decoder.decoder.11.self_attn.query_layer.weight
+  base_model.Model.decoder.11.self_attn.v_layer.bias: base_model.patches_decoder.decoder.11.self_attn.value_layer.bias
+  base_model.Model.decoder.11.self_attn.v_layer.weight: base_model.patches_decoder.decoder.11.self_attn.value_layer.weight
+  base_model.Model.decoder.12.ln_0.bias: base_model.patches_decoder.decoder.12.input_norm.bias
+  base_model.Model.decoder.12.ln_0.weight: base_model.patches_decoder.decoder.12.input_norm.weight
+  base_model.Model.decoder.12.ln_1.bias: base_model.patches_decoder.decoder.12.attention_norm.bias
+  base_model.Model.decoder.12.ln_1.weight: base_model.patches_decoder.decoder.12.attention_norm.weight
+  base_model.Model.decoder.12.mlp.0.bias: base_model.patches_decoder.decoder.12.ffn.up_proj.bias
+  base_model.Model.decoder.12.mlp.0.weight: base_model.patches_decoder.decoder.12.ffn.up_proj.weight
+  base_model.Model.decoder.12.mlp.2.bias: base_model.patches_decoder.decoder.12.ffn.down_proj.bias
+  base_model.Model.decoder.12.mlp.2.weight: base_model.patches_decoder.decoder.12.ffn.down_proj.weight
+  base_model.Model.decoder.12.rotary_emb.inv_freq: base_model.patches_decoder.decoder.12.rotary_emb.inv_freq
+  base_model.Model.decoder.12.self_attn.k_layer.bias: base_model.patches_decoder.decoder.12.self_attn.key_layer.bias
+  base_model.Model.decoder.12.self_attn.k_layer.weight: base_model.patches_decoder.decoder.12.self_attn.key_layer.weight
+  base_model.Model.decoder.12.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.12.self_attn.proj_layer.bias
+  base_model.Model.decoder.12.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.12.self_attn.proj_layer.weight
+  base_model.Model.decoder.12.self_attn.q_layer.bias: base_model.patches_decoder.decoder.12.self_attn.query_layer.bias
+  base_model.Model.decoder.12.self_attn.q_layer.weight: base_model.patches_decoder.decoder.12.self_attn.query_layer.weight
+  base_model.Model.decoder.12.self_attn.v_layer.bias: base_model.patches_decoder.decoder.12.self_attn.value_layer.bias
+  base_model.Model.decoder.12.self_attn.v_layer.weight: base_model.patches_decoder.decoder.12.self_attn.value_layer.weight
+  base_model.Model.decoder.13.ln_0.bias: base_model.patches_decoder.decoder.13.input_norm.bias
+  base_model.Model.decoder.13.ln_0.weight: base_model.patches_decoder.decoder.13.input_norm.weight
+  base_model.Model.decoder.13.ln_1.bias: base_model.patches_decoder.decoder.13.attention_norm.bias
+  base_model.Model.decoder.13.ln_1.weight: base_model.patches_decoder.decoder.13.attention_norm.weight
+  base_model.Model.decoder.13.mlp.0.bias: base_model.patches_decoder.decoder.13.ffn.up_proj.bias
+  base_model.Model.decoder.13.mlp.0.weight: base_model.patches_decoder.decoder.13.ffn.up_proj.weight
+  base_model.Model.decoder.13.mlp.2.bias: base_model.patches_decoder.decoder.13.ffn.down_proj.bias
+  base_model.Model.decoder.13.mlp.2.weight: base_model.patches_decoder.decoder.13.ffn.down_proj.weight
+  base_model.Model.decoder.13.rotary_emb.inv_freq: base_model.patches_decoder.decoder.13.rotary_emb.inv_freq
+  base_model.Model.decoder.13.self_attn.k_layer.bias: base_model.patches_decoder.decoder.13.self_attn.key_layer.bias
+  base_model.Model.decoder.13.self_attn.k_layer.weight: base_model.patches_decoder.decoder.13.self_attn.key_layer.weight
+  base_model.Model.decoder.13.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.13.self_attn.proj_layer.bias
+  base_model.Model.decoder.13.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.13.self_attn.proj_layer.weight
+  base_model.Model.decoder.13.self_attn.q_layer.bias: base_model.patches_decoder.decoder.13.self_attn.query_layer.bias
+  base_model.Model.decoder.13.self_attn.q_layer.weight: base_model.patches_decoder.decoder.13.self_attn.query_layer.weight
+  base_model.Model.decoder.13.self_attn.v_layer.bias: base_model.patches_decoder.decoder.13.self_attn.value_layer.bias
+  base_model.Model.decoder.13.self_attn.v_layer.weight: base_model.patches_decoder.decoder.13.self_attn.value_layer.weight
+  base_model.Model.decoder.14.ln_0.bias: base_model.patches_decoder.decoder.14.input_norm.bias
+  base_model.Model.decoder.14.ln_0.weight: base_model.patches_decoder.decoder.14.input_norm.weight
+  base_model.Model.decoder.14.ln_1.bias: base_model.patches_decoder.decoder.14.attention_norm.bias
+  base_model.Model.decoder.14.ln_1.weight: base_model.patches_decoder.decoder.14.attention_norm.weight
+  base_model.Model.decoder.14.mlp.0.bias: base_model.patches_decoder.decoder.14.ffn.up_proj.bias
+  base_model.Model.decoder.14.mlp.0.weight: base_model.patches_decoder.decoder.14.ffn.up_proj.weight
+  base_model.Model.decoder.14.mlp.2.bias: base_model.patches_decoder.decoder.14.ffn.down_proj.bias
+  base_model.Model.decoder.14.mlp.2.weight: base_model.patches_decoder.decoder.14.ffn.down_proj.weight
+  base_model.Model.decoder.14.rotary_emb.inv_freq: base_model.patches_decoder.decoder.14.rotary_emb.inv_freq
+  base_model.Model.decoder.14.self_attn.k_layer.bias: base_model.patches_decoder.decoder.14.self_attn.key_layer.bias
+  base_model.Model.decoder.14.self_attn.k_layer.weight: base_model.patches_decoder.decoder.14.self_attn.key_layer.weight
+  base_model.Model.decoder.14.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.14.self_attn.proj_layer.bias
+  base_model.Model.decoder.14.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.14.self_attn.proj_layer.weight
+  base_model.Model.decoder.14.self_attn.q_layer.bias: base_model.patches_decoder.decoder.14.self_attn.query_layer.bias
+  base_model.Model.decoder.14.self_attn.q_layer.weight: base_model.patches_decoder.decoder.14.self_attn.query_layer.weight
+  base_model.Model.decoder.14.self_attn.v_layer.bias: base_model.patches_decoder.decoder.14.self_attn.value_layer.bias
+  base_model.Model.decoder.14.self_attn.v_layer.weight: base_model.patches_decoder.decoder.14.self_attn.value_layer.weight
+  base_model.Model.decoder.2.ln_0.bias: base_model.patches_decoder.decoder.2.input_norm.bias
+  base_model.Model.decoder.2.ln_0.weight: base_model.patches_decoder.decoder.2.input_norm.weight
+  base_model.Model.decoder.2.ln_1.bias: base_model.patches_decoder.decoder.2.attention_norm.bias
+  base_model.Model.decoder.2.ln_1.weight: base_model.patches_decoder.decoder.2.attention_norm.weight
+  base_model.Model.decoder.2.mlp.0.bias: base_model.patches_decoder.decoder.2.ffn.up_proj.bias
+  base_model.Model.decoder.2.mlp.0.weight: base_model.patches_decoder.decoder.2.ffn.up_proj.weight
+  base_model.Model.decoder.2.mlp.2.bias: base_model.patches_decoder.decoder.2.ffn.down_proj.bias
+  base_model.Model.decoder.2.mlp.2.weight: base_model.patches_decoder.decoder.2.ffn.down_proj.weight
+  base_model.Model.decoder.2.rotary_emb.inv_freq: base_model.patches_decoder.decoder.2.rotary_emb.inv_freq
+  base_model.Model.decoder.2.self_attn.k_layer.bias: base_model.patches_decoder.decoder.2.self_attn.key_layer.bias
+  base_model.Model.decoder.2.self_attn.k_layer.weight: base_model.patches_decoder.decoder.2.self_attn.key_layer.weight
+  base_model.Model.decoder.2.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.2.self_attn.proj_layer.bias
+  base_model.Model.decoder.2.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.2.self_attn.proj_layer.weight
+  base_model.Model.decoder.2.self_attn.q_layer.bias: base_model.patches_decoder.decoder.2.self_attn.query_layer.bias
+  base_model.Model.decoder.2.self_attn.q_layer.weight: base_model.patches_decoder.decoder.2.self_attn.query_layer.weight
+  base_model.Model.decoder.2.self_attn.v_layer.bias: base_model.patches_decoder.decoder.2.self_attn.value_layer.bias
+  base_model.Model.decoder.2.self_attn.v_layer.weight: base_model.patches_decoder.decoder.2.self_attn.value_layer.weight
+  base_model.Model.decoder.3.ln_0.bias: base_model.patches_decoder.decoder.3.input_norm.bias
+  base_model.Model.decoder.3.ln_0.weight: base_model.patches_decoder.decoder.3.input_norm.weight
+  base_model.Model.decoder.3.ln_1.bias: base_model.patches_decoder.decoder.3.attention_norm.bias
+  base_model.Model.decoder.3.ln_1.weight: base_model.patches_decoder.decoder.3.attention_norm.weight
+  base_model.Model.decoder.3.mlp.0.bias: base_model.patches_decoder.decoder.3.ffn.up_proj.bias
+  base_model.Model.decoder.3.mlp.0.weight: base_model.patches_decoder.decoder.3.ffn.up_proj.weight
+  base_model.Model.decoder.3.mlp.2.bias: base_model.patches_decoder.decoder.3.ffn.down_proj.bias
+  base_model.Model.decoder.3.mlp.2.weight: base_model.patches_decoder.decoder.3.ffn.down_proj.weight
+  base_model.Model.decoder.3.rotary_emb.inv_freq: base_model.patches_decoder.decoder.3.rotary_emb.inv_freq
+  base_model.Model.decoder.3.self_attn.k_layer.bias: base_model.patches_decoder.decoder.3.self_attn.key_layer.bias
+  base_model.Model.decoder.3.self_attn.k_layer.weight: base_model.patches_decoder.decoder.3.self_attn.key_layer.weight
+  base_model.Model.decoder.3.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.3.self_attn.proj_layer.bias
+  base_model.Model.decoder.3.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.3.self_attn.proj_layer.weight
+  base_model.Model.decoder.3.self_attn.q_layer.bias: base_model.patches_decoder.decoder.3.self_attn.query_layer.bias
+  base_model.Model.decoder.3.self_attn.q_layer.weight: base_model.patches_decoder.decoder.3.self_attn.query_layer.weight
+  base_model.Model.decoder.3.self_attn.v_layer.bias: base_model.patches_decoder.decoder.3.self_attn.value_layer.bias
+  base_model.Model.decoder.3.self_attn.v_layer.weight: base_model.patches_decoder.decoder.3.self_attn.value_layer.weight
+  base_model.Model.decoder.4.ln_0.bias: base_model.patches_decoder.decoder.4.input_norm.bias
+  base_model.Model.decoder.4.ln_0.weight: base_model.patches_decoder.decoder.4.input_norm.weight
+  base_model.Model.decoder.4.ln_1.bias: base_model.patches_decoder.decoder.4.attention_norm.bias
+  base_model.Model.decoder.4.ln_1.weight: base_model.patches_decoder.decoder.4.attention_norm.weight
+  base_model.Model.decoder.4.mlp.0.bias: base_model.patches_decoder.decoder.4.ffn.up_proj.bias
+  base_model.Model.decoder.4.mlp.0.weight: base_model.patches_decoder.decoder.4.ffn.up_proj.weight
+  base_model.Model.decoder.4.mlp.2.bias: base_model.patches_decoder.decoder.4.ffn.down_proj.bias
+  base_model.Model.decoder.4.mlp.2.weight: base_model.patches_decoder.decoder.4.ffn.down_proj.weight
+  base_model.Model.decoder.4.rotary_emb.inv_freq: base_model.patches_decoder.decoder.4.rotary_emb.inv_freq
+  base_model.Model.decoder.4.self_attn.k_layer.bias: base_model.patches_decoder.decoder.4.self_attn.key_layer.bias
+  base_model.Model.decoder.4.self_attn.k_layer.weight: base_model.patches_decoder.decoder.4.self_attn.key_layer.weight
+  base_model.Model.decoder.4.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.4.self_attn.proj_layer.bias
+  base_model.Model.decoder.4.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.4.self_attn.proj_layer.weight
+  base_model.Model.decoder.4.self_attn.q_layer.bias: base_model.patches_decoder.decoder.4.self_attn.query_layer.bias
+  base_model.Model.decoder.4.self_attn.q_layer.weight: base_model.patches_decoder.decoder.4.self_attn.query_layer.weight
+  base_model.Model.decoder.4.self_attn.v_layer.bias: base_model.patches_decoder.decoder.4.self_attn.value_layer.bias
+  base_model.Model.decoder.4.self_attn.v_layer.weight: base_model.patches_decoder.decoder.4.self_attn.value_layer.weight
+  base_model.Model.decoder.5.ln_0.bias: base_model.patches_decoder.decoder.5.input_norm.bias
+  base_model.Model.decoder.5.ln_0.weight: base_model.patches_decoder.decoder.5.input_norm.weight
+  base_model.Model.decoder.5.ln_1.bias: base_model.patches_decoder.decoder.5.attention_norm.bias
+  base_model.Model.decoder.5.ln_1.weight: base_model.patches_decoder.decoder.5.attention_norm.weight
+  base_model.Model.decoder.5.mlp.0.bias: base_model.patches_decoder.decoder.5.ffn.up_proj.bias
+  base_model.Model.decoder.5.mlp.0.weight: base_model.patches_decoder.decoder.5.ffn.up_proj.weight
+  base_model.Model.decoder.5.mlp.2.bias: base_model.patches_decoder.decoder.5.ffn.down_proj.bias
+  base_model.Model.decoder.5.mlp.2.weight: base_model.patches_decoder.decoder.5.ffn.down_proj.weight
+  base_model.Model.decoder.5.rotary_emb.inv_freq: base_model.patches_decoder.decoder.5.rotary_emb.inv_freq
+  base_model.Model.decoder.5.self_attn.k_layer.bias: base_model.patches_decoder.decoder.5.self_attn.key_layer.bias
+  base_model.Model.decoder.5.self_attn.k_layer.weight: base_model.patches_decoder.decoder.5.self_attn.key_layer.weight
+  base_model.Model.decoder.5.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.5.self_attn.proj_layer.bias
+  base_model.Model.decoder.5.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.5.self_attn.proj_layer.weight
+  base_model.Model.decoder.5.self_attn.q_layer.bias: base_model.patches_decoder.decoder.5.self_attn.query_layer.bias
+  base_model.Model.decoder.5.self_attn.q_layer.weight: base_model.patches_decoder.decoder.5.self_attn.query_layer.weight
+  base_model.Model.decoder.5.self_attn.v_layer.bias: base_model.patches_decoder.decoder.5.self_attn.value_layer.bias
+  base_model.Model.decoder.5.self_attn.v_layer.weight: base_model.patches_decoder.decoder.5.self_attn.value_layer.weight
+  base_model.Model.decoder.6.ln_0.bias: base_model.patches_decoder.decoder.6.input_norm.bias
+  base_model.Model.decoder.6.ln_0.weight: base_model.patches_decoder.decoder.6.input_norm.weight
+  base_model.Model.decoder.6.ln_1.bias: base_model.patches_decoder.decoder.6.attention_norm.bias
+  base_model.Model.decoder.6.ln_1.weight: base_model.patches_decoder.decoder.6.attention_norm.weight
+  base_model.Model.decoder.6.mlp.0.bias: base_model.patches_decoder.decoder.6.ffn.up_proj.bias
+  base_model.Model.decoder.6.mlp.0.weight: base_model.patches_decoder.decoder.6.ffn.up_proj.weight
+  base_model.Model.decoder.6.mlp.2.bias: base_model.patches_decoder.decoder.6.ffn.down_proj.bias
+  base_model.Model.decoder.6.mlp.2.weight: base_model.patches_decoder.decoder.6.ffn.down_proj.weight
+  base_model.Model.decoder.6.rotary_emb.inv_freq: base_model.patches_decoder.decoder.6.rotary_emb.inv_freq
+  base_model.Model.decoder.6.self_attn.k_layer.bias: base_model.patches_decoder.decoder.6.self_attn.key_layer.bias
+  base_model.Model.decoder.6.self_attn.k_layer.weight: base_model.patches_decoder.decoder.6.self_attn.key_layer.weight
+  base_model.Model.decoder.6.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.6.self_attn.proj_layer.bias
+  base_model.Model.decoder.6.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.6.self_attn.proj_layer.weight
+  base_model.Model.decoder.6.self_attn.q_layer.bias: base_model.patches_decoder.decoder.6.self_attn.query_layer.bias
+  base_model.Model.decoder.6.self_attn.q_layer.weight: base_model.patches_decoder.decoder.6.self_attn.query_layer.weight
+  base_model.Model.decoder.6.self_attn.v_layer.bias: base_model.patches_decoder.decoder.6.self_attn.value_layer.bias
+  base_model.Model.decoder.6.self_attn.v_layer.weight: base_model.patches_decoder.decoder.6.self_attn.value_layer.weight
+  base_model.Model.decoder.7.ln_0.bias: base_model.patches_decoder.decoder.7.input_norm.bias
+  base_model.Model.decoder.7.ln_0.weight: base_model.patches_decoder.decoder.7.input_norm.weight
+  base_model.Model.decoder.7.ln_1.bias: base_model.patches_decoder.decoder.7.attention_norm.bias
+  base_model.Model.decoder.7.ln_1.weight: base_model.patches_decoder.decoder.7.attention_norm.weight
+  base_model.Model.decoder.7.mlp.0.bias: base_model.patches_decoder.decoder.7.ffn.up_proj.bias
+  base_model.Model.decoder.7.mlp.0.weight: base_model.patches_decoder.decoder.7.ffn.up_proj.weight
+  base_model.Model.decoder.7.mlp.2.bias: base_model.patches_decoder.decoder.7.ffn.down_proj.bias
+  base_model.Model.decoder.7.mlp.2.weight: base_model.patches_decoder.decoder.7.ffn.down_proj.weight
+  base_model.Model.decoder.7.rotary_emb.inv_freq: base_model.patches_decoder.decoder.7.rotary_emb.inv_freq
+  base_model.Model.decoder.7.self_attn.k_layer.bias: base_model.patches_decoder.decoder.7.self_attn.key_layer.bias
+  base_model.Model.decoder.7.self_attn.k_layer.weight: base_model.patches_decoder.decoder.7.self_attn.key_layer.weight
+  base_model.Model.decoder.7.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.7.self_attn.proj_layer.bias
+  base_model.Model.decoder.7.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.7.self_attn.proj_layer.weight
+  base_model.Model.decoder.7.self_attn.q_layer.bias: base_model.patches_decoder.decoder.7.self_attn.query_layer.bias
+  base_model.Model.decoder.7.self_attn.q_layer.weight: base_model.patches_decoder.decoder.7.self_attn.query_layer.weight
+  base_model.Model.decoder.7.self_attn.v_layer.bias: base_model.patches_decoder.decoder.7.self_attn.value_layer.bias
+  base_model.Model.decoder.7.self_attn.v_layer.weight: base_model.patches_decoder.decoder.7.self_attn.value_layer.weight
+  base_model.Model.decoder.8.ln_0.bias: base_model.patches_decoder.decoder.8.input_norm.bias
+  base_model.Model.decoder.8.ln_0.weight: base_model.patches_decoder.decoder.8.input_norm.weight
+  base_model.Model.decoder.8.ln_1.bias: base_model.patches_decoder.decoder.8.attention_norm.bias
+  base_model.Model.decoder.8.ln_1.weight: base_model.patches_decoder.decoder.8.attention_norm.weight
+  base_model.Model.decoder.8.mlp.0.bias: base_model.patches_decoder.decoder.8.ffn.up_proj.bias
+  base_model.Model.decoder.8.mlp.0.weight: base_model.patches_decoder.decoder.8.ffn.up_proj.weight
+  base_model.Model.decoder.8.mlp.2.bias: base_model.patches_decoder.decoder.8.ffn.down_proj.bias
+  base_model.Model.decoder.8.mlp.2.weight: base_model.patches_decoder.decoder.8.ffn.down_proj.weight
+  base_model.Model.decoder.8.rotary_emb.inv_freq: base_model.patches_decoder.decoder.8.rotary_emb.inv_freq
+  base_model.Model.decoder.8.self_attn.k_layer.bias: base_model.patches_decoder.decoder.8.self_attn.key_layer.bias
+  base_model.Model.decoder.8.self_attn.k_layer.weight: base_model.patches_decoder.decoder.8.self_attn.key_layer.weight
+  base_model.Model.decoder.8.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.8.self_attn.proj_layer.bias
+  base_model.Model.decoder.8.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.8.self_attn.proj_layer.weight
+  base_model.Model.decoder.8.self_attn.q_layer.bias: base_model.patches_decoder.decoder.8.self_attn.query_layer.bias
+  base_model.Model.decoder.8.self_attn.q_layer.weight: base_model.patches_decoder.decoder.8.self_attn.query_layer.weight
+  base_model.Model.decoder.8.self_attn.v_layer.bias: base_model.patches_decoder.decoder.8.self_attn.value_layer.bias
+  base_model.Model.decoder.8.self_attn.v_layer.weight: base_model.patches_decoder.decoder.8.self_attn.value_layer.weight
+  base_model.Model.decoder.9.ln_0.bias: base_model.patches_decoder.decoder.9.input_norm.bias
+  base_model.Model.decoder.9.ln_0.weight: base_model.patches_decoder.decoder.9.input_norm.weight
+  base_model.Model.decoder.9.ln_1.bias: base_model.patches_decoder.decoder.9.attention_norm.bias
+  base_model.Model.decoder.9.ln_1.weight: base_model.patches_decoder.decoder.9.attention_norm.weight
+  base_model.Model.decoder.9.mlp.0.bias: base_model.patches_decoder.decoder.9.ffn.up_proj.bias
+  base_model.Model.decoder.9.mlp.0.weight: base_model.patches_decoder.decoder.9.ffn.up_proj.weight
+  base_model.Model.decoder.9.mlp.2.bias: base_model.patches_decoder.decoder.9.ffn.down_proj.bias
+  base_model.Model.decoder.9.mlp.2.weight: base_model.patches_decoder.decoder.9.ffn.down_proj.weight
+  base_model.Model.decoder.9.rotary_emb.inv_freq: base_model.patches_decoder.decoder.9.rotary_emb.inv_freq
+  base_model.Model.decoder.9.self_attn.k_layer.bias: base_model.patches_decoder.decoder.9.self_attn.key_layer.bias
+  base_model.Model.decoder.9.self_attn.k_layer.weight: base_model.patches_decoder.decoder.9.self_attn.key_layer.weight
+  base_model.Model.decoder.9.self_attn.proj_layer.bias: base_model.patches_decoder.decoder.9.self_attn.proj_layer.bias
+  base_model.Model.decoder.9.self_attn.proj_layer.weight: base_model.patches_decoder.decoder.9.self_attn.proj_layer.weight
+  base_model.Model.decoder.9.self_attn.q_layer.bias: base_model.patches_decoder.decoder.9.self_attn.query_layer.bias
+  base_model.Model.decoder.9.self_attn.q_layer.weight: base_model.patches_decoder.decoder.9.self_attn.query_layer.weight
+  base_model.Model.decoder.9.self_attn.v_layer.bias: base_model.patches_decoder.decoder.9.self_attn.value_layer.bias
+  base_model.Model.decoder.9.self_attn.v_layer.weight: base_model.patches_decoder.decoder.9.self_attn.value_layer.weight
+  base_model.Model.ln_0.bias: base_model.patches_decoder.norm.bias
+  base_model.Model.ln_0.weight: base_model.patches_decoder.norm.weight

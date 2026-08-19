@@ -1,0 +1,13 @@
+epk_id: {}
+cat_features:
+    sequential: true
+    sequence_length: 52
+    padding: 0
+num_features:
+    sequential: true
+    sequence_length: 261
+    padding: 0
+seq_hidden_state:
+    sequential: true
+    sequence_length: 256
+    padding: 0

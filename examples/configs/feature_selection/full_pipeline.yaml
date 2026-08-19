@@ -1,0 +1,161 @@
+# Полный пайплайн: статистики -> catboost_rfe -> boruta_shap.
+# Конфигурация проверена end-to-end на Spark.
+#
+# Запуск:
+#   config = FeatureSelectionConfig.from_yaml("full_pipeline.yaml")
+#   result = FeatureSelectionPipeline(config).fit_select(
+#       spark=spark,
+#       datasets={"train": train_df},
+#       schema=FeatureSchema(
+#           categorical=cat_cols,
+#           continuous=num_cols,
+#           target="target_attr_1",
+#           task_type="binary_classification",
+#           time="month_part",                      # обязателен для catboost_rfe
+#           id_columns=["epk_id", "product", "evt_dttm",
+#                       "report_month", "target_attr_2", "target_attr_3"],
+#       ),
+#       output_dir="./fs_run",
+#   )
+
+statistics:
+  order:
+    - null_rate
+    - constants
+    - low_variance
+    - correlation
+
+  null_rate:
+    threshold: 0.95          # доля пропусков, выше которой признак отбрасывается
+
+  constants:
+    max_frequency: 0.98      # доля самого частого значения
+    chunk_size: 1000         # колонок за один Spark-запрос
+
+  low_variance:
+    min_variance: 0.01
+    # ВНИМАНИЕ: при scale_method "standard" фильтр отбрасывает только колонки
+    # с дисперсией ровно 0 — z-оценка делает дисперсию равной 1 для всех
+    # остальных, и min_variance перестаёт на что-либо влиять.
+    # Для реальной работы фильтра нужен minmax или robust.
+    scale_method: robust     # standard | minmax | robust
+
+  correlation:
+    threshold: 0.95
+    tie_break: null_rate     # кого выбрасывать из коррелирующей пары
+    # ВНИМАНИЕ: берёт ПЕРВЫЕ max_rows строк через .limit(), а не случайную
+    # выборку. На партиционированных по времени данных это может означать
+    # один-два первых месяца.
+    max_rows: 500000
+
+  psi:
+    # ВНИМАНИЕ: включать только если ВСЕ кандидаты числовые. PSI передаёт в
+    # approxQuantile весь список кандидатов, включая categorical, и падает
+    # с IllegalArgumentException на строковых колонках.
+    mode: month_over_month   # month_over_month требует FeatureSchema.time
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part # должен совпадать с FeatureSchema.time
+    test_months: 1
+    relative_error: 0.001
+    batch_size: 100
+
+model:
+  # Стадия запускает РОВНО ОДИН селектор. Рабочие: catboost_rfe, lightgbm.
+  # lasso и random_forest — заглушки со случайным дропом.
+  enabled: true
+  method: catboost_rfe
+
+  params:
+    # Последние N периодов FeatureSchema.time уходят в eval_set: ранняя
+    # остановка и важности считаются out-of-time, внешние valid/test
+    # селектор не читает и они остаются пригодны для независимой проверки.
+    eval_months: 1
+
+    max_rows: 500000         # потолок строк, уезжающих в память драйвера
+    sample_fraction: 0.1     # необязательное дополнительное сужение
+
+    # Скаляр -> передаётся в CatBoost как есть.
+    # Мапа   -> подбирается Optuna.
+    # Есть хотя бы одна мапа -> Optuna запускается; только скаляры -> сразу RFE.
+    parameters:
+      iterations: 3000
+      loss_function: Logloss
+      eval_metric: AUC
+      early_stopping_rounds: 100
+      use_best_model: true
+      max_ctr_complexity: 1
+      boosting_type: Plain
+      bootstrap_type: MVS
+      task_type: CPU         # модельная стадия идёт на драйвере Spark-сессии
+      depth:
+        type: int
+        min: 4
+        max: 8
+      min_data_in_leaf:
+        type: int
+        min: 16
+        max: 64
+      learning_rate:
+        type: float
+        min: 0.01
+        max: 0.3
+        log: true
+      l2_leaf_reg:
+        type: float
+        min: 0.5
+        max: 30
+        log: true
+      random_strength:
+        type: float
+        min: 0.05
+        max: 0.2
+
+    optuna_params:
+      n_trials: 50
+      n_startup_trials: 10
+      sampler: TPE           # TPE | RANDOM | GRID
+      timeout: 18000
+
+    feature_selection_params:
+      algorithm: RecursiveByLossFunctionChange
+      steps: 20              # ~столько обучений CatBoost; 100 даёт точнее, но дорого
+
+  selection:
+    max_features: 256        # num_features_to_select для элиминации
+
+precise:
+  # Необязательная финальная стадия: boruta_shap или none.
+  enabled: false
+  method: none
+
+  # Пример включённого BorutaSHAP. Оценивает только continuous;
+  # если parameters не задан, берутся дефолты из кода.
+  # enabled: true
+  # method: boruta_shap
+  # params:
+  #   model_type: lgbm       # lgbm | rf
+  #   max_rows: 700000
+  #   boruta_trials: 50
+  #   tentative_fix_method: rough
+  #   parameters:
+  #     learning_rate:
+  #       type: float
+  #       min: 0.01
+  #       max: 0.1
+  #       log: true
+  #   optuna_params:
+  #     n_trials: 20
+  #     n_startup_trials: 10
+  #     sampler: TPE
+
+execution:
+  seed: 42                   # доходит до сэмплирования, Optuna и random_seed модели
+  max_local_rows: 1000000    # общий потолок, срезает params.max_rows сверху
+  # ВНИМАНИЕ: local_memory_limit и allow_local_fallback объявлены в схеме
+  # конфига, но нигде не используются — защиты от OOM на драйвере нет.
+  local_memory_limit: 4
+  allow_local_fallback: true
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true

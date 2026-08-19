@@ -1,0 +1,122 @@
+# Полный пайплайн: statistics → lightgbm → boruta_shap.
+#
+# Отличия от pipeline_catboost_rfe.yaml:
+#   • lightgbm оценивает только continuous, категориальные проходят стадию
+#     насквозь без решения (catboost_rfe — единственный, кто их оценивает);
+#   • отбор идёт по кумулятивным порогам важности, а не до фиксированного
+#     числа признаков: model.selection.max_features этим методом НЕ читается;
+#   • есть встроенное пространство поиска Optuna, поэтому блок parameters
+#     необязателен — без него работают дефолты из кода.
+
+preprocessing:
+  feature_drop:
+    enabled: false
+    path: null
+    strict: false
+  random_feature_drop:
+    enabled: false
+    n_features: 0
+  row_sample:
+    enabled: false
+    max_rows: null
+    stratified: true
+
+statistics:
+  order:
+    - null_rate
+    - constants
+    - low_variance
+    - correlation
+
+  null_rate:
+    threshold: 0.95
+
+  constants:
+    max_frequency: 0.98
+    chunk_size: 1000
+
+  low_variance:
+    min_variance: 0.01
+    scale_method: robust     # при standard фильтр не работает: дисперсия всегда 1
+
+  correlation:
+    threshold: 0.95
+    tie_break: null_rate
+    max_rows: 500000
+
+model:
+  enabled: true
+  method: lightgbm
+
+  params:
+    max_rows: 250000
+    sample_fraction: null
+    n_folds: 5
+    optuna_mode: global      # global — подбор один раз; per_fold — на каждом фолде
+    n_jobs: -1
+    shap_max_rows: 5000      # строк на расчёт SHAP внутри фолда
+
+    # Признак проходит, если попал в кумулятивный порог И по split-важности
+    # LightGBM, И по SHAP. Порог 0.85 = «оставить признаки, дающие 85% массы».
+    lgbm_threshold: 0.85
+    shap_threshold: 0.85
+
+    # Блок необязателен: без него берутся встроенные диапазоны.
+    # Указанное здесь переопределяет одноимённый дефолт точечно, остальные
+    # (n_estimators, max_depth, subsample, colsample_bytree) остаются своими.
+    parameters:
+      num_leaves:
+        type: int
+        min: 16
+        max: 128
+      learning_rate:
+        type: float
+        min: 0.005
+        max: 0.3
+        log: true
+      min_child_samples: 20  # скаляр: фиксируется и убирается из перебора
+
+    optuna_params:
+      n_trials: 30
+      n_startup_trials: 10
+      sampler: TPE
+      timeout: 3600
+
+  # Не используется методом lightgbm, оставлено для переключения на
+  # catboost_rfe без правки остального конфига.
+  selection:
+    max_features: 200
+
+  cross_validation:
+    strategy: stratified
+    folds: 5
+    metric: roc_auc
+
+precise:
+  enabled: true
+  method: boruta_shap
+
+  params:
+    model_type: lgbm
+    max_rows: 250000         # стоимость определяется строками: SHAP по каждой
+    sample_fraction: null
+    boruta_trials: 50
+    tentative_fix_method: rough
+
+    parameters:
+      boosting_type: gbdt    # фиксируем: dart в переборе растягивает трайлы
+      learning_rate:
+        type: float
+        min: 0.01
+        max: 0.1
+        log: true
+
+    optuna_params:
+      n_trials: 20
+      n_startup_trials: 5
+      sampler: TPE
+      timeout: 3600
+
+execution:
+  seed: 42
+  max_local_rows: 1000000

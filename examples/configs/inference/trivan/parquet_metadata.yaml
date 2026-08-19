@@ -1,0 +1,26 @@
+epk_id: {}
+report_dt: {}
+evt_dttm:
+    sequential: true
+    sequence_length: 320
+    padding: 0
+mcc_token:
+    sequential: true
+    sequence_length: 320
+    padding: 0
+brand_token:
+    sequential: true
+    sequence_length: 320
+    padding: 0
+place_token:
+    sequential: true
+    sequence_length: 320
+    padding: 0
+terminal_token:
+    sequential: true
+    sequence_length: 320
+    padding: 0
+amt_token:
+    sequential: true
+    sequence_length: 320
+    padding: 0

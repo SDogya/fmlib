@@ -1,0 +1,50 @@
+statistics:
+  order:
+    - psi
+  null_rate:
+    threshold: 0.95
+  low_variance:
+    min_variance: 0.000001
+    scale_method: "minmax"
+  constants:
+    max_frequency: 0.95
+    chunk_size: 170
+  correlation:
+    threshold: 0.95
+    max_rows: 500_000
+  psi:
+    mode: month_over_month
+    threshold: 0.25
+    num_bins: 10
+    month_column: month_part
+    test_months: 1
+    eps: 1e-4
+    relative_error: 0.001
+    batch_size: 100
+    n_jobs: -1
+
+model:
+  enabled: true
+  # Still a stub until a real model selector is filled in.
+  method: lasso
+  params: {}
+  selection:
+    max_features: 100
+  cross_validation:
+    strategy: stratified
+    folds: 5
+    metric: roc_auc
+
+precise:
+  enabled: false
+  method: none
+
+execution:
+  seed: 42
+  allow_local_fallback: true
+  # Used by stages that still materialise locally (e.g. correlation). Unused by constants.
+  max_local_rows: 1000000
+  local_memory_limit: 4
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true

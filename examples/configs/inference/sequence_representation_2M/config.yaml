@@ -1,0 +1,113 @@
+weights_path: "converted_model.safetensors"
+model:
+  _target_: fmlib.nn.models.SequenceRepresentationModel
+  embedding:
+    _target_: fmlib.nn.embedding.EventEmbedding
+    embedding_dim: 128
+    columns_meta:
+      evt_attr_9:
+        type: categorical
+        cardinality: 524
+        event_id: 0
+      evt_attr_15:
+        type: numerical
+        event_id: 0
+      channel_group:
+        type: categorical
+        cardinality: 10
+        event_id: 2
+      sale_product_class_id:
+        type: categorical
+        cardinality: 39
+        event_id: 2
+  time_embedding:
+    _target_: fmlib.nn.embedding.LinearEmbedding
+    embedding_dim: ${model.embedding.embedding_dim}
+    feature_count: 1
+  feature_encoder_block:
+    _target_: fmlib.nn.blocks.EventEncoderBlock
+    hidden_dim: ${model.embedding.embedding_dim}
+    attn_dropout: 0.0
+    dropout: 0.1
+    ffn:
+      _target_: fmlib.nn.blocks.FeatureFFN
+      model_dim: ${model.embedding.embedding_dim}
+      linear_dim: 512 # ${model.embedding.embedding_dim} * 4
+      feature_dim: 5 # количество признаков + 1 (если есть time_embedding)
+      dropout: ${model.feature_encoder_block.dropout}
+  transformer_model:
+    _target_: transformers.GPT2Model
+    config:
+      _target_: transformers.GPT2Config
+      n_positions: 128
+      vocab_size: 0 # может быть любое значение, так как nn.Embedding gpt мы не используем
+      n_embd: ${model.embedding.embedding_dim}
+      n_layer: 2
+      n_head: 2
+      pad_token_id: 0
+      bos_token_id: 1
+      eos_token_id: 2
+  aggregation_layer:
+    _target_: fmlib.nn.utils.agg.MeanHiddenState
+  event_names:
+    - "evt_attr_9"
+    - "evt_attr_15"
+    - "channel_group"
+    - "sale_product_class_id"
+  output_names:
+    - "logits"
+    - "last_hidden_state"
+
+weights_mapping:
+  # GPT2
+  model.backbone.h.0.attn.c_attn.bias:   "transformer_model.h.0.attn.c_attn.bias"
+  model.backbone.h.0.attn.c_attn.weight: "transformer_model.h.0.attn.c_attn.weight"
+  model.backbone.h.0.attn.c_proj.bias:   "transformer_model.h.0.attn.c_proj.bias"
+  model.backbone.h.0.attn.c_proj.weight: "transformer_model.h.0.attn.c_proj.weight"
+  model.backbone.h.0.ln_1.bias:          "transformer_model.h.0.ln_1.bias"
+  model.backbone.h.0.ln_1.weight:        "transformer_model.h.0.ln_1.weight"
+  model.backbone.h.0.ln_2.bias:          "transformer_model.h.0.ln_2.bias"
+  model.backbone.h.0.mlp.c_fc.bias:      "transformer_model.h.0.mlp.c_fc.bias"
+  model.backbone.h.0.mlp.c_fc.weight:    "transformer_model.h.0.mlp.c_fc.weight"
+  model.backbone.h.0.ln_2.weight:        "transformer_model.h.0.ln_2.weight"
+  model.backbone.h.0.mlp.c_proj.bias:    "transformer_model.h.0.mlp.c_proj.bias"
+  model.backbone.h.0.mlp.c_proj.weight:  "transformer_model.h.0.mlp.c_proj.weight"
+
+  model.backbone.h.1.attn.c_attn.bias:   "transformer_model.h.1.attn.c_attn.bias"
+  model.backbone.h.1.attn.c_attn.weight: "transformer_model.h.1.attn.c_attn.weight"
+  model.backbone.h.1.attn.c_proj.bias:   "transformer_model.h.1.attn.c_proj.bias"
+  model.backbone.h.1.attn.c_proj.weight: "transformer_model.h.1.attn.c_proj.weight"
+  model.backbone.h.1.ln_1.bias:          "transformer_model.h.1.ln_1.bias"
+  model.backbone.h.1.ln_1.weight:        "transformer_model.h.1.ln_1.weight"
+  model.backbone.h.1.ln_2.bias:          "transformer_model.h.1.ln_2.bias"
+  model.backbone.h.1.mlp.c_fc.bias:      "transformer_model.h.1.mlp.c_fc.bias"
+  model.backbone.h.1.mlp.c_fc.weight:    "transformer_model.h.1.mlp.c_fc.weight"
+  model.backbone.h.1.ln_2.weight:        "transformer_model.h.1.ln_2.weight"
+  model.backbone.h.1.mlp.c_proj.bias:    "transformer_model.h.1.mlp.c_proj.bias"
+  model.backbone.h.1.mlp.c_proj.weight:  "transformer_model.h.1.mlp.c_proj.weight"
+
+  model.backbone.ln_f.bias:   "transformer_model.ln_f.bias"
+  model.backbone.ln_f.weight: "transformer_model.ln_f.weight"
+  model.backbone.wpe.weight:  "transformer_model.wpe.weight"
+  model.backbone.wte.weight:  "transformer_model.wte.weight"
+
+  # Feature Encoder
+  model.feature_encoder.agg.attn.output.bias:   "feature_encoder_block.multi_head_attn.out_proj.bias"
+  model.feature_encoder.agg.attn.output.weight: "feature_encoder_block.multi_head_attn.out_proj.weight"
+  model.feature_encoder.agg.ffn.0.bias:         "feature_encoder_block.ffn.w1.bias"
+  model.feature_encoder.agg.ffn.0.weight:       "feature_encoder_block.ffn.w1.weight"
+  model.feature_encoder.agg.ffn.2.bias:         "feature_encoder_block.ffn.norm.bias"
+  model.feature_encoder.agg.ffn.2.weight:       "feature_encoder_block.ffn.norm.weight"
+  model.feature_encoder.agg.ffn.4.bias:         "feature_encoder_block.ffn.w2.bias"
+  model.feature_encoder.agg.ffn.4.weight:       "feature_encoder_block.ffn.w2.weight"
+  model.feature_encoder.agg.ffn.5.bias:         "feature_encoder_block.ffn.last_norm.bias"
+  model.feature_encoder.agg.ffn.5.weight:       "feature_encoder_block.ffn.last_norm.weight"
+
+  model.feature_encoder.embedding.embedding_layer.evt_attr_9.weight:            "embedding.embedding_layer.evt_attr_9.weight"
+  model.feature_encoder.embedding.embedding_layer.evt_attr_15.bias:             "embedding.embedding_layer.evt_attr_15.bias"
+  model.feature_encoder.embedding.embedding_layer.evt_attr_15.weight:           "embedding.embedding_layer.evt_attr_15.weight"
+  model.feature_encoder.embedding.embedding_layer.channel_group.weight:         "embedding.embedding_layer.channel_group.weight"
+  model.feature_encoder.embedding.embedding_layer.sale_product_class_id.weight: "embedding.embedding_layer.sale_product_class_id.weight"
+
+  model.feature_encoder.time_encoding_layer.bias: "time_embedding.bias"
+  model.feature_encoder.time_encoding_layer.weight: "time_embedding.weight"

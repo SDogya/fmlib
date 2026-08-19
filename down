@@ -1,0 +1,133 @@
+
+Зафиксировал. Переношу весь текст с представленных двух скриншотов с сохранением исходной структуры, опечаток и путей.
+
+<status_quo>
+
+* Layout Detected: заголовки, Traceback, блоки кода Python, стек вызовов Java
+* Markdown-Only Filter: Enabled
+</status_quo>
+
+[65.469s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 4k, detached.
+[65.470s][warning][os,thread] Failed to start the native thread for java.lang.Thread "block-manager-ask-thread-pool-2"
+[65.511s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 4k, detached.
+[65.512s][warning][os,thread] Failed to start the native thread for java.lang.Thread "IPC Client (1451252071) connection to pplis-kappdm00.cloud.df.sbrf.ru/10.114.37.133:8020 from 23919316_omega-sbrf-ru@OF.SBRF.RU"
+[66.820s][warning][os,thread] Failed to start thread "Unknown thread" - pthread_create failed (EAGAIN) for attributes: stacksize: 1024k, guardsize: 4k, detached.
+[66.821s][warning][os,thread] Failed to start the native thread for java.lang.Thread "checkPathsExist-ForkJoinPool-4-worker-1"
+
+```python
+Py4JJavaError                              Traceback (most recent call last)
+Cell In[7], line 16
+      9 get_ipython().run_line_magic('load_ext', 'autoreload')
+     10 get_ipython().run_line_magic('autoreload', '2')
+     14 ttv = { "pd":
+     15 [spark.read.parquet("/user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=train"),
+---> 16  spark.read.parquet("/user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=test"),
+     17  spark.read.parquet("/user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=pd_cc/split_type=valid")],
+     18 
+     19 "erkc":
+     20 [spark.read.parquet("/user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc/split_type=train"),
+     21  spark.read.parquet("/user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc/split_type=test"),
+     22  spark.read.parquet("/user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_erkc/split_type=valid")],
+     23 
+     24 "td":
+     25 [spark.read.parquet("/user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=train"),
+     26  spark.read.parquet("/user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=test"),
+     27  spark.read.parquet("/user/team/team_ai_avatar/ds/rusakov/feature_selection_benchmark/benchmark_datasets/product_name=tdbase_response/split_type=valid")],
+     28 
+     29 "sms":
+     30 [spark.read.parquet("/user/team/team_ai_avatar/ds/zaripov/sa_sms_train_sample"),
+     31  spark.read.parquet("/user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms/split_type=test"),
+     32  spark.read.parquet("/user/team/team_ai_avatar/ds/zaripov/feature_selection_benchmark/product_name=sa_response_sms/split_type=valid")],
+     33 }
+     35 with open("/home/datalab/nfs/bogachev/nova/sber-amazme-fmlib/examples/features_bio.yaml", "r") as f:
+     36     feat_cols = yaml.safe_load(f)
+
+File /spark/python/pyspark/sql/readwriter.py:544, in DataFrameReader.parquet(self, *paths, **options)
+    533 int96RebaseMode = options.get("int96RebaseMode", None)
+    534 self._set_opts(
+    535     mergeSchema=mergeSchema,
+    536     pathGlobFilter=pathGlobFilter,
+    537     int96RebaseMode=int96RebaseMode,
+    542 )
+--> 544 return self._df(self._jreader.parquet(self._spark._sc._gateway.new_array(self._spark._sc._jvm.java.lang.String, len(paths))))
+
+File /spark/python/lib/py4j-0.10.9.7-src.zip/py4j/java_gateway.py:1322, in JavaMember.__call__(self, *args)
+   1316 command = proto.CALL_COMMAND_NAME + \
+   1317     self.command_header + \
+   1318     args_command + \
+   1320     proto.END_COMMAND_PART
+   1321 answer = self.gateway_client.send_command(command)
+--> 1322 return_value = get_return_value(
+   1323     answer, self.gateway_client, self.target_id, self.name)
+   1325 for temp_arg in temp_args:
+   1326     if hasattr(temp_arg, "_detach"):
+
+File /spark/python/pyspark/errors/exceptions/captured.py:179, in capture_sql_exception.<locals>.deco(*a, **kw)
+    177 def deco(*a: Any, **kw: Any) -> Any:
+
+```
+
+```python
+        180         except Py4JJavaError as e:
+        181             converted = convert_exception(e.java_exception)
+
+File /spark/python/lib/py4j-0.10.9.7-src.zip/py4j/protocol.py:326, in get_return_value(answer, gateway_client, target_id, name)
+        324 value = OUTPUT_CONVERTER[type](answer[2:], gateway_client)
+        325 if answer[1] == REFERENCE_TYPE:
+-->     326     raise Py4JJavaError(
+        327         "An error occurred while calling {0}{1}{2}.\n".
+        328         format(target_id, ".", name), value)
+        329 else:
+        330     raise Py4JJavaError(
+        331         "An error occurred while calling {0}{1}{2}. Trace:\n{3}\n".
+        332         format(target_id, ".", name), value)
+
+```
+
+```text
+Py4JJavaError: An error occurred while calling o129.parquet.
+: java.lang.OutOfMemoryError: unable to create native thread: possibly out of memory or process/resource limits reached
+	at java.base/java.lang.Thread.start0(Native Method)
+	at java.base/java.lang.Thread.start(Thread.java:809)
+	at java.base/java.util.concurrent.ForkJoinPool.createWorker(ForkJoinPool.java:1465)
+	at java.base/java.util.concurrent.ForkJoinPool.signalWork(ForkJoinPool.java:1588)
+	at java.base/java.util.concurrent.ForkJoinPool.externalPush(ForkJoinPool.java:2181)
+	at java.base/java.util.concurrent.ForkJoinPool.externalSubmit(ForkJoinPool.java:2196)
+	at java.base/java.util.concurrent.ForkJoinPool.execute(ForkJoinPool.java:2664)
+	at scala.concurrent.impl.ExecutionContextImpl.execute(ExecutionContextImpl.scala:24)
+	at scala.concurrent.impl.CallbackRunnable.executeWithValue(Promise.scala:72)
+	at scala.concurrent.impl.Promise$KeptPromise$onComplete(Promise.scala:372)
+	at scala.concurrent.impl.Promise$KeptPromise.onComplete$(Promise.scala:371)
+	at scala.concurrent.impl.Promise$KeptPromise$Successful.onComplete(Promise.scala:379)
+	at scala.concurrent.impl.Promise.transform(Promise.scala:33)
+	at scala.concurrent.impl.Promise.transform$(Promise.scala:31)
+	at scala.concurrent.impl.Promise$KeptPromise$Successful.transform(Promise.scala:379)
+	at scala.concurrent.Future.map(Future.scala:292)
+	at scala.concurrent.Future.map$(Future.scala:292)
+	at scala.concurrent.impl.Promise$KeptPromise$Successful.map(Promise.scala:379)
+	at scala.concurrent.Future$.apply(Future.scala:659)
+	at org.apache.spark.util.ThreadUtils$.$anonfun$parmap$1(ThreadUtils.scala:384)
+	at scala.collection.immutable.List.map(List.scala:293)
+	at org.apache.spark.util.ThreadUtils$.parmap(ThreadUtils.scala:384)
+	at org.apache.spark.sql.execution.datasources.DataSource.checkAndGlobPathIfNecessary(DataSource.scala:754)
+	at org.apache.spark.sql.execution.datasources.DataSource.checkAndGlobPathIfNecessary(DataSource.scala:551)
+	at org.apache.spark.sql.execution.datasources.DataSource.resolveRelation(DataSource.scala:404)
+	at org.apache.spark.sql.DataFrameReader.loadV1Source(DataFrameReader.scala:229)
+	at org.apache.spark.sql.DataFrameReader.$anonfun$load$2(DataFrameReader.scala:211)
+	at scala.Option.getOrElse(Option.scala:189)
+	at org.apache.spark.sql.DataFrameReader.load(DataFrameReader.scala:211)
+	at org.apache.spark.sql.DataFrameReader.parquet(DataFrameReader.scala:563)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke(NativeMethodAccessorImpl.java:77)
+	at java.base/jdk.internal.reflect.DelegatingMethodAccessorImpl.invoke(DelegatingMethodAccessorImpl.java:43)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:569)
+	at py4j.reflection.MethodInvoker.invoke(MethodInvoker.java:244)
+	at py4j.reflection.ReflectionEngine.invoke(ReflectionEngine.java:374)
+	at py4j.Gateway.invoke(Gateway.java:282)
+	at py4j.commands.AbstractCommand.invokeMethod(AbstractCommand.java:132)
+	at py4j.commands.CallCommand.execute(CallCommand.java:79)
+	at py4j.ClientServerConnection.waitForCommands(ClientServerConnection.java:182)
+	at py4j.ClientServerConnection.run(ClientServerConnection.java:106)
+	at java.base/java.lang.Thread.run(Thread.java:840)
+
+```
