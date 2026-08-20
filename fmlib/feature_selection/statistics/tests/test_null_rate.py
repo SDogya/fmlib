@@ -463,6 +463,7 @@ def test_is_spark_dataframe(spark: Any) -> None:
 def test_quoted_col_quotes_dots_spaces_and_strips_backticks(spark: Any) -> None:
     del spark
     from pyspark.sql import Column
+    from pyspark.sql import functions as F  # noqa: N812
 
     dotted = _quoted_col("foo.bar")
     spaced = _quoted_col("text feature")
@@ -470,9 +471,9 @@ def test_quoted_col_quotes_dots_spaces_and_strips_backticks(spark: Any) -> None:
     assert isinstance(dotted, Column)
     assert isinstance(spaced, Column)
     assert isinstance(stripped, Column)
-    assert "`foo.bar`" in str(dotted)
-    assert "`text feature`" in str(spaced)
-    assert "`already_quoted`" in str(stripped)
+    assert str(dotted) == str(F.col("`foo.bar`"))
+    assert str(spaced) == str(F.col("`text feature`"))
+    assert str(stripped) == str(F.col("`already_quoted`"))
 
 
 def test_select_spark_counts_null_and_nan_on_dotted_and_spaced_names(

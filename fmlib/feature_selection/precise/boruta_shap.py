@@ -21,6 +21,7 @@ from fmlib.feature_selection.utils.default_model_param_spaces import (
     BORUTA_RF_SEARCH_SPACE,
 )
 from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
+from fmlib.feature_selection.utils.stdlib_import import stdlib_module
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
     resolve_optuna_settings,
@@ -36,7 +37,8 @@ except ImportError:
     optuna = None
 
 try:
-    from BorutaShap import BorutaShap
+    with stdlib_module("statistics"):
+        from BorutaShap import BorutaShap
 except Exception as exc:  # noqa: BLE001 - optional package may fail on incompatible numpy
     BorutaShap = None
     _boruta_import_error: BaseException | None = exc

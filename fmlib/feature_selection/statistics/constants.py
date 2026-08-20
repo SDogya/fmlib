@@ -149,40 +149,55 @@ class ConstantsSelector:
         try:
             modes: dict[str, Any] = {}
             for chunk in chunks:
-                mode_aggs = [F.mode(F.col(col)).alias(col) for col in chunk]
+                aliases = {col: f"m{index}" for index, col in enumerate(chunk)}
+                mode_aggs = [
+                    F.mode(_quoted_col(col)).alias(aliases[col]) for col in chunk
+                ]
                 modes_row = train.agg(*mode_aggs).first()
                 if modes_row:
-                    modes.update(modes_row.asDict())
+                    as_dict = modes_row.asDict()
+                    for col in chunk:
+                        modes[col] = as_dict.get(aliases[col])
 
             for chunk in chunks:
                 summary_aggs = []
+                aliases = {col: f"s{index}" for index, col in enumerate(chunk)}
                 for col in chunk:
+                    alias = aliases[col]
+                    quoted = _quoted_col(col)
                     mode = modes.get(col)
                     if self.config.min_unique is not None:
-                        summary_aggs.append(F.countDistinct(F.col(col)).alias(f"{col}__nunique"))
-                    summary_aggs.append(F.count(F.col(col)).alias(f"{col}__non_null"))
+                        summary_aggs.append(
+                            F.countDistinct(quoted).alias(f"{alias}__nunique"),
+                        )
+                    summary_aggs.append(F.count(quoted).alias(f"{alias}__non_null"))
                     if mode is None:
-                        summary_aggs.append(F.lit(0).alias(f"{col}__mode_count"))
+                        summary_aggs.append(F.lit(0).alias(f"{alias}__mode_count"))
                     elif _is_nan(mode):
-                        summary_aggs.append(F.sum(F.isnan(F.col(col)).cast("long")).alias(f"{col}__mode_count"))
+                        summary_aggs.append(
+                            F.sum(F.isnan(quoted).cast("long")).alias(f"{alias}__mode_count"),
+                        )
                     else:
                         summary_aggs.append(
-                            F.sum((F.col(col) == F.lit(mode)).cast("long")).alias(f"{col}__mode_count"),
+                            F.sum((quoted == F.lit(mode)).cast("long")).alias(
+                                f"{alias}__mode_count",
+                            ),
                         )
                 stats_row = train.agg(*summary_aggs).first()
                 if not stats_row:
                     continue
                 stats = stats_row.asDict()
                 for col in chunk:
-                    non_null = int(stats.get(f"{col}__non_null") or 0)
+                    alias = aliases[col]
+                    non_null = int(stats.get(f"{alias}__non_null") or 0)
                     if non_null == 0:
                         result[col] = (0, 0.0)
                         continue
-                    mode_count = int(stats.get(f"{col}__mode_count") or 0)
+                    mode_count = int(stats.get(f"{alias}__mode_count") or 0)
                     if self.config.min_unique is None:
                         n_unique = 1 if mode_count == non_null else 2
                     else:
-                        n_unique = int(stats.get(f"{col}__nunique") or 0)
+                        n_unique = int(stats.get(f"{alias}__nunique") or 0)
                     result[col] = (n_unique, float(mode_count / non_null))
         except Exception as exc:
             root = _spark_root_cause(exc)
@@ -327,6 +342,14 @@ class ConstantsSelector:
                 keep=False,
             )
         return None
+
+
+def _quoted_col(name: str) -> Any:
+    """Build a Spark column reference that tolerates dots and spaces in names."""
+    from pyspark.sql import functions as F  # noqa: N812
+
+    escaped = name.replace("`", "")
+    return F.col(f"`{escaped}`")
 
 
 def _spark_root_cause(exc: BaseException) -> str:

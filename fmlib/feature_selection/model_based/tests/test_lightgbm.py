@@ -104,7 +104,7 @@ def _mock_backends(selector: LightGbmSelector, monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         selector,
         "_load_backends",
-        lambda: (object(), object(), object()),
+        lambda *args, **kwargs: (object(), object(), object()),
     )
 
 
@@ -126,6 +126,7 @@ _TINY_FIXED_PARAMS = {
     "num_leaves": 8,
     "learning_rate": 0.1,
     "max_depth": 2,
+    "min_child_samples": 1,
     "subsample": 1.0,
     "colsample_bytree": 1.0,
 }
@@ -331,6 +332,7 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
                 "num_leaves": 8,
                 "learning_rate": 0.1,
                 "max_depth": 2,
+                "min_child_samples": 1,
             },
             "optuna_params": {"n_trials": 1, "n_startup_trials": 1},
         },
@@ -887,6 +889,7 @@ def test_configured_search_space_reaches_tuning_and_folds(
                 "n_estimators": 8,
                 "learning_rate": 0.1,
                 "max_depth": 2,
+                "min_child_samples": 1,
             },
             "optuna_params": {"n_trials": 1, "n_startup_trials": 1},
         },

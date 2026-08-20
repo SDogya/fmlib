@@ -19,6 +19,7 @@ from fmlib.feature_selection.precise.boruta_shap import (
 )
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.utils.optuna_space import build_sampler
+from fmlib.feature_selection.utils.stdlib_import import stdlib_module
 
 
 def _frame(n_rows: int = 20) -> pd.DataFrame:
@@ -90,7 +91,11 @@ def _mock_selector_core(
     monkeypatch: pytest.MonkeyPatch,
     captured: dict[str, Any] | None = None,
 ) -> None:
-    monkeypatch.setattr(selector, "_load_backends", lambda _model: object())
+    monkeypatch.setattr(
+        selector,
+        "_load_backends",
+        lambda *_args, **_kwargs: object(),
+    )
 
     def fake_run(**kwargs: Any) -> dict[str, Any]:
         if captured is not None:
@@ -106,7 +111,8 @@ def _require_boruta_stack() -> None:
         import lightgbm  # noqa: F401
         import optuna  # noqa: F401
         import sklearn  # noqa: F401
-        from BorutaShap import BorutaShap  # noqa: F401
+        with stdlib_module("statistics"):
+            from BorutaShap import BorutaShap  # noqa: F401
     except Exception as exc:  # noqa: BLE001 - missing extra must fail the run
         pytest.fail(
             "Install the boruta extra (BorutaShap, lightgbm, optuna, sklearn). "
@@ -182,7 +188,11 @@ def test_unresolved_tentative_feature_is_reported_separately(
 ) -> None:
     context = _context(_frame())
     selector = BorutaShapSelector(context.config.precise)
-    monkeypatch.setattr(selector, "_load_backends", lambda _model: object())
+    monkeypatch.setattr(
+        selector,
+        "_load_backends",
+        lambda *_args, **_kwargs: object(),
+    )
     monkeypatch.setattr(
         selector,
         "_run_boruta_selection",

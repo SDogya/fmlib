@@ -688,7 +688,7 @@ class TestIvSelectorSpark:
             {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
         )
         train = spark.createDataFrame(pandas_frame)
-        monkeypatch.setattr(SparkDataFrame, "is_cached", True)
+        monkeypatch.setattr(SparkDataFrame, "is_cached", True, raising=False)
 
         def persist(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             del self
