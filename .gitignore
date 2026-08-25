@@ -1,0 +1,29 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Виртуальные окружения
+.venv/
+venv/
+env/
+
+# Артефакты локальных прогонов Spark
+spark-warehouse/
+metastore_db/
+derby.log
+
+# Служебные каталоги CatBoost: select_features и fit пишут их в cwd,
+# поэтому они появляются после каждого прогона тестов.
+catboost_info/
+
+# Ноутбуки
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store
