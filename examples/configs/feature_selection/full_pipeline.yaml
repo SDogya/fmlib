@@ -122,8 +122,21 @@ catboost_rfe:
     timeout: 18000
 
   feature_selection_params:
+    # RecursiveByLossFunctionChange точнее всех, но на порядок дороже: он меряет
+    # прирост лосса без признака. RecursiveByPredictionValuesChange считает
+    # важность из структуры деревьев — грубее, зато быстро; годится для
+    # разведочного прогона, где нужна форма кривой, а не последний знак.
     algorithm: RecursiveByLossFunctionChange
-    steps: 20              # ~столько обучений CatBoost; 100 даёт точнее, но дорого
+    # Число обучений CatBoost, оно же число точек кривой в
+    # scores["catboost_rfe#<шаг>"]["loss_graph"]. Дефолт 10; без него CatBoost
+    # выбрасывает всё за один проход и кривая вырождается в две точки.
+    # За шаг убирается постоянная ДОЛЯ: (max_features / N) ** (1 / steps).
+    # Поэтому точки стоят густо у малых чисел и редко у больших.
+    steps: 20
+    # Чтобы выбрать max_features по кривой, нужен разведочный прогон с заведомо
+    # низким selection.max_features — элиминация останавливается на нём, и ниже
+    # кривой просто нет. Пересчитывать потом не надо: набор любого размера
+    # собирается из scores[...]["elimination_order"].
 
   selection:
     max_features: 256      # num_features_to_select для элиминации

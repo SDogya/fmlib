@@ -237,6 +237,96 @@ def test_select_builds_decisions_and_scores() -> None:
     assert set(scores["selected_features"]) == set(kept)
 
 
+# --- loss curve ------------------------------------------------------------
+
+
+def test_scores_carry_the_loss_curve() -> None:
+    """The eval loss per elimination step must reach the caller.
+
+    Paired with ``elimination_order`` the curve is what lets
+    ``selection.max_features`` be read off a measured cutoff instead of
+    guessed, so it has to survive into ``scores`` and stay JSON-friendly.
+    """
+    _require_catboost()
+    steps = 2
+    context = _context(
+        _frame(),
+        schema=_schema(),
+        params={
+            "parameters": _PARAMETERS,
+            "optuna_params": {"enabled": False},
+            "feature_selection_params": {"steps": steps},
+        },
+        max_features=1,
+    )
+    CatBoostRfeSelector(context.config.model).select(
+        context,
+        ["cat_a", "num_a", "num_b"],
+    )
+
+    scores = context.scores["catboost_rfe"]
+    assert scores["steps"] == steps
+    assert scores["n_candidates"] == 3
+
+    graph = scores["loss_graph"]
+    assert set(graph) >= {"removed_features_count", "loss_values", "main_indices"}
+    assert len(graph["loss_values"]) == len(graph["removed_features_count"])
+    # An unmeasured curve is two points; steps > 1 has to add real measurements.
+    assert len(graph["main_indices"]) > 1
+    assert max(graph["main_indices"]) < len(graph["loss_values"])
+    # The x axis counts removals, so it starts at zero and never decreases.
+    removed = graph["removed_features_count"]
+    assert removed[0] == 0
+    assert removed == sorted(removed)
+
+
+def test_steps_default_leaves_more_than_one_measurement() -> None:
+    """Without an explicit ``steps`` CatBoost eliminates in one pass.
+
+    That yields a two-point curve with no interior measurement, so the module
+    pins its own default rather than inheriting CatBoost's.
+    """
+    _require_catboost()
+    context = _context(
+        _frame(),
+        schema=_schema(),
+        params={
+            "parameters": _PARAMETERS,
+            "optuna_params": {"enabled": False},
+        },
+        max_features=1,
+    )
+    CatBoostRfeSelector(context.config.model).select(
+        context,
+        ["cat_a", "num_a", "num_b"],
+    )
+
+    scores = context.scores["catboost_rfe"]
+    assert scores["steps"] > 1
+    assert len(scores["loss_graph"]["main_indices"]) > 1
+
+
+def test_non_positive_steps_are_rejected() -> None:
+    """``steps`` below one cannot describe an elimination schedule."""
+    _require_catboost()
+    context = _context(
+        _frame(),
+        schema=_schema(),
+        params={
+            "parameters": _PARAMETERS,
+            "optuna_params": {"enabled": False},
+            "feature_selection_params": {"steps": 0},
+        },
+        max_features=1,
+    )
+
+    with pytest.raises(ExecutionError, match="steps must be >= 1"):
+        CatBoostRfeSelector(context.config.model).select(
+            context,
+            ["cat_a", "num_a", "num_b"],
+        )
+
+
 # --- search space ----------------------------------------------------------
 
 

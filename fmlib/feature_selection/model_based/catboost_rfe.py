@@ -30,6 +30,9 @@ logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_ROWS = 500_000
 _DEFAULT_EVAL_MONTHS = 1
+# Elimination steps, i.e. how many points the reported loss curve carries.
+# Each step retrains CatBoost, so this is also a direct time multiplier.
+_DEFAULT_RFE_STEPS = 10
 
 ALGORITHMS = frozenset(
     {
@@ -196,6 +199,14 @@ class CatBoostRfeSelector:
             "optuna_trials": details["optuna_trials"],
             "algorithm": details["algorithm"],
             "num_features_to_select": details["num_features_to_select"],
+            # CatBoost measures the eval loss after every elimination step.
+            # Paired with elimination_order it shows where the loss starts
+            # rising, so num_features_to_select can be picked from the curve
+            # instead of guessed up front. n_candidates converts the curve's
+            # "features removed" axis into "features left".
+            "loss_graph": details["loss_graph"],
+            "steps": details["steps"],
+            "n_candidates": len(features),
             "eval_strategy": "out_of_time",
             "eval_periods": details["eval_periods"],
             "fit_rows": details["fit_rows"],
@@ -569,6 +580,13 @@ def run_catboost_rfe(
         raise ExecutionError(msg)
     selection_params.pop("num_features_to_select", None)
     selection_params.pop("train_final_model", None)
+    # One elimination step yields a two-point loss curve, which cannot show
+    # where the loss starts rising. Leaving the value to CatBoost makes the
+    # curve's resolution depend on the installed version, so pin a default.
+    steps = int(selection_params.pop("steps", _DEFAULT_RFE_STEPS))
+    if steps < 1:
+        msg = f"{method_name}: feature_selection_params.steps must be >= 1."
+        raise ExecutionError(msg)
 
     model = catboost_classifier(**best_params)
     try:
@@ -578,6 +596,7 @@ def run_catboost_rfe(
             features_for_select=features,
             num_features_to_select=num_features_to_select,
             algorithm=algorithm,
+            steps=steps,
             train_final_model=False,
             **selection_params,
         )
@@ -596,6 +615,7 @@ def run_catboost_rfe(
         "optuna_trials": completed_trials,
         "algorithm": algorithm,
         "num_features_to_select": num_features_to_select,
+        "steps": steps,
         "eval_periods": eval_periods,
         "fit_rows": len(fit_frame),
         "eval_rows": len(eval_frame),
