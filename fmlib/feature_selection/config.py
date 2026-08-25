@@ -68,6 +68,10 @@ METHOD_STAGE = {
     **dict.fromkeys(PRECISE_PIPELINE_METHODS, "precise"),
 }
 PIPELINE_METHODS = frozenset(METHOD_STAGE)
+# Steps whose referenced block may still carry the legacy selector switch.
+# ``correlation`` is excluded on purpose: its ``method`` is a real parameter
+# (``pearson`` / ``spearman``), not a leftover selector name.
+SELECTOR_SWITCH_METHODS = MODEL_METHODS | frozenset(PRECISE_PIPELINE_METHODS)
 
 
 def parse_statistics_order(raw: Any) -> tuple[str, ...]:
@@ -521,10 +525,14 @@ class ConstantsConfig:
 
 @dataclass(frozen=True)
 class LowVarianceConfig:
-    """Low-variance filter settings for continuous features."""
+    """Low-variance filter settings for continuous features.
+
+    ``scale_method`` defaults to ``robust``: ``standard`` scales every
+    variance to exactly 1.0, which makes ``min_variance`` inert.
+    """
 
     min_variance: float = 0.01
-    scale_method: str = "standard"
+    scale_method: str = "robust"
 
 
 @dataclass(frozen=True)
@@ -1288,11 +1296,43 @@ def _resolve_feature_drop_tree(raw: Mapping[str, Any], file_path: Path) -> dict[
     return updated
 
 
+def _reject_conflicting_selector_switch(
+    step: PipelineStepConfig,
+    section: str,
+) -> None:
+    """Reject a legacy ``method`` switch that disagrees with the order key.
+
+    Under the nested layout ``model.method`` chose the selector. With a
+    top-level ``order`` the step key decides and ``method`` is dropped during
+    parsing, so a stale value silently runs a different selector than the one
+    the config appears to name. Fail while building the config instead.
+
+    Args:
+        step: Pipeline step to inspect.
+        section: Human-readable config path used in the error message.
+
+    Raises:
+        ConfigError: If ``params.method`` names a different selector.
+    """
+    if step.method not in SELECTOR_SWITCH_METHODS:
+        return
+    declared = step.params.get("method")
+    if declared is None or str(declared) == step.method:
+        return
+    msg = (
+        f"{section}: params.method={str(declared)!r} does not match the step "
+        f"key {step.method!r}. The selector is chosen by the order key; "
+        "remove 'method' from the referenced block."
+    )
+    raise ConfigError(msg)
+
+
 def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
     """Validate parameter mappings for each explicit pipeline step."""
     for index, step in enumerate(order):
         section = f"order[{index}].{step.method}"
         params = step.params
+        _reject_conflicting_selector_switch(step, section)
         if step.method == "feature_drop":
             settings = _build_section(FeatureDropConfig, params, section)
             if settings.path is None or not str(settings.path).strip():

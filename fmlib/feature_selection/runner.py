@@ -52,7 +52,7 @@ from fmlib.feature_selection.utils.steps import (
 )
 from fmlib.feature_selection.utils.verbose import run_selector_logged
 
-STUB_METHODS = frozenset({"lasso", "random_forest"})
+STUB_METHODS = frozenset({"lasso", "random_forest", "stability_classifier"})
 
 _PREPROCESSING_METHODS = frozenset(
     {"feature_drop", "random_feature_drop", "row_sample"},

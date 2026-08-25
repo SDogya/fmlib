@@ -17,7 +17,8 @@ def test_defaults_validate() -> None:
     assert config.model.enabled is False
     assert config.model.method == "lightgbm"
     assert config.precise.enabled is False
-    assert config.statistics.low_variance.scale_method == "standard"
+    # "standard" scales every variance to 1.0, which makes min_variance inert.
+    assert config.statistics.low_variance.scale_method == "robust"
     assert config.statistics.correlation.threshold == 0.95
     assert config.statistics.correlation.tie_break == "original_order"
     assert config.statistics.correlation.max_rows == 100_000

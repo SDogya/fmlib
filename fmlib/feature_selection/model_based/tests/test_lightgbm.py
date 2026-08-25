@@ -1267,3 +1267,136 @@ def test_fold_without_global_params_reports_missing_tuning() -> None:
             shap_max_rows=5,
             global_params=None,
         )
+
+
+# --- selection_mode end to end ---------------------------------------------
+
+
+_VOTE_CONTINUOUS = ("driver_a", "driver_b", "noise_0", "noise_1", "noise_2")
+
+
+def _vote_frame(n_rows: int = 240) -> pd.DataFrame:
+    """Frame whose target follows two drivers plus noise.
+
+    The signal is deliberately spread over two features: a single dominant
+    feature would exceed the cumulative threshold on its own and leave the
+    cut empty, which says nothing about ``selection_mode``.
+    """
+    rng = np.random.default_rng(0)
+    driver_a = rng.normal(0.0, 1.0, n_rows)
+    driver_b = rng.normal(0.0, 1.0, n_rows)
+    logit = 0.6 * driver_a + 0.4 * driver_b + rng.normal(0.0, 0.8, n_rows)
+    columns: dict[str, Any] = {
+        "category": ["a", "b"] * (n_rows // 2),
+        "driver_a": driver_a,
+        "driver_b": driver_b,
+        "response": (logit > 0.0).astype(int),
+    }
+    for index in range(3):
+        columns[f"noise_{index}"] = rng.normal(0.0, 1.0, n_rows)
+    return pd.DataFrame(columns)
+
+
+def _run_selection_mode(
+    mode: str,
+    *,
+    min_set_share: float = 1.0,
+    n_folds: int = 3,
+) -> tuple[list[str], dict[str, Any], list[Any]]:
+    """Run a real LightGBM selection in ``mode`` and return kept/scores/decisions."""
+    frame = _vote_frame()
+    context = _context(
+        frame,
+        categorical=("category",),
+        continuous=_VOTE_CONTINUOUS,
+        params={
+            "n_trials": 1,
+            "n_folds": n_folds,
+            "max_rows": len(frame),
+            "optuna_mode": "global",
+            "n_jobs": 1,
+            "selection_mode": mode,
+            "min_set_share": min_set_share,
+            "parameters": dict(_TINY_FIXED_PARAMS),
+            "optuna_params": {"enabled": False},
+        },
+        max_local_rows=len(frame),
+    )
+    decisions = LightGbmSelector(context.config.model).select(
+        context,
+        context.candidates,
+    )
+    kept = [decision.feature for decision in decisions if decision.keep]
+    return kept, context.scores["lightgbm"], decisions
+
+
+def test_both_selection_modes_run_and_record_their_mode() -> None:
+    """Each mode reaches the scores payload and decides every continuous candidate."""
+    _require_ml_backends()
+    for mode in ("aggregated", "vote"):
+        kept, scores, decisions = _run_selection_mode(mode)
+
+        assert scores["selection_mode"] == mode
+        # Categorical candidates are skipped, continuous ones all get a decision.
+        assert [decision.feature for decision in decisions] == list(_VOTE_CONTINUOUS)
+        assert set(kept) <= set(_VOTE_CONTINUOUS)
+
+
+def test_vote_mode_reports_one_set_per_fold_and_channel() -> None:
+    """``vote`` cuts split and SHAP separately in every fold: ``2 * n_folds`` sets."""
+    _require_ml_backends()
+    n_folds = 3
+    _, scores, _ = _run_selection_mode("vote", n_folds=n_folds)
+
+    assert scores["n_sets"] == 2 * n_folds
+    assert set(scores["fold_sets"]) == {"1", "2", "3"}
+    for fold in scores["fold_sets"].values():
+        assert set(fold) == {"lgbm", "shap"}
+    assert set(scores["set_presence"]) == set(_VOTE_CONTINUOUS)
+    assert all(0.0 <= share <= 1.0 for share in scores["set_presence"].values())
+
+
+def test_aggregated_mode_reports_no_vote_payload() -> None:
+    """The vote-only keys stay out of the scores payload in ``aggregated``."""
+    _require_ml_backends()
+    _, scores, _ = _run_selection_mode("aggregated")
+
+    assert "n_sets" not in scores
+    assert "set_presence" not in scores
+    assert "fold_sets" not in scores
+
+
+def test_lowering_min_set_share_admits_partially_present_features() -> None:
+    """``min_set_share`` is a real cut, not a value carried through unused.
+
+    The relaxed threshold is derived from the observed presence values rather
+    than hard-coded: a feature that appears in some but not all sets must be
+    admitted once the share drops to its own presence.
+    """
+    _require_ml_backends()
+    strict, scores, _ = _run_selection_mode("vote", min_set_share=1.0)
+    presence = scores["set_presence"]
+    partial = {
+        feature: share
+        for feature, share in presence.items()
+        if 0.0 < share < 1.0
+    }
+    assert partial, f"fixture produced no partially-present feature: {presence}"
+
+    relaxed, _, _ = _run_selection_mode("vote", min_set_share=min(partial.values()))
+
+    assert set(strict) < set(relaxed)
+    assert set(partial) <= set(relaxed)
+
+
+def test_vote_decisions_carry_presence_against_the_share_threshold() -> None:
+    """In ``vote`` the reported value is set presence, not a cumulative ratio."""
+    _require_ml_backends()
+    min_set_share = 0.5
+    _, scores, decisions = _run_selection_mode("vote", min_set_share=min_set_share)
+
+    for decision in decisions:
+        assert decision.threshold == min_set_share
+        assert decision.value == pytest.approx(scores["set_presence"][decision.feature])
+        expected = "passed_lgbm_shap_vote" if decision.keep else "failed_lgbm_shap_vote"
+        assert decision.reason == expected
