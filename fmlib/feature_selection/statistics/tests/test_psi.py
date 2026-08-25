@@ -106,6 +106,9 @@ class TestPsiStratifiedSampling:
         class MockContext:
             schema = type("Obj", (), {"target": "target"})()
             seed = 42
+            # PsiSelector falls back to step_seed(context) when PsiConfig.seed
+            # is unset, and step_seed reads run_seed.
+            run_seed = 42
 
         result_train, result_test = selector._apply_subsample_if_needed(
             MockContext(), train_df, test_df
@@ -132,6 +135,9 @@ class TestPsiStratifiedSampling:
         class MockContext:
             schema = type("Obj", (), {"target": "target"})()
             seed = 42
+            # PsiSelector falls back to step_seed(context) when PsiConfig.seed
+            # is unset, and step_seed reads run_seed.
+            run_seed = 42
 
         result_train, result_test = selector._apply_subsample_if_needed(
             MockContext(), train_df, test_df
@@ -234,7 +240,8 @@ def test_spark_psi_runs_on_real_dataframes(spark: Any) -> None:
         [(float(index), index % 2) for index in range(40)],
         ["feature1", "target"],
     )
-    test = spark.createDataFrame(
+    # mode='train_valid' compares train against valid; 'test' is never read.
+    valid = spark.createDataFrame(
         [(float(index) + 0.25, index % 2) for index in range(40)],
         ["feature1", "target"],
     )
@@ -247,7 +254,7 @@ def test_spark_psi_runs_on_real_dataframes(spark: Any) -> None:
     )
     context = StageContext(
         spark=spark,
-        datasets={"train": train, "test": test},
+        datasets={"train": train, "valid": valid},
         schema=schema,
         config=FeatureSelectionConfig(),
         seed=42,

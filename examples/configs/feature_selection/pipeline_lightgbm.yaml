@@ -1,12 +1,15 @@
 # Полный пайплайн: statistics → lightgbm → boruta_shap.
 #
 # Корневой order — единственный список шагов. ${...} — ссылки OmegaConf.
+# Имя блока-пресета совпадает с именем метода в order, поэтому ключи
+# enabled и method не нужны: шаг включается строкой в order, а при наличии
+# order оба флага всё равно игнорируются.
 #
 # Отличия от pipeline_catboost_rfe.yaml:
 #   • lightgbm оценивает только continuous, категориальные проходят стадию
 #     насквозь без решения (catboost_rfe — единственный, кто их оценивает);
 #   • отбор идёт по кумулятивным порогам важности, а не до фиксированного
-#     числа признаков: model.selection.max_features этим методом НЕ читается;
+#     числа признаков: selection.max_features этим методом НЕ читается;
 #   • есть встроенное пространство поиска Optuna, поэтому блок parameters
 #     необязателен — без него работают дефолты из кода.
 
@@ -15,21 +18,22 @@ order:
   - constants: ${statistics.constants}
   - low_variance: ${statistics.low_variance}
   - correlation: ${statistics.correlation}
-  - lightgbm: ${model}
-  - boruta_shap: ${precise.params}
+  - lightgbm: ${lightgbm}
+  - boruta_shap: ${boruta_shap}
 
-preprocessing:
-  feature_drop:
-    enabled: false
-    path: null
-    strict: false
-  random_feature_drop:
-    enabled: false
-    n_features: 0
-  row_sample:
-    enabled: false
-    max_rows: null
-    stratified: true
+# Необязательные preprocessing-шаги. Чтобы включить — добавить строку в order
+# и раскомментировать нужный блок; флага enabled здесь нет.
+#   - feature_drop: ${feature_drop}
+#   - random_feature_drop: ${random_feature_drop}
+#   - row_sample: ${row_sample}
+# feature_drop:
+#   path: drops.json         # относительный путь считается от этого YAML
+#   strict: false            # true — падать на неизвестном имени признака
+# random_feature_drop:
+#   n_features: 100          # случайное прореживание для тестовых прогонов
+# row_sample:
+#   max_rows: 100000
+#   stratified: true
 
 statistics:
   null_rate:
@@ -48,49 +52,45 @@ statistics:
     tie_break: null_rate
     max_rows: 500000
 
-model:
-  enabled: true
-  method: lightgbm
+lightgbm:
+  max_rows: 250000
+  sample_fraction: null
+  n_folds: 5
+  optuna_mode: global        # global — подбор один раз; per_fold — на каждом фолде
+  n_jobs: -1
+  seed: 17                   # иначе execution.seed
+  shap_max_rows: 5000        # строк на расчёт SHAP внутри фолда
 
-  params:
-    max_rows: 250000
-    sample_fraction: null
-    n_folds: 5
-    optuna_mode: global      # global — подбор один раз; per_fold — на каждом фолде
-    n_jobs: -1
-    seed: 17                 # иначе execution.seed
-    shap_max_rows: 5000      # строк на расчёт SHAP внутри фолда
+  # aggregated — среднее по фолдам, два кумулятива, пересечение.
+  # vote — 2*n_folds наборов (split и SHAP в каждом фолде), порог min_set_share.
+  selection_mode: aggregated
+  min_set_share: 1.0
+  # Признак проходит, если попал в кумулятивный порог И по split-важности
+  # LightGBM, И по SHAP. Порог 0.85 = «оставить признаки, дающие 85% массы».
+  lgbm_threshold: 0.85
+  shap_threshold: 0.85
 
-    # aggregated — среднее по фолдам, два кумулятива, пересечение.
-    # vote — 2*n_folds наборов (split и SHAP в каждом фолде), порог min_set_share.
-    selection_mode: aggregated
-    min_set_share: 1.0
-    # Признак проходит, если попал в кумулятивный порог И по split-важности
-    # LightGBM, И по SHAP. Порог 0.85 = «оставить признаки, дающие 85% массы».
-    lgbm_threshold: 0.85
-    shap_threshold: 0.85
+  # Блок необязателен: без мап берутся встроенные диапазоны целиком.
+  # Любая мапа в YAML — это вся сетка; остальные дефолтные ключи не
+  # подмешиваются. Скаляр уходит в модель как есть.
+  parameters:
+    num_leaves:
+      type: int
+      min: 16
+      max: 128
+    learning_rate:
+      type: float
+      min: 0.005
+      max: 0.3
+      log: true
+    min_child_samples: 20    # скаляр: фиксируется и убирается из перебора
 
-    # Блок необязателен: без мап берутся встроенные диапазоны целиком.
-    # Любая мапа в YAML — это вся сетка; остальные дефолтные ключи не
-    # подмешиваются. Скаляр уходит в модель как есть.
-    parameters:
-      num_leaves:
-        type: int
-        min: 16
-        max: 128
-      learning_rate:
-        type: float
-        min: 0.005
-        max: 0.3
-        log: true
-      min_child_samples: 20  # скаляр: фиксируется и убирается из перебора
-
-    optuna_params:
-      enabled: true
-      n_trials: 30
-      n_startup_trials: 10
-      sampler: TPE
-      timeout: 3600
+  optuna_params:
+    enabled: true
+    n_trials: 30
+    n_startup_trials: 10
+    sampler: TPE
+    timeout: 3600
 
   # Не используется методом lightgbm, оставлено для переключения на
   # catboost_rfe без правки остального конфига.
@@ -102,33 +102,29 @@ model:
     folds: 5
     metric: roc_auc
 
-precise:
-  enabled: true
-  method: boruta_shap
+boruta_shap:
+  model_type: lgbm
+  n_jobs: -1
+  seed: 17                   # иначе execution.seed
+  max_rows: 250000           # стоимость определяется строками: SHAP по каждой
+  sample_fraction: null
+  boruta_trials: 50
+  tentative_fix_method: rough
 
-  params:
-    model_type: lgbm
-    n_jobs: -1
-    seed: 17                 # иначе execution.seed
-    max_rows: 250000         # стоимость определяется строками: SHAP по каждой
-    sample_fraction: null
-    boruta_trials: 50
-    tentative_fix_method: rough
+  parameters:
+    boosting_type: gbdt      # фиксируем: dart в переборе растягивает трайлы
+    learning_rate:
+      type: float
+      min: 0.01
+      max: 0.1
+      log: true
 
-    parameters:
-      boosting_type: gbdt    # фиксируем: dart в переборе растягивает трайлы
-      learning_rate:
-        type: float
-        min: 0.01
-        max: 0.1
-        log: true
-
-    optuna_params:
-      enabled: true
-      n_trials: 20
-      n_startup_trials: 5
-      sampler: TPE
-      timeout: 3600
+  optuna_params:
+    enabled: true
+    n_trials: 20
+    n_startup_trials: 5
+    sampler: TPE
+    timeout: 3600
 
 execution:
   seed: 42

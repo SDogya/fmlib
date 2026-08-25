@@ -149,7 +149,7 @@ class FeatureSelectionPipeline:
 
             warnings = [
                 (
-                    f"Model selector {method!r} is a stub; "
+                    f"Selector {method!r} is a stub; "
                     "replace it with a real algorithm."
                 )
                 for method in sorted(

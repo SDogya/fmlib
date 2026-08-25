@@ -24,7 +24,7 @@ order:
   - constants: ${statistics.constants}
   - low_variance: ${statistics.low_variance}
   - correlation: ${statistics.correlation}
-  - catboost_rfe: ${model}
+  - catboost_rfe: ${catboost_rfe}
 
 statistics:
 
@@ -63,98 +63,105 @@ statistics:
     relative_error: 0.001
     batch_size: 100
 
-model:
-  # Стадия запускает РОВНО ОДИН селектор. Рабочие: catboost_rfe, lightgbm.
-  # lasso и random_forest — заглушки со случайным дропом.
-  enabled: true
-  method: catboost_rfe
+# Пресет модельного шага. Имя блока = имя метода в order, поэтому ключи
+# enabled и method здесь не нужны: шаг выбирается строкой в order, а при
+# наличии order оба флага всё равно игнорируются.
+# Рабочие модельные методы: catboost_rfe, lightgbm.
+# lasso и random_forest — заглушки со случайным дропом.
+catboost_rfe:
+  # Последние N периодов FeatureSchema.time уходят в eval_set: ранняя
+  # остановка и важности считаются out-of-time, внешние valid/test
+  # селектор не читает и они остаются пригодны для независимой проверки.
+  eval_months: 1
 
-  params:
-    # Последние N периодов FeatureSchema.time уходят в eval_set: ранняя
-    # остановка и важности считаются out-of-time, внешние valid/test
-    # селектор не читает и они остаются пригодны для независимой проверки.
-    eval_months: 1
+  max_rows: 500000         # потолок строк, уезжающих в память драйвера
+  sample_fraction: 0.1     # необязательное дополнительное сужение
 
-    max_rows: 500000         # потолок строк, уезжающих в память драйвера
-    sample_fraction: 0.1     # необязательное дополнительное сужение
+  # Скаляр -> передаётся в CatBoost как есть.
+  # Мапа   -> вся сетка Optuna; дефолтный файл не подмешивается.
+  # Нет мап и optuna_params.enabled: true -> CATBOOST_RFE_SEARCH_SPACE.
+  # optuna_params.enabled: false -> сразу RFE на скалярах.
+  parameters:
+    iterations: 3000
+    loss_function: Logloss
+    eval_metric: AUC
+    early_stopping_rounds: 100
+    use_best_model: true
+    max_ctr_complexity: 1
+    boosting_type: Plain
+    bootstrap_type: MVS
+    task_type: CPU         # модельная стадия идёт на драйвере Spark-сессии
+    depth:
+      type: int
+      min: 4
+      max: 8
+    min_data_in_leaf:
+      type: int
+      min: 16
+      max: 64
+    learning_rate:
+      type: float
+      min: 0.01
+      max: 0.3
+      log: true
+    l2_leaf_reg:
+      type: float
+      min: 0.5
+      max: 30
+      log: true
+    random_strength:
+      type: float
+      min: 0.05
+      max: 0.2
 
-    # Скаляр -> передаётся в CatBoost как есть.
-    # Мапа   -> вся сетка Optuna; дефолтный файл не подмешивается.
-    # Нет мап и enabled: true -> CATBOOST_RFE_SEARCH_SPACE.
-    # enabled: false -> сразу RFE на скалярах.
-    parameters:
-      iterations: 3000
-      loss_function: Logloss
-      eval_metric: AUC
-      early_stopping_rounds: 100
-      use_best_model: true
-      max_ctr_complexity: 1
-      boosting_type: Plain
-      bootstrap_type: MVS
-      task_type: CPU         # модельная стадия идёт на драйвере Spark-сессии
-      depth:
-        type: int
-        min: 4
-        max: 8
-      min_data_in_leaf:
-        type: int
-        min: 16
-        max: 64
-      learning_rate:
-        type: float
-        min: 0.01
-        max: 0.3
-        log: true
-      l2_leaf_reg:
-        type: float
-        min: 0.5
-        max: 30
-        log: true
-      random_strength:
-        type: float
-        min: 0.05
-        max: 0.2
+  optuna_params:
+    enabled: true
+    n_trials: 50
+    n_startup_trials: 10
+    sampler: TPE           # TPE | RANDOM | GRID
+    timeout: 18000
 
-    optuna_params:
-      enabled: true
-      n_trials: 50
-      n_startup_trials: 10
-      sampler: TPE           # TPE | RANDOM | GRID
-      timeout: 18000
-
-    feature_selection_params:
-      algorithm: RecursiveByLossFunctionChange
-      steps: 20              # ~столько обучений CatBoost; 100 даёт точнее, но дорого
+  feature_selection_params:
+    # RecursiveByLossFunctionChange точнее всех, но на порядок дороже: он меряет
+    # прирост лосса без признака. RecursiveByPredictionValuesChange считает
+    # важность из структуры деревьев — грубее, зато быстро; годится для
+    # разведочного прогона, где нужна форма кривой, а не последний знак.
+    algorithm: RecursiveByLossFunctionChange
+    # Число обучений CatBoost, оно же число точек кривой в
+    # scores["catboost_rfe#<шаг>"]["loss_graph"]. Дефолт 10; без него CatBoost
+    # выбрасывает всё за один проход и кривая вырождается в две точки.
+    # За шаг убирается постоянная ДОЛЯ: (max_features / N) ** (1 / steps).
+    # Поэтому точки стоят густо у малых чисел и редко у больших.
+    steps: 20
+    # Чтобы выбрать max_features по кривой, нужен разведочный прогон с заведомо
+    # низким selection.max_features — элиминация останавливается на нём, и ниже
+    # кривой просто нет. Пересчитывать потом не надо: набор любого размера
+    # собирается из scores[...]["elimination_order"].
 
   selection:
-    max_features: 256        # num_features_to_select для элиминации
+    max_features: 256      # num_features_to_select для элиминации
 
-precise:
-  # Необязательная финальная стадия: boruta_shap или none.
-  enabled: false
-  method: none
-
-  # Пример включённого BorutaSHAP. Оценивает только continuous;
-  # если parameters не содержит мап, берётся fallback из
-  # default_model_param_spaces.py. Любая мапа полностью заменяет дефолт.
-  # enabled: true
-  # method: boruta_shap
-  # params:
-  #   model_type: lgbm       # lgbm | rf
-  #   max_rows: 700000
-  #   boruta_trials: 50
-  #   tentative_fix_method: rough
-  #   parameters:
-  #     learning_rate:
-  #       type: float
-  #       min: 0.01
-  #       max: 0.1
-  #       log: true
-  #   optuna_params:
-  #     enabled: true
-  #     n_trials: 20
-  #     n_startup_trials: 10
-  #     sampler: TPE
+# Необязательная финальная стадия. Чтобы включить — добавить строку
+#   - boruta_shap: ${boruta_shap}
+# в order и раскомментировать блок ниже. Оценивает только continuous;
+# если parameters не содержит мап, берётся fallback из
+# default_model_param_spaces.py. Любая мапа полностью заменяет дефолт.
+# boruta_shap:
+#   model_type: lgbm       # lgbm | rf
+#   max_rows: 700000
+#   boruta_trials: 50
+#   tentative_fix_method: rough
+#   parameters:
+#     learning_rate:
+#       type: float
+#       min: 0.01
+#       max: 0.1
+#       log: true
+#   optuna_params:
+#     enabled: true
+#     n_trials: 20
+#     n_startup_trials: 10
+#     sampler: TPE
 
 execution:
   seed: 42                   # доходит до сэмплирования, Optuna и random_seed модели

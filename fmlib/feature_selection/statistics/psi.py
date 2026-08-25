@@ -10,6 +10,7 @@ import numpy as np
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext, step_seed
 from fmlib.feature_selection.config import PsiConfig
+from fmlib.feature_selection.exceptions import ExecutionError
 from fmlib.feature_selection.utils.verbose import emit as verbose_emit
 from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
@@ -194,11 +195,7 @@ class PsiSelector:
         num_bins = self.config.num_bins
         eps = self.config.eps
 
-        train_df, test_df = self._extract_dataframes(context)
-
-        if train_df is None or test_df is None:
-            logger.warning("PSISelector: Не найдены baseline/actual датасеты. Пропуск фильтрации.")
-            return [self._make_decision(col, keep=True, score=0.0, threshold=threshold) for col in feature_cols]
+        train_df, test_df = self._resolve_population_pair(context)
 
         # Apply stratified sampling if configured
         train_df, test_df = self._apply_subsample_if_needed(context, train_df, test_df)
@@ -247,51 +244,79 @@ class PsiSelector:
 
         return decisions
 
-    def _extract_dataframes(self, context: StageContext) -> Tuple[Any, Any]:
-        """Безопасное извлечение DataFrames без bool(df) контекста (защита от ValueError в Spark).
+    def _resolve_population_pair(self, context: StageContext) -> Tuple[Any, Any]:
+        """Return the (baseline, actual) pair selected by ``config.mode``.
+
+        ``datasets['test']`` is never read: the held-out split must stay
+        untouched so the resulting feature set can be judged on data that took
+        no part in selection. A missing population raises instead of skipping
+        the filter, because a silent skip is indistinguishable in the report
+        from "measured and stable".
 
         Args:
-            context: Stage context for schema and datasets access.
+            context: Stage context holding datasets and schema.
 
         Returns:
-            Tuple of (train_df, test_df) dataframes.
+            Tuple of (baseline, actual) DataFrames.
+
+        Raises:
+            ExecutionError: If the mode's required population is unavailable.
         """
-        def _pick_first_not_none(obj: Any, attrs: Sequence[str]) -> Any:
-            for attr in attrs:
-                val = getattr(obj, attr, None)
-                if val is not None:
-                    return val
-            return None
+        baseline = context.datasets.get("train")
+        if baseline is None:
+            msg = "psi: datasets['train'] is required."
+            raise ExecutionError(msg)
 
-        train_attrs = ["baseline_df", "train_df", "reference_df", "expected_df", "df_train"]
-        test_attrs = ["df", "test_df", "actual_df", "current_df", "df_test"]
+        if self.config.mode == "month_over_month":
+            return self._split_by_month(context, baseline)
 
-        train_df = _pick_first_not_none(context, train_attrs)
-        test_df = _pick_first_not_none(context, test_attrs)
+        actual = context.datasets.get("valid")
+        if actual is not None:
+            return baseline, actual
 
-        # If not found in context attributes, check context.datasets
-        if train_df is None and hasattr(context, "datasets"):
-            train_df = context.datasets.get("train")
-        if test_df is None and hasattr(context, "datasets"):
-            test_df = context.datasets.get("test")
+        split_column = getattr(context.schema, "split", None)
+        if split_column is not None:
+            return self._split_by_column(baseline, split_column)
 
-        if (train_df is None or test_df is None) and hasattr(context, "get_data"):
-            try:
-                data = context.get_data()
-                if isinstance(data, tuple) and len(data) == 2:
-                    train_df = train_df if train_df is not None else data[0]
-                    test_df = test_df if test_df is not None else data[1]
-                elif isinstance(data, dict):
-                    train_df = train_df if train_df is not None else _pick_first_not_none(data, train_attrs)
-                    test_df = test_df if test_df is not None else _pick_first_not_none(data, test_attrs)
-            except Exception:
-                pass
+        msg = (
+            "psi mode='train_valid' requires datasets['valid'] or "
+            "FeatureSchema.split. Provide one, or use mode='month_over_month' "
+            "to compare the latest periods of train against the earlier ones."
+        )
+        raise ExecutionError(msg)
 
-        # If test_df is not provided and mode is month_over_month, split train by months
-        if test_df is None and train_df is not None and self.config.mode == "month_over_month":
-            train_df, test_df = self._split_by_month(context, train_df)
+    @staticmethod
+    def _split_by_column(frame: Any, split_column: str) -> Tuple[Any, Any]:
+        """Split one frame into train/valid rows using a split column.
 
-        return train_df, test_df
+        Args:
+            frame: Frame carrying the split column.
+            split_column: Column holding ``train`` / ``valid`` / ``test`` labels.
+
+        Returns:
+            Tuple of (train rows, valid rows).
+
+        Raises:
+            ExecutionError: If either side of the split is empty.
+        """
+        is_spark = hasattr(frame, "stat") and hasattr(frame, "agg")
+        if is_spark:
+            import pyspark.sql.functions as F  # noqa: N812
+
+            baseline = frame.filter(F.col(split_column) == "train")
+            actual = frame.filter(F.col(split_column) == "valid")
+            empty = baseline.limit(1).count() == 0 or actual.limit(1).count() == 0
+        else:
+            baseline = frame[frame[split_column] == "train"]
+            actual = frame[frame[split_column] == "valid"]
+            empty = baseline.empty or actual.empty
+        if empty:
+            msg = (
+                f"psi: split column {split_column!r} yielded an empty train or "
+                "valid population; expected both labels to be present."
+            )
+            raise ExecutionError(msg)
+        return baseline, actual
 
     def _apply_subsample_if_needed(
         self: PsiSelector,
@@ -339,58 +364,68 @@ class PsiSelector:
         return train_sampled, test_sampled
 
     def _split_by_month(self, context: StageContext, train_df: Any) -> Tuple[Any, Any]:
-        """Split train dataframe by month_part column for train/test split.
+        """Split train by ``month_column``: latest periods become the actual set.
+
+        Works on both Spark and pandas inputs. Failures are raised rather than
+        swallowed: the previous fallback returned an empty actual population,
+        which scores every feature at psi=0.0 and reads as "stable".
 
         Args:
-            context: Stage context for schema access.
+            context: Stage context, kept for signature compatibility.
             train_df: Input train dataframe.
 
         Returns:
-            Tuple of (train_split, test_split) dataframes.
+            Tuple of (baseline = earlier periods, actual = latest periods).
+
+        Raises:
+            ExecutionError: If the month column is missing or holds too few
+                distinct periods to split.
         """
+        del context
         month_col = self.config.month_column
         test_months = self.config.test_months
+        is_spark = hasattr(train_df, "stat") and hasattr(train_df, "agg")
 
-        import pyspark.sql.functions as F
-        from pyspark.sql import Window
+        if is_spark:
+            import pyspark.sql.functions as F  # noqa: N812
 
-        # Get unique months and select latest N for test
-        try:
-            # Collect all unique months
+            if month_col not in train_df.columns:
+                msg = f"psi: month_column={month_col!r} is missing from the train split."
+                raise ExecutionError(msg)
             month_df = train_df.select(F.col(month_col).alias("month")).distinct()
-            months = [row["month"] for row in month_df.collect()]
+            months = [row["month"] for row in month_df.collect() if row["month"] is not None]
+        else:
+            if month_col not in train_df.columns:
+                msg = f"psi: month_column={month_col!r} is missing from the train split."
+                raise ExecutionError(msg)
+            months = [value for value in train_df[month_col].dropna().unique()]
 
-            if len(months) <= test_months:
-                # Not enough months to split, use all for train, empty test
-                logger.warning(
-                    f"PSISelector: Not enough unique months ({len(months)}) for test split. "
-                    f"Need at least {test_months + 1} months. Using all data for train."
-                )
-                return train_df, train_df.limit(0)
-
-            # Sort months and get the cutoff
-            sorted_months = sorted(months, reverse=True)
-            cutoff_month = sorted_months[test_months - 1]
-
-            # Split: train = months < cutoff, test = months >= cutoff
-            train_split = train_df.filter(F.col(month_col) < cutoff_month)
-            test_split = train_df.filter(F.col(month_col) >= cutoff_month)
-
-            # Log split info
-            train_count = train_split.count()
-            test_count = test_split.count()
-            logger.info(
-                f"PSISelector: Split by month '{month_col}'. "
-                f"Cutoff month: {cutoff_month}. Train: {train_count} rows, Test: {test_count} rows."
+        if len(months) <= test_months:
+            msg = (
+                f"psi mode='month_over_month' needs more than test_months="
+                f"{test_months} distinct periods in {month_col!r}; found {len(months)}. "
+                "Provide a longer history or lower test_months."
             )
+            raise ExecutionError(msg)
 
-            return train_split, test_split
-        except Exception as e:
-            logger.warning(
-                f"PSISelector: Failed to split by month '{month_col}': {e}. "
-                f"Using original train as both train and test."
-            )
-            return train_df, train_df.limit(0)
+        cutoff_month = sorted(months, reverse=True)[test_months - 1]
+        if is_spark:
+            import pyspark.sql.functions as F  # noqa: N812
+
+            baseline = train_df.filter(F.col(month_col) < cutoff_month)
+            actual = train_df.filter(F.col(month_col) >= cutoff_month)
+        else:
+            baseline = train_df[train_df[month_col] < cutoff_month]
+            actual = train_df[train_df[month_col] >= cutoff_month]
+
+        logger.info(
+            "PSISelector: split %r at cutoff %r (%d periods, last %d are the actual set).",
+            month_col,
+            cutoff_month,
+            len(months),
+            test_months,
+        )
+        return baseline, actual
 
     def _compute_pyspark_psi(
         self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int

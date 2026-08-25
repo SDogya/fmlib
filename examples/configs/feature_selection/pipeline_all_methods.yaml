@@ -1,0 +1,262 @@
+# Полный пайплайн: все рабочие методы отбора в рекомендованном порядке.
+#
+# Корневой order — единственный список шагов. Имя блока-пресета совпадает с
+# именем метода в order, поэтому ключи enabled и method не нужны: шаг
+# включается строкой в order, а при наличии order оба флага игнорируются.
+#
+# ── Логика порядка ───────────────────────────────────────────────────────
+#
+# 1. Дёшево → дорого. Каждый шаг сужает список, поэтому порядок определяет
+#    стоимость всего прогона. Убрать половину признаков однопроходной
+#    агрегацией до модельной стадии — это разница между часом и десятью.
+#
+# 2. Бесспорное → спорное. Константная колонка бесполезна — это факт.
+#    «Низкая важность в модели» — оценка, зависящая от сида и фолдов.
+#    Сначала выносим то, в чём нельзя ошибиться.
+#
+# Отсюда расстановка:
+#   feature_drop  — первым, всегда: убирает известные утечки ДО того, как их
+#                   кто-то измерит. Признак-копия таргета иначе пройдёт все
+#                   фильтры с блеском и попадёт в финальный набор.
+#   null_rate     — три однопроходные агрегации, самое дешёвое, что есть.
+#   constants       null_rate обычно срезает больше всех, поэтому идёт первым
+#   low_variance    из трёх.
+#   psi           — ДО модели. Нестабильный признак с высокой важностью на
+#                   train — иллюзия: в проде он развалится. Гонять модель по
+#                   таким признакам значит дать им вытеснить стабильные.
+#   iv            — одномерная сила связи с таргетом; только binary.
+#   correlation   — матрица N×N, поэтому после дешёвых фильтров: на 2500
+#                   кандидатах это 6 млн пар, на 800 — 640 тысяч.
+#   boruta_shap   — ПЕРЕД catboost_rfe, хотя он дороже. Его стоимость
+#                   определяется строками, а не признаками, поэтому от
+#                   сокращения списка он не ускоряется — а RFE ускоряется.
+#                   Плюс boruta отвечает на грубый вопрос «шум или нет»,
+#                   а RFE подбирает оптимальный набор. Грубое перед тонким.
+#   catboost_rfe  — ПОСЛЕДНИМ. Единственный, кто оценивает категориальные
+#                   (lightgbm и boruta_shap их молча пропускают), единственный
+#                   с out-of-time оценкой, и именно он строит кривую лосса,
+#                   по которой выбирается финальный размер набора.
+#
+# ── Чего здесь намеренно нет ─────────────────────────────────────────────
+#
+#   lasso, random_forest, stability_classifier — ЗАГЛУШКИ. Выбрасывают
+#   признаки случайным образом. В order их ставить нельзя.
+#
+#   lightgbm — альтернатива catboost_rfe, а не дополнение. Оба сразу не нужны.
+#   Отличие принципиальное: lightgbm категориальные пропускает без решения,
+#   они утекут в финальный набор неоценёнными. Пример — pipeline_lightgbm.yaml.
+#
+#   row_sample, random_feature_drop — только для тестовых прогонов, чтобы
+#   быстро проверить, что пайплайн собирается. Примеры ниже закомментированы.
+#
+# ── Требования к данным ──────────────────────────────────────────────────
+#
+#   iv, boruta_shap, catboost_rfe → task_type='binary_classification' + target
+#   psi (month_over_month), catboost_rfe → FeatureSchema.time
+#   psi (train_valid) → datasets['valid'] или FeatureSchema.split
+#
+# Schema в YAML не живёт — передаётся в fit_select().
+
+order:
+  - feature_drop: ${feature_drop}
+  - null_rate: ${null_rate}
+  - constants: ${constants}
+  - low_variance: ${low_variance}
+  - psi: ${psi}
+  - iv: ${iv}
+  - correlation: ${correlation}
+  - boruta_shap: ${boruta_shap}
+  - catboost_rfe: ${catboost_rfe}
+
+# Ручной чёрный список: известные утечки, запрещённые поля, идентификаторы.
+feature_drop:
+  # Из JSON берутся dropped_features. Относительный путь — от этого YAML.
+  path: drops.json
+  # true: ошибка на неизвестном имени; false: пропустить и записать в
+  # scores["feature_drop#<шаг>"].unknown.
+  strict: false
+
+null_rate:
+  # Дроп, если доля пропусков строго выше порога. Диапазон [0, 1].
+  threshold: 0.95
+
+constants:
+  # Дроп, если доля самого частого значения выше порога.
+  max_frequency: 0.999
+  # Колонок за один Spark-запрос.
+  chunk_size: 1000
+
+low_variance:
+  min_variance: 0.01
+  # standard НЕ РАБОТАЕТ: z-оценка делает дисперсию равной 1 для всех колонок,
+  # и min_variance перестаёт на что-либо влиять. Рабочие — minmax и robust.
+  # robust делит на квадрат межквартильного размаха и потому устойчив к
+  # выбросам, тогда как minmax зависит от двух крайних значений.
+  scale_method: robust
+
+psi:
+  # month_over_month: поздние периоды train против ранних, нужен schema.time.
+  # train_valid: train против valid (или против valid-строк schema.split).
+  # Ключ datasets['test'] не читается ни в одном режиме — отложенный сплит
+  # должен остаться нетронутым для независимой оценки итогового набора.
+  mode: month_over_month
+  threshold: 0.25
+  num_bins: 10
+  # Должен совпадать с FeatureSchema.time.
+  month_column: month_part
+  # Сколько последних периодов уходит в сравниваемую популяцию.
+  test_months: 1
+  relative_error: 0.001
+  batch_size: 100
+  n_jobs: -1
+  # Потолок строк на сэмпл; null — все доступные.
+  subsample_rows: null
+  # ВНИМАНИЕ: approxQuantile вызывается по всем кандидатам без фильтрации по
+  # типу и падает на строковых категориальных. Критично в связке с
+  # catboost_rfe — он единственный доводит категориальные до модели.
+
+iv:
+  # Дроп, если Information Value ниже порога.
+  threshold: 0.02
+  num_bins: 10
+  # Верхняя отсечка: подозрительно высокий IV часто означает утечку.
+  max_threshold: null
+  min_bin_share: 0.0
+  max_levels: 50
+  relative_error: 0.001
+  batch_size: 50
+  # IV одномерен: признак может иметь нулевой IV и быть ценным в паре с
+  # другим. Как жёсткая отсечка опасен, порог держите низким.
+
+correlation:
+  method: pearson            # pearson | spearman
+  threshold: 0.95
+  # Кого выбрасывать из пары. ВНИМАНИЕ: ни один из вариантов не смотрит на
+  # предсказательную силу, поэтому может остаться более «чистый», но более
+  # слабый признак.
+  tie_break: null_rate       # null_rate | original_order
+  # Берёт ПЕРВЫЕ max_rows строк через .limit(), а не случайную выборку.
+  # На партиционированных по времени данных это первые месяцы.
+  max_rows: 500000
+
+boruta_shap:
+  model_type: lgbm           # lgbm | rf
+  n_jobs: -1
+  seed: 17                   # иначе execution.seed
+  # Стоимость определяется СТРОКАМИ: на каждой итерации считается SHAP по всей
+  # выборке. Сокращение числа признаков стадию почти не ускоряет — режьте это.
+  max_rows: 250000
+  sample_fraction: null
+  boruta_trials: 50
+  tentative_fix_method: rough
+  # Оценивает только continuous; категориальные проходят без решения.
+  # Сколько признаков реально оценено — в scores["boruta_shap#<шаг>"].
+
+  parameters:
+    boosting_type: gbdt      # фиксируем: dart в переборе втрое растягивает трайлы
+    learning_rate:
+      type: float
+      min: 0.01
+      max: 0.1
+      log: true
+
+  optuna_params:
+    enabled: true
+    n_trials: 20
+    n_startup_trials: 5
+    sampler: TPE
+    timeout: 3600
+
+catboost_rfe:
+  # Последние N периодов FeatureSchema.time уходят в eval_set: ранняя остановка
+  # и важности считаются out-of-time. Внешние valid/test селектор не читает,
+  # они остаются пригодны для независимой проверки набора.
+  eval_months: 1
+  max_rows: 500000
+  sample_fraction: 0.1
+
+  parameters:
+    iterations: 3000
+    loss_function: Logloss
+    eval_metric: AUC
+    early_stopping_rounds: 100
+    use_best_model: true
+    max_ctr_complexity: 1
+    boosting_type: Plain
+    bootstrap_type: MVS
+    task_type: CPU           # модельная стадия идёт на драйвере Spark-сессии
+    depth:
+      type: int
+      min: 4
+      max: 6                 # depth >= 7 съедает ~40% времени подбора
+    min_data_in_leaf:
+      type: int
+      min: 16
+      max: 64
+    learning_rate:
+      type: float
+      min: 0.03              # ниже 0.03 требует больше деревьев и редко выигрывает
+      max: 0.3
+      log: true
+    l2_leaf_reg:
+      type: float
+      min: 0.5
+      max: 30
+      log: true
+    random_strength:
+      type: float
+      min: 0.05
+      max: 0.2
+
+  optuna_params:
+    enabled: true
+    n_trials: 15             # главный рычаг времени; 50 улучшений почти не даёт
+    n_startup_trials: 10
+    sampler: TPE
+    timeout: 18000
+
+  feature_selection_params:
+    # RecursiveByLossFunctionChange меряет прирост лосса без признака — прямой
+    # ответ на нужный вопрос, но на порядок дороже.
+    # RecursiveByPredictionValuesChange считает важность из структуры деревьев:
+    # грубее, зато быстро. Для разведочного прогона берите его.
+    algorithm: RecursiveByLossFunctionChange
+    # Число обучений CatBoost, оно же число точек кривой в
+    # scores["catboost_rfe#<шаг>"]["loss_graph"]. Дефолт 10; без явного
+    # значения CatBoost выбрасывает всё за один проход и кривая вырождается
+    # в две точки. За шаг убирается постоянная ДОЛЯ:
+    # (max_features / N) ** (1 / steps) — поэтому точки стоят густо у малых
+    # чисел и редко у больших.
+    steps: 20
+
+  selection:
+    # Сколько признаков оставить. Чтобы выбрать это число по кривой, сделайте
+    # разведочный прогон с заведомо низким значением (20–50): элиминация
+    # останавливается на нём, и ниже кривой просто нет. Второй прогон RFE
+    # потом не нужен — набор любого размера собирается из
+    # scores["catboost_rfe#<шаг>"]["elimination_order"].
+    max_features: 256
+
+execution:
+  # Доходит до сэмплирования, фолдов, сэмплера Optuna и random_seed модели.
+  # Любой шаг может переопределить его своим params.seed.
+  seed: 42
+  # Общий потолок строк на драйвере, срезает params.max_rows сверху.
+  max_local_rows: 1000000
+  # ВНИМАНИЕ: local_memory_limit и allow_local_fallback объявлены в схеме
+  # конфига, но нигде не используются — защиты от OOM на драйвере нет.
+  local_memory_limit: 4
+  allow_local_fallback: true
+  local_sample:
+    strategy: stratified
+    cache_intermediate: true
+
+# ── Тестовые прогоны ─────────────────────────────────────────────────────
+# Добавить в order и раскомментировать нужный блок.
+#   - random_feature_drop: ${random_feature_drop}
+#   - row_sample: ${row_sample}
+# random_feature_drop:
+#   n_features: 100          # детерминированное прореживание по execution.seed
+# row_sample:
+#   max_rows: 50000
+#   stratified: true
