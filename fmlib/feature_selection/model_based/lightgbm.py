@@ -2,7 +2,10 @@
 
 Outer folds run sequentially on the driver: the selector builds a bounded local
 numeric matrix, optionally tunes LightGBM with Optuna, then trains one model per
-fold and aggregates split and SHAP importances.
+fold. ``selection_mode="aggregated"`` averages split and SHAP importances and
+keeps their cumulative-threshold intersection. ``selection_mode="vote"`` cuts
+each fold's split and SHAP vectors separately and keeps features that appear
+in at least ``min_set_share`` of those ``2 * n_folds`` sets.
 """
 
 from __future__ import annotations
@@ -13,7 +16,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
-from fmlib.feature_selection.base import FeatureDecision, StageContext
+from fmlib.feature_selection.base import FeatureDecision, StageContext, resolve_step_seed
 from fmlib.feature_selection.config import ModelConfig
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.utils.default_model_param_spaces import (
@@ -40,6 +43,7 @@ except ImportError:
     shap = None
 
 OPTUNA_MODES = frozenset({"global", "per_fold"})
+SELECTION_MODES = frozenset({"aggregated", "vote"})
 
 _DEFAULT_N_TRIALS = 20
 
@@ -51,8 +55,12 @@ class LightGbmSelector:
 
     The model algorithm follows ``shap_lgbm_spark.py``: tune a binary
     ``LGBMClassifier`` on a stratified hold-out split, execute outer folds
-    sequentially on the driver, aggregate split and SHAP importances, then
-    keep the cumulative-threshold intersection. ``optuna_mode="global"``
+    sequentially on the driver, then either average split and SHAP
+    importances and keep their cumulative-threshold intersection
+    (``selection_mode="aggregated"``) or cut each fold's split and SHAP
+    vectors separately and keep features that appear in at least
+    ``min_set_share`` of those ``2 * n_folds`` sets (``selection_mode="vote"``).
+    ``optuna_mode="global"``
     tunes once on the driver; ``"per_fold"`` tunes independently for each
     fold using only that fold's outer-train rows.
 
@@ -140,8 +148,10 @@ class LightGbmSelector:
                 sample_fraction=options["sample_fraction"],
                 lgbm_threshold=options["lgbm_threshold"],
                 shap_threshold=options["shap_threshold"],
-                seed=context.seed,
+                seed=options["seed"],
                 optuna_mode=options["optuna_mode"],
+                selection_mode=options["selection_mode"],
+                min_set_share=options["min_set_share"],
                 n_jobs=options["n_jobs"],
                 shap_max_rows=options["shap_max_rows"],
                 search_space=options["search_space"],
@@ -162,36 +172,57 @@ class LightGbmSelector:
         lgbm_cumulative = indexed_importances["lgbm_cumsum"].to_dict()
         shap_cumulative = indexed_importances["shap_cumsum"].to_dict()
         selected = set(details["selected_features"])
+        selection_mode = options["selection_mode"]
+        min_set_share = options["min_set_share"]
+        set_presence = {
+            str(feature): float(share)
+            for feature, share in dict(details.get("set_presence") or {}).items()
+        }
 
-        decisions = [
-            FeatureDecision(
-                feature=feature,
-                stage=self.stage_name,
-                method=self.method_name,
-                reason=(
-                    "passed_lgbm_shap_selection"
+        decisions = []
+        for feature in feature_cols:
+            if selection_mode == "vote":
+                value = float(set_presence[feature])
+                threshold = min_set_share
+                reason = (
+                    "passed_lgbm_shap_vote"
                     if feature in selected
-                    else "failed_lgbm_shap_selection"
-                ),
-                value=float(
+                    else "failed_lgbm_shap_vote"
+                )
+            else:
+                value = float(
                     max(
                         lgbm_cumulative[feature] / options["lgbm_threshold"],
                         shap_cumulative[feature] / options["shap_threshold"],
                     ),
+                )
+                threshold = 1.0
+                reason = (
+                    "passed_lgbm_shap_selection"
+                    if feature in selected
+                    else "failed_lgbm_shap_selection"
+                )
+            decisions.append(
+                FeatureDecision(
+                    feature=feature,
+                    stage=self.stage_name,
+                    method=self.method_name,
+                    reason=reason,
+                    value=value,
+                    threshold=threshold,
+                    keep=feature in selected,
                 ),
-                threshold=1.0,
-                keep=feature in selected,
             )
-            for feature in feature_cols
-        ]
 
-        context.scores[self.method_name] = {
+        scores: dict[str, Any] = {
             "importances": {key: float(value) for key, value in lgbm_scores.items()},
             "shap_importances": {
                 key: float(value) for key, value in shap_scores.items()
             },
             "lgbm_threshold": options["lgbm_threshold"],
             "shap_threshold": options["shap_threshold"],
+            "selection_mode": options["selection_mode"],
+            "min_set_share": options["min_set_share"],
             "optuna_mode": options["optuna_mode"],
             "optuna_enabled": options["optuna_enabled"],
             "search_space": options["search_space"],
@@ -200,6 +231,11 @@ class LightGbmSelector:
             "global_best_params": details["global_best_params"],
             "fold_best_params": details["fold_best_params"],
         }
+        if selection_mode == "vote":
+            scores["n_sets"] = int(details["n_sets"])
+            scores["set_presence"] = set_presence
+            scores["fold_sets"] = details["fold_sets"]
+        context.scores[self.method_name] = scores
         logger.info(
             "LightGbmSelector: evaluated %d features, kept %d",
             len(feature_cols),
@@ -275,9 +311,14 @@ class LightGbmSelector:
                 "optuna_mode": str(
                     params.get("optuna_mode", "global"),
                 ).lower(),
+                "selection_mode": str(
+                    params.get("selection_mode", "aggregated"),
+                ).lower(),
+                "min_set_share": float(params.get("min_set_share", 1.0)),
                 "optuna_enabled": optuna_settings["enabled"],
                 "n_jobs": n_jobs,
                 "shap_max_rows": int(params.get("shap_max_rows", 5_000)),
+                "seed": resolve_step_seed(params, context),
             }
             fixed, search_space = resolve_tuning_space(
                 params.get("parameters", {}),
@@ -308,6 +349,18 @@ class LightGbmSelector:
             msg = (
                 f"lightgbm: optuna_mode must be one of "
                 f"{sorted(OPTUNA_MODES)}."
+            )
+            raise ExecutionError(msg)
+        if options["selection_mode"] not in SELECTION_MODES:
+            msg = (
+                f"lightgbm: selection_mode must be one of "
+                f"{sorted(SELECTION_MODES)}."
+            )
+            raise ExecutionError(msg)
+        if not 0.0 < options["min_set_share"] <= 1.0:
+            msg = (
+                "lightgbm: min_set_share must be in (0, 1]; "
+                f"got {options['min_set_share']!r}."
             )
             raise ExecutionError(msg)
         if options["n_jobs"] == 0 or options["n_jobs"] < -1:
@@ -372,6 +425,8 @@ class LightGbmSelector:
         n_startup_trials: int = 10,
         sampler: str = "TPE",
         timeout: int | None = None,
+        selection_mode: str = "aggregated",
+        min_set_share: float = 1.0,
         return_importances: bool = False,
         context: Any | None = None,
     ) -> list[str] | dict[str, Any]:
@@ -472,6 +527,12 @@ class LightGbmSelector:
         if not fold_lgbm:
             msg = "lightgbm: cross-validation produced no folds."
             raise ExecutionError(msg)
+        if selection_mode not in SELECTION_MODES:
+            msg = (
+                f"lightgbm: selection_mode must be one of "
+                f"{sorted(SELECTION_MODES)}."
+            )
+            raise ExecutionError(msg)
 
         lgbm_importances = np.sum(fold_lgbm, axis=0) / n_folds
         shap_importances = np.sum(fold_shap, axis=0) / n_folds
@@ -483,6 +544,19 @@ class LightGbmSelector:
             lgbm_threshold,
             shap_threshold,
         )
+        if selection_mode == "vote":
+            vote = self._vote_importances(
+                evaluated,
+                fold_lgbm,
+                fold_shap,
+                lgbm_threshold,
+                shap_threshold,
+                min_set_share,
+            )
+            details["selected_features"] = vote["selected_features"]
+            details["set_presence"] = vote["set_presence"]
+            details["fold_sets"] = vote["fold_sets"]
+            details["n_sets"] = vote["n_sets"]
         details["global_best_params"] = (
             dict(global_best_params)
             if global_best_params is not None
@@ -622,53 +696,32 @@ class LightGbmSelector:
         shap_threshold: float,
     ) -> dict[str, Any]:
         """Normalize importances and apply the draft cumulative intersection."""
-        lgbm_total = float(np.sum(lgbm_importances))
-        shap_total = float(np.sum(shap_importances))
-        if not np.isfinite(lgbm_total) or lgbm_total <= 0.0:
-            msg = "lightgbm: split importances have a non-positive total."
-            raise ExecutionError(msg)
-        if not np.isfinite(shap_total) or shap_total <= 0.0:
-            msg = "lightgbm: SHAP importances have a non-positive total."
-            raise ExecutionError(msg)
-
+        lgbm_selected, lgbm_norm, lgbm_cumsum = _cumulative_select(
+            lgbm_importances,
+            feature_cols,
+            lgbm_threshold,
+            empty_total_message=(
+                "lightgbm: split importances have a non-positive total."
+            ),
+        )
+        shap_selected, shap_norm, shap_cumsum = _cumulative_select(
+            shap_importances,
+            feature_cols,
+            shap_threshold,
+            empty_total_message=(
+                "lightgbm: SHAP importances have a non-positive total."
+            ),
+        )
         importances = pd.DataFrame(
             {
                 "feature": feature_cols,
                 "lgbm_imp": lgbm_importances,
                 "shap_imp": shap_importances,
+                "lgbm_norm": lgbm_norm,
+                "shap_norm": shap_norm,
+                "lgbm_cumsum": lgbm_cumsum,
+                "shap_cumsum": shap_cumsum,
             }
-        )
-        importances["lgbm_norm"] = importances["lgbm_imp"] / lgbm_total
-        importances["shap_norm"] = importances["shap_imp"] / shap_total
-
-        lgbm_sorted = importances.sort_values(
-            "lgbm_norm",
-            ascending=False,
-            kind="stable",
-        ).copy()
-        lgbm_sorted["lgbm_cumsum"] = lgbm_sorted["lgbm_norm"].cumsum()
-        lgbm_cumulative = lgbm_sorted.set_index("feature")["lgbm_cumsum"]
-        importances["lgbm_cumsum"] = importances["feature"].map(lgbm_cumulative)
-        lgbm_selected = set(
-            lgbm_sorted.loc[
-                lgbm_sorted["lgbm_cumsum"] <= lgbm_threshold,
-                "feature",
-            ]
-        )
-
-        shap_sorted = importances.sort_values(
-            "shap_norm",
-            ascending=False,
-            kind="stable",
-        ).copy()
-        shap_sorted["shap_cumsum"] = shap_sorted["shap_norm"].cumsum()
-        shap_cumulative = shap_sorted.set_index("feature")["shap_cumsum"]
-        importances["shap_cumsum"] = importances["feature"].map(shap_cumulative)
-        shap_selected = set(
-            shap_sorted.loc[
-                shap_sorted["shap_cumsum"] <= shap_threshold,
-                "feature",
-            ]
         )
         selected = [
             feature
@@ -691,6 +744,110 @@ class LightGbmSelector:
             ],
             "importances_df": importances,
         }
+
+    @staticmethod
+    def _vote_importances(
+        feature_cols: list[str],
+        fold_lgbm: Sequence[np.ndarray],
+        fold_shap: Sequence[np.ndarray],
+        lgbm_threshold: float,
+        shap_threshold: float,
+        min_set_share: float,
+    ) -> dict[str, Any]:
+        """Cut each fold's split and SHAP vectors, then keep by set presence."""
+        if len(fold_lgbm) != len(fold_shap):
+            msg = "lightgbm: vote selection requires one SHAP vector per fold."
+            raise ExecutionError(msg)
+        n_folds = len(fold_lgbm)
+        if n_folds < 1:
+            msg = "lightgbm: vote selection requires at least one fold."
+            raise ExecutionError(msg)
+        n_sets = 2 * n_folds
+        counts = {feature: 0 for feature in feature_cols}
+        fold_sets: dict[str, dict[str, list[str]]] = {}
+        for fold_index, (lgbm_values, shap_values) in enumerate(
+            zip(fold_lgbm, fold_shap),
+            start=1,
+        ):
+            lgbm_selected, _, _ = _cumulative_select(
+                np.asarray(lgbm_values, dtype=float),
+                feature_cols,
+                lgbm_threshold,
+                empty_total_message=(
+                    "lightgbm: split importances have a non-positive total."
+                ),
+            )
+            shap_selected, _, _ = _cumulative_select(
+                np.asarray(shap_values, dtype=float),
+                feature_cols,
+                shap_threshold,
+                empty_total_message=(
+                    "lightgbm: SHAP importances have a non-positive total."
+                ),
+            )
+            lgbm_kept = [
+                feature for feature in feature_cols if feature in lgbm_selected
+            ]
+            shap_kept = [
+                feature for feature in feature_cols if feature in shap_selected
+            ]
+            fold_sets[str(fold_index)] = {"lgbm": lgbm_kept, "shap": shap_kept}
+            for feature in lgbm_kept:
+                counts[feature] += 1
+            for feature in shap_kept:
+                counts[feature] += 1
+        set_presence = {
+            feature: counts[feature] / n_sets for feature in feature_cols
+        }
+        selected = [
+            feature
+            for feature in feature_cols
+            if set_presence[feature] >= min_set_share
+        ]
+        return {
+            "selected_features": selected,
+            "set_presence": set_presence,
+            "fold_sets": fold_sets,
+            "n_sets": n_sets,
+        }
+
+
+def _cumulative_select(
+    values: np.ndarray,
+    feature_cols: list[str],
+    threshold: float,
+    *,
+    empty_total_message: str,
+) -> tuple[set[str], np.ndarray, np.ndarray]:
+    """Normalize one importance vector and keep the cumulative prefix.
+
+    Features are ranked by descending share. A feature stays if its
+    running sum is ``<= threshold``. The crossing feature is excluded,
+    matching the historical LightGBM cutoff.
+    """
+    total = float(np.sum(values))
+    if not np.isfinite(total) or total <= 0.0:
+        raise ExecutionError(empty_total_message)
+
+    ranked = pd.DataFrame(
+        {
+            "feature": feature_cols,
+            "importance": np.asarray(values, dtype=float),
+        }
+    )
+    ranked["norm"] = ranked["importance"] / total
+    ordered = ranked.sort_values("norm", ascending=False, kind="stable").copy()
+    ordered["cumsum"] = ordered["norm"].cumsum()
+    selected = set(
+        ordered.loc[ordered["cumsum"] <= threshold, "feature"],
+    )
+    cumsum_by_feature = ordered.set_index("feature")["cumsum"]
+    ranked["cumsum"] = ranked["feature"].map(cumsum_by_feature)
+    return (
+        selected,
+        ranked["norm"].to_numpy(dtype=float),
+        ranked["cumsum"].to_numpy(dtype=float),
+    )
 
 
 def build_trial_parameters(
@@ -795,7 +952,7 @@ def tune_parameters(
         return float(roc_auc_score(valid_target, predictions))
 
     try:
-        study.optimize(objective, n_trials=n_trials, timeout=timeout)
+        study.optimize(objective, n_trials=n_trials, timeout=timeout, n_jobs=1)
     except ExecutionError:
         raise
     except Exception as exc:  # noqa: BLE001 - third-party tuning failures
@@ -835,6 +992,19 @@ def normalize_binary_shap_values(shap_values: Any) -> np.ndarray:
     return normalized
 
 
+def _lightgbm_library_seeds(seed: int) -> dict[str, Any]:
+    """Internal LightGBM RNG knobs pinned to the step seed."""
+    return {
+        "random_state": seed,
+        "bagging_seed": seed,
+        "feature_fraction_seed": seed,
+        "data_random_seed": seed,
+        "extra_seed": seed,
+        "deterministic": True,
+        "force_row_wise": True,
+    }
+
+
 def _finalize_parameters(
     parameters: Mapping[str, Any],
     *,
@@ -842,11 +1012,13 @@ def _finalize_parameters(
     n_jobs: int,
 ) -> dict[str, Any]:
     """Attach fixed binary-classification and execution parameters."""
-    return {
+    finalized = {
         **dict(parameters),
         "objective": "binary",
         "metric": "auc",
         "verbosity": -1,
         "n_jobs": n_jobs,
-        "random_state": seed,
+        **_lightgbm_library_seeds(seed),
     }
+    finalized.pop("force_col_wise", None)
+    return finalized

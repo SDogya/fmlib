@@ -15,6 +15,7 @@ PRECISE_METHODS = frozenset({"boruta_shap", "none"})
 BORUTA_MODEL_TYPES = frozenset({"lgbm", "rf"})
 BORUTA_SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
 OPTUNA_SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
+LIGHTGBM_SELECTION_MODES = frozenset({"aggregated", "vote"})
 CATBOOST_RFE_ALGORITHMS = frozenset(
     {
         "RecursiveByLossFunctionChange",
@@ -54,6 +55,19 @@ STATISTICS_ORDER_METHODS = (
     "iv",
     "stability_classifier",
 )
+PREPROCESSING_METHODS = (
+    "feature_drop",
+    "random_feature_drop",
+    "row_sample",
+)
+PRECISE_PIPELINE_METHODS = ("boruta_shap",)
+METHOD_STAGE = {
+    **dict.fromkeys(PREPROCESSING_METHODS, "preprocessing"),
+    **dict.fromkeys(STATISTICS_ORDER_METHODS, "statistics"),
+    **dict.fromkeys(MODEL_METHODS, "model"),
+    **dict.fromkeys(PRECISE_PIPELINE_METHODS, "precise"),
+}
+PIPELINE_METHODS = frozenset(METHOD_STAGE)
 
 
 def parse_statistics_order(raw: Any) -> tuple[str, ...]:
@@ -90,6 +104,133 @@ def parse_statistics_order(raw: Any) -> tuple[str, ...]:
     return tuple(names)
 
 
+@dataclass(frozen=True)
+class PipelineStepConfig:
+    """One pipeline step: a method name plus its resolved parameter mapping."""
+
+    method: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+
+def parse_pipeline_order(raw: Any) -> tuple[PipelineStepConfig, ...]:
+    """Parse top-level ``order`` as a list of single-key method mappings.
+
+    Repeats are allowed. Each value is a parameter mapping (inline or already
+    resolved from an OmegaConf interpolation).
+    """
+    if raw is None:
+        return ()
+    if isinstance(raw, (str, bytes)) or not isinstance(raw, AbcSequence):
+        msg = "order must be a list of single-key method mappings."
+        raise ConfigError(msg)
+    steps: list[PipelineStepConfig] = []
+    for index, item in enumerate(raw):
+        if not isinstance(item, Mapping) or len(item) != 1:
+            msg = (
+                f"order[{index}] must be a mapping with exactly one method key, "
+                "for example `- null_rate: ${null_rate.wide}`."
+            )
+            raise ConfigError(msg)
+        method, params = next(iter(item.items()))
+        if method not in PIPELINE_METHODS:
+            msg = (
+                f"Unknown method in order[{index}]: {method!r}. "
+                f"Expected one of: {sorted(PIPELINE_METHODS)}."
+            )
+            raise ConfigError(msg)
+        if params is None:
+            params = {}
+        if not isinstance(params, Mapping):
+            msg = f"order[{index}].{method} must be a mapping of parameters."
+            raise ConfigError(msg)
+        steps.append(PipelineStepConfig(method=str(method), params=dict(params)))
+    return tuple(steps)
+
+
+def split_model_step_params(
+    params: Mapping[str, Any],
+) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
+    """Split a model-step mapping into params / selection / cross_validation."""
+    raw = dict(params)
+    selection = raw.pop("selection", {})
+    cross_validation = raw.pop("cross_validation", {})
+    raw.pop("enabled", None)
+    raw.pop("method", None)
+    if isinstance(selection, Mapping):
+        selection_payload = dict(selection)
+    else:
+        msg = "order model step 'selection' must be a mapping."
+        raise ConfigError(msg)
+    if isinstance(cross_validation, Mapping):
+        cv_payload = dict(cross_validation)
+    else:
+        msg = "order model step 'cross_validation' must be a mapping."
+        raise ConfigError(msg)
+    inner = raw.pop("params", None)
+    if isinstance(inner, Mapping):
+        model_params = dict(inner)
+        model_params.update(raw)
+        return model_params, selection_payload, cv_payload
+    if inner is not None:
+        msg = "order model step 'params' must be a mapping."
+        raise ConfigError(msg)
+    return raw, selection_payload, cv_payload
+
+
+def _section_params(section: Any) -> dict[str, Any]:
+    """Serialize a nested config block for a compiled order step."""
+    payload = asdict(section)
+    payload.pop("enabled", None)
+    return payload
+
+
+def compile_order_from_nested(
+    *,
+    preprocessing: "PreprocessingConfig",
+    statistics: "StatisticsConfig",
+    model: "ModelConfig",
+    precise: "PreciseConfig",
+) -> tuple[PipelineStepConfig, ...]:
+    """Build ``order`` from the legacy nested enabled/order layout."""
+    steps: list[PipelineStepConfig] = []
+    if preprocessing.feature_drop.enabled:
+        steps.append(
+            PipelineStepConfig(
+                "feature_drop",
+                _section_params(preprocessing.feature_drop),
+            ),
+        )
+    if preprocessing.random_feature_drop.enabled:
+        steps.append(
+            PipelineStepConfig(
+                "random_feature_drop",
+                _section_params(preprocessing.random_feature_drop),
+            ),
+        )
+    if preprocessing.row_sample.enabled:
+        steps.append(
+            PipelineStepConfig("row_sample", _section_params(preprocessing.row_sample)),
+        )
+    for name in statistics.order:
+        steps.append(
+            PipelineStepConfig(name, _section_params(getattr(statistics, name))),
+        )
+    if model.enabled:
+        steps.append(
+            PipelineStepConfig(
+                model.method,
+                {
+                    **dict(model.params),
+                    "selection": asdict(model.selection),
+                    "cross_validation": asdict(model.cross_validation),
+                },
+            ),
+        )
+    if precise.enabled and precise.method not in {None, "none"}:
+        steps.append(PipelineStepConfig(str(precise.method), dict(precise.params)))
+    return tuple(steps)
+
+
 def _reject_unknown(section: str, payload: Mapping[str, Any], allowed: set[str]) -> None:
     unknown = sorted(set(payload) - allowed)
     if unknown:
@@ -120,6 +261,19 @@ def _require_positive_int(value: Any, name: str) -> None:
         return
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
         msg = f"{name} must be a positive integer."
+        raise ConfigError(msg)
+
+
+def _validate_optional_seed(value: Any, name: str) -> None:
+    """Raise when ``seed`` is present but is not an integer.
+
+    ``None`` means inherit ``execution.seed``. ``0`` is allowed; booleans
+    are rejected because ``bool`` is a subclass of ``int``.
+    """
+    if value is None:
+        return
+    if isinstance(value, bool) or not isinstance(value, int):
+        msg = f"{name} must be an integer."
         raise ConfigError(msg)
 
 
@@ -180,6 +334,7 @@ def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
         raise ConfigError(msg)
 
     _validate_optuna_params_block("model", params)
+    _validate_optional_seed(params.get("seed"), "model.params.seed")
 
     selection_params = params.get("feature_selection_params", {})
     if not isinstance(selection_params, Mapping):
@@ -202,6 +357,7 @@ def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
     """Validate method-specific LightGBM configuration."""
     _require_positive_int(params.get("n_trials"), "model.params.n_trials")
     _validate_optuna_params_block("model", params)
+    _validate_optional_seed(params.get("seed"), "model.params.seed")
     for name in (
         "n_folds",
         "max_rows",
@@ -232,7 +388,12 @@ def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
             msg = "model.params.n_folds must be at least 2."
             raise ConfigError(msg)
 
-    for name in ("lgbm_threshold", "shap_threshold", "sample_fraction"):
+    for name in (
+        "lgbm_threshold",
+        "shap_threshold",
+        "sample_fraction",
+        "min_set_share",
+    ):
         value = params.get(name)
         if value is None:
             continue
@@ -252,6 +413,17 @@ def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
         msg = (
             "model.params.optuna_mode must be one of "
             "['global', 'per_fold']."
+        )
+        raise ConfigError(msg)
+
+    selection_mode = params.get("selection_mode")
+    if (
+        selection_mode is not None
+        and str(selection_mode).lower() not in LIGHTGBM_SELECTION_MODES
+    ):
+        msg = (
+            "model.params.selection_mode must be one of "
+            f"{sorted(LIGHTGBM_SELECTION_MODES)}."
         )
         raise ConfigError(msg)
 
@@ -275,6 +447,8 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
     ):
         msg = "precise.params.n_jobs must be -1 or a positive integer."
         raise ConfigError(msg)
+
+    _validate_optional_seed(params.get("seed"), "precise.params.seed")
 
     for name in (
         "max_rows",
@@ -394,6 +568,8 @@ class PsiConfig:
         batch_size: Column batch size for PySpark PSI computation.
         n_jobs: Number of parallel jobs for Pandas PSI calculation.
         subsample_rows: Maximum number of rows for stratified subsampling (optional).
+        seed: Optional RNG seed for stratified subsample. ``null`` inherits
+            ``execution.seed``.
     """
 
     mode: str = "train_valid"
@@ -406,6 +582,7 @@ class PsiConfig:
     batch_size: int = 100
     n_jobs: int = -1
     subsample_rows: Optional[int] = None
+    seed: Optional[int] = None
 
 
 @dataclass(frozen=True)
@@ -488,11 +665,12 @@ class ModelConfig:
         method: Exactly one selector when ``enabled``. Supported values:
             - ``"lightgbm"``: LightGBM + SHAP importance (params:
               lgbm_threshold, shap_threshold, n_folds, n_trials, max_rows,
-              sample_fraction, optuna_mode, n_jobs, shap_max_rows,
-              parameters). Optuna lives in ``params.optuna_params``.
+              sample_fraction, optuna_mode, selection_mode, min_set_share,
+              n_jobs, seed, shap_max_rows, parameters). Optuna lives in
+              ``params.optuna_params``. ``seed`` overrides ``execution.seed``.
             - ``"catboost_rfe"``: CatBoost recursive elimination on an
               out-of-time split, with optional Optuna tuning (params:
-              eval_months, max_rows, sample_fraction, parameters,
+              eval_months, max_rows, sample_fraction, seed, parameters,
               optuna_params, feature_selection_params; the target feature
               count comes from ``selection.max_features``)
             - ``"random_forest"``: Random Forest importance (stub)
@@ -518,8 +696,10 @@ class PreciseConfig:
     Args:
         enabled: When false, the precise stage is skipped.
         method: ``"boruta_shap"`` when ``enabled``; ``"none"`` otherwise.
-        params: Method-specific BorutaSHAP parameters. Optuna settings
-            live in ``params.optuna_params``.
+        params: Method-specific BorutaSHAP parameters (including optional
+            ``seed``, same meaning as ``n_jobs``: omit to inherit
+            ``execution.seed``). Optuna settings live in
+            ``params.optuna_params``.
     """
 
     enabled: bool = False
@@ -664,16 +844,22 @@ class FeatureSelectionConfig:
     """Top-level configuration for ``FeatureSelectionPipeline``.
 
     Args:
-        statistics: Statistical filters. ``statistics.order`` lists unique
-            method names; parameters live under ``statistics.<method>``.
-        model: Optional model-based selector (``enabled`` + one ``method``).
-        precise: Optional precise selector (``enabled`` + ``method``).
+        order: Pipeline steps as ``[{method: params}, ...]``. Repeats are
+            allowed. When omitted, steps are compiled from the nested
+            ``preprocessing`` / ``statistics.order`` / ``model`` / ``precise``
+            layout.
+        statistics: Nested statistical defaults and, for the legacy layout,
+            ``statistics.order``.
+        model: Nested model defaults; ``enabled`` is ignored when ``order``
+            is set.
+        precise: Nested precise defaults; ``enabled`` is ignored when
+            ``order`` is set.
         execution: Seeds, backend fallback and capacity limits.
-        preprocessing: Input-level feature exclusions and preparation.
-            Each helper runs before statistics when its ``enabled`` flag
-            is true.
+        preprocessing: Nested preprocessing defaults; ``enabled`` flags are
+            ignored when ``order`` is set.
     """
 
+    order: tuple[PipelineStepConfig, ...] = ()
     statistics: StatisticsConfig = field(default_factory=StatisticsConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
     precise: PreciseConfig = field(default_factory=PreciseConfig)
@@ -753,6 +939,7 @@ class FeatureSelectionConfig:
             raise ConfigError(
                 msg,
             )
+        _validate_optional_seed(self.statistics.psi.seed, "statistics.psi.seed")
         if self.model.method not in MODEL_METHODS:
             msg = f"Unsupported model.method={self.model.method!r}. Expected one of: {sorted(MODEL_METHODS)}."
             raise ConfigError(
@@ -833,6 +1020,7 @@ class FeatureSelectionConfig:
             msg = "statistics.correlation.max_rows must be positive."
             raise ConfigError(msg)
         _validate_iv_config(self.statistics.iv)
+        _validate_order_steps(self.order)
 
     def to_dict(self: FeatureSelectionConfig) -> dict[str, Any]:
         """Serialize config to a plain nested dictionary.
@@ -841,6 +1029,9 @@ class FeatureSelectionConfig:
             JSON/YAML-compatible dictionary.
         """
         payload = asdict(self)
+        payload["order"] = [
+            {step.method: dict(step.params)} for step in self.order
+        ]
         payload["statistics"]["order"] = list(self.statistics.order)
         return payload
 
@@ -860,16 +1051,16 @@ class FeatureSelectionConfig:
         if not isinstance(payload, Mapping):
             msg = "Config payload must be a mapping."
             raise ConfigError(msg)
-        if "order" in payload:
-            msg = (
-                "Top-level order is not supported. Put statistics methods in "
-                "statistics.order; enable utils with preprocessing.*.enabled; "
-                "enable model/precise with their enabled flags."
-            )
-            raise ConfigError(msg)
-        _reject_unknown("root", payload, {f.name for f in fields(cls)})
+        payload_raw = dict(payload)
+        has_explicit_order = "order" in payload_raw
+        raw_order = payload_raw.pop("order", None)
+        _reject_unknown(
+            "root",
+            payload_raw,
+            {f.name for f in fields(cls)} | set(PIPELINE_METHODS),
+        )
 
-        preprocessing_payload = payload.get("preprocessing", {})
+        preprocessing_payload = payload_raw.get("preprocessing", {})
         if preprocessing_payload is None:
             preprocessing_payload = {}
         if not isinstance(preprocessing_payload, Mapping):
@@ -899,7 +1090,7 @@ class FeatureSelectionConfig:
             ),
         )
 
-        statistics_payload = payload.get("statistics") or {}
+        statistics_payload = payload_raw.get("statistics") or {}
         if not isinstance(statistics_payload, Mapping):
             msg = "statistics must be a mapping."
             raise ConfigError(msg)
@@ -933,7 +1124,7 @@ class FeatureSelectionConfig:
             ),
         )
 
-        model_raw = dict(payload.get("model") or {})
+        model_raw = dict(payload_raw.get("model") or {})
         _reject_tuning_block("model", model_raw)
         _reject_unknown("model", model_raw, {f.name for f in fields(ModelConfig)})
         model = ModelConfig(
@@ -952,7 +1143,7 @@ class FeatureSelectionConfig:
             ),
         )
 
-        precise_raw = dict(payload.get("precise") or {})
+        precise_raw = dict(payload_raw.get("precise") or {})
         _reject_tuning_block("precise", precise_raw)
         _reject_unknown("precise", precise_raw, {f.name for f in fields(PreciseConfig)})
         precise_method = precise_raw.get("method", PreciseConfig.method)
@@ -964,7 +1155,7 @@ class FeatureSelectionConfig:
             params=dict(precise_raw.get("params", {})),
         )
 
-        execution_raw = dict(payload.get("execution") or {})
+        execution_raw = dict(payload_raw.get("execution") or {})
         _reject_unknown("execution", execution_raw, {f.name for f in fields(ExecutionConfig)})
         local_sample_raw = execution_raw.get("local_sample", {})
         execution = ExecutionConfig(
@@ -982,7 +1173,18 @@ class FeatureSelectionConfig:
             verbose=parse_verbose(execution_raw.get("verbose", False)),
         )
 
+        if has_explicit_order:
+            order = parse_pipeline_order(raw_order)
+        else:
+            order = compile_order_from_nested(
+                preprocessing=preprocessing,
+                statistics=statistics,
+                model=model,
+                precise=precise,
+            )
+
         config = cls(
+            order=order,
             preprocessing=preprocessing,
             statistics=statistics,
             model=model,
@@ -994,7 +1196,10 @@ class FeatureSelectionConfig:
 
     @classmethod
     def from_yaml(cls: type[FeatureSelectionConfig], path: Union[str, Path]) -> FeatureSelectionConfig:
-        """Load config from a YAML file without Hydra composition.
+        """Load config from a YAML file.
+
+        OmegaConf interpolations such as ``${null_rate.wide}`` are resolved.
+        Hydra config-group composition is not used.
 
         Args:
             path: Path to a YAML file.
@@ -1021,21 +1226,167 @@ class FeatureSelectionConfig:
             msg = f"YAML root must be a mapping, got {type(loaded)!r}."
             raise ConfigError(msg)
         payload = dict(loaded)
-        preprocessing_raw = payload.get("preprocessing", {})
-        if isinstance(preprocessing_raw, Mapping):
-            preprocessing = dict(preprocessing_raw)
-            feature_drop_raw = preprocessing.get("feature_drop", {})
-            if isinstance(feature_drop_raw, Mapping):
-                feature_drop = dict(feature_drop_raw)
-                drop_path = feature_drop.get("path")
-                if drop_path is not None:
-                    resolved_path = Path(str(drop_path)).expanduser()
-                    if not resolved_path.is_absolute():
-                        resolved_path = file_path.parent / resolved_path
-                    feature_drop["path"] = str(resolved_path)
-                    preprocessing["feature_drop"] = feature_drop
-                    payload["preprocessing"] = preprocessing
+        payload = _resolve_yaml_feature_drop_paths(payload, file_path)
         return cls.from_dict(payload)
+
+
+def _resolve_drop_path(mapping: Mapping[str, Any], file_path: Path) -> dict[str, Any]:
+    """Resolve a relative feature-drop path against the YAML file directory."""
+    updated = dict(mapping)
+    drop_path = updated.get("path")
+    if drop_path is None:
+        return updated
+    resolved_path = Path(str(drop_path)).expanduser()
+    if not resolved_path.is_absolute():
+        resolved_path = file_path.parent / resolved_path
+    updated["path"] = str(resolved_path)
+    return updated
+
+
+def _resolve_yaml_feature_drop_paths(
+    payload: Mapping[str, Any],
+    file_path: Path,
+) -> dict[str, Any]:
+    """Make feature_drop.path absolute relative to the YAML file."""
+    resolved = dict(payload)
+    preprocessing_raw = resolved.get("preprocessing", {})
+    if isinstance(preprocessing_raw, Mapping):
+        preprocessing = dict(preprocessing_raw)
+        feature_drop_raw = preprocessing.get("feature_drop", {})
+        if isinstance(feature_drop_raw, Mapping):
+            preprocessing["feature_drop"] = _resolve_drop_path(
+                feature_drop_raw,
+                file_path,
+            )
+            resolved["preprocessing"] = preprocessing
+    order_raw = resolved.get("order")
+    if isinstance(order_raw, list):
+        new_order: list[Any] = []
+        for item in order_raw:
+            if isinstance(item, Mapping) and "feature_drop" in item:
+                drop_raw = item["feature_drop"]
+                if isinstance(drop_raw, Mapping):
+                    item = {**dict(item), "feature_drop": _resolve_drop_path(drop_raw, file_path)}
+            new_order.append(item)
+        resolved["order"] = new_order
+    root_drop = resolved.get("feature_drop")
+    if isinstance(root_drop, Mapping):
+        resolved["feature_drop"] = _resolve_feature_drop_tree(root_drop, file_path)
+    return resolved
+
+
+def _resolve_feature_drop_tree(raw: Mapping[str, Any], file_path: Path) -> dict[str, Any]:
+    """Resolve ``path`` on a drop config or on each named preset under it."""
+    if "path" in raw:
+        return _resolve_drop_path(raw, file_path)
+    updated: dict[str, Any] = {}
+    for key, value in raw.items():
+        if isinstance(value, Mapping):
+            updated[key] = _resolve_feature_drop_tree(value, file_path)
+        else:
+            updated[key] = value
+    return updated
+
+
+def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
+    """Validate parameter mappings for each explicit pipeline step."""
+    for index, step in enumerate(order):
+        section = f"order[{index}].{step.method}"
+        params = step.params
+        if step.method == "feature_drop":
+            settings = _build_section(FeatureDropConfig, params, section)
+            if settings.path is None or not str(settings.path).strip():
+                msg = f"{section}.path is required."
+                raise ConfigError(msg)
+        elif step.method == "random_feature_drop":
+            settings = _build_section(RandomFeatureDropConfig, params, section)
+            if (
+                isinstance(settings.n_features, bool)
+                or not isinstance(settings.n_features, int)
+                or settings.n_features < 1
+            ):
+                msg = f"{section}.n_features must be a positive integer."
+                raise ConfigError(msg)
+        elif step.method == "row_sample":
+            settings = _build_section(RowSampleConfig, params, section)
+            if (
+                isinstance(settings.max_rows, bool)
+                or not isinstance(settings.max_rows, int)
+                or settings.max_rows < 1
+            ):
+                msg = f"{section}.max_rows must be a positive integer."
+                raise ConfigError(msg)
+        elif step.method == "null_rate":
+            settings = _build_section(NullRateConfig, params, section)
+            if not 0.0 <= settings.threshold <= 1.0:
+                msg = f"{section}.threshold must be in [0, 1]."
+                raise ConfigError(msg)
+        elif step.method == "constants":
+            settings = _build_section(ConstantsConfig, params, section)
+            if not 0.0 <= settings.max_frequency <= 1.0:
+                msg = f"{section}.max_frequency must be in [0, 1]."
+                raise ConfigError(msg)
+            if settings.min_unique is not None and settings.min_unique < 1:
+                msg = f"{section}.min_unique must be >= 1 when set."
+                raise ConfigError(msg)
+            if settings.chunk_size <= 0:
+                msg = f"{section}.chunk_size must be positive."
+                raise ConfigError(msg)
+        elif step.method == "low_variance":
+            settings = _build_section(LowVarianceConfig, params, section)
+            if settings.scale_method not in LOW_VARIANCE_SCALE_METHODS:
+                msg = (
+                    f"Unsupported {section}.scale_method={settings.scale_method!r}."
+                )
+                raise ConfigError(msg)
+            if settings.min_variance < 0:
+                msg = f"{section}.min_variance must be non-negative."
+                raise ConfigError(msg)
+        elif step.method == "correlation":
+            settings = _build_section(CorrelationConfig, params, section)
+            if settings.method not in CORRELATION_METHODS:
+                msg = f"Unsupported {section}.method={settings.method!r}."
+                raise ConfigError(msg)
+            if settings.tie_break not in CORRELATION_TIE_BREAKS:
+                msg = f"Unsupported {section}.tie_break={settings.tie_break!r}."
+                raise ConfigError(msg)
+            if not 0.0 <= settings.threshold <= 1.0:
+                msg = f"{section}.threshold must be in [0, 1]."
+                raise ConfigError(msg)
+            if settings.max_rows <= 0:
+                msg = f"{section}.max_rows must be positive."
+                raise ConfigError(msg)
+        elif step.method == "psi":
+            settings = _build_section(PsiConfig, params, section)
+            if settings.mode not in PSI_MODES:
+                msg = f"Unsupported {section}.mode={settings.mode!r}."
+                raise ConfigError(msg)
+            _validate_optional_seed(settings.seed, f"{section}.seed")
+        elif step.method == "iv":
+            settings = _build_section(IvConfig, params, section)
+            _validate_iv_config(settings)
+        elif step.method == "stability_classifier":
+            _build_section(StabilityClassifierConfig, params, section)
+        elif step.method in MODEL_METHODS:
+            model_params, selection_raw, cv_raw = split_model_step_params(params)
+            selection = _build_section(
+                ModelSelectionRuleConfig,
+                selection_raw,
+                f"{section}.selection",
+            )
+            _build_section(CrossValidationConfig, cv_raw, f"{section}.cross_validation")
+            if step.method == "lightgbm":
+                _validate_lightgbm_params(model_params)
+            elif step.method == "catboost_rfe":
+                _validate_catboost_rfe_params(model_params)
+                if selection.max_features is None:
+                    msg = (
+                        f"{section}.selection.max_features is required for "
+                        "catboost_rfe."
+                    )
+                    raise ConfigError(msg)
+        elif step.method == "boruta_shap":
+            _validate_boruta_params(params)
 
 
 def _validate_iv_config(config: IvConfig) -> None:

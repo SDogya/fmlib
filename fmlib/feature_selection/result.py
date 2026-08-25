@@ -235,21 +235,11 @@ class SelectionResult:
 def stage_backends_for_config(config: Any) -> dict[str, str]:
     """Spark backend tag for every stage that will run."""
     from fmlib.feature_selection.backends.spark import SPARK_CAPABILITIES
+    from fmlib.feature_selection.config import METHOD_STAGE
 
     backends: dict[str, str] = {}
-    preprocessing = config.preprocessing
-    if (
-        preprocessing.feature_drop.enabled
-        or preprocessing.random_feature_drop.enabled
-        or preprocessing.row_sample.enabled
-    ):
-        backends["preprocessing"] = SPARK_CAPABILITIES.name
-    if config.statistics.order:
-        backends["statistics"] = SPARK_CAPABILITIES.name
-    if config.model.enabled:
-        backends["model"] = SPARK_CAPABILITIES.name
-    if config.precise.enabled:
-        backends["precise"] = SPARK_CAPABILITIES.name
+    for step in getattr(config, "order", ()):
+        backends[METHOD_STAGE[step.method]] = SPARK_CAPABILITIES.name
     return backends
 
 
@@ -260,6 +250,7 @@ def _save_intermediate_result(
     method_name: str,
     output_dir: Path,
     context: Any,
+    step_index: int = 0,
 ) -> None:
     """Save partial selection result after a selector.
 
@@ -270,6 +261,7 @@ def _save_intermediate_result(
         method_name: Selector method name (null_rate/constants/etc).
         output_dir: Directory to save results.
         context: Stage context with schema and config.
+        step_index: 0-based position of this step in the pipeline order.
     """
     stage_backends = stage_backends_for_config(context.config)
     result = SelectionResult(
@@ -294,7 +286,7 @@ def _save_intermediate_result(
         datasets_mode=context.datasets_mode,
         scores=dict(context.scores),
     )
-    path = output_dir / f"{stage_name}_{method_name}_results.json"
+    path = output_dir / f"{step_index:02d}_{stage_name}_{method_name}_results.json"
     result.save(path)
 
 

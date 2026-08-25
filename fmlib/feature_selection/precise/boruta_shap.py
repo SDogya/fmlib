@@ -9,7 +9,7 @@ from typing import Any, Mapping, Sequence
 
 import numpy as np
 
-from fmlib.feature_selection.base import FeatureDecision, StageContext
+from fmlib.feature_selection.base import FeatureDecision, StageContext, resolve_step_seed
 from fmlib.feature_selection.config import (
     BORUTA_MODEL_TYPES,
     BORUTA_SAMPLERS,
@@ -117,7 +117,7 @@ class BorutaShapSelector:
                 target_col=target_col,
                 feature_cols=feature_cols,
                 options=options,
-                seed=context.seed,
+                seed=options["seed"],
                 backends=backends,
                 context=context,
             )
@@ -251,6 +251,7 @@ class BorutaShapSelector:
                 },
                 "fixed_params": fixed_params,
                 "search_space": search_space,
+                "seed": resolve_step_seed(params, context),
             }
             if options["sample_fraction"] is not None:
                 options["sample_fraction"] = float(
@@ -487,6 +488,7 @@ class BorutaShapSelector:
                     n_trials=options["n_trials"],
                     timeout=options["timeout"],
                     show_progress_bar=False,
+                    n_jobs=1,
                 )
                 best_params = {**fixed_params, **study.best_params}
                 best_auc = float(study.best_value)
@@ -625,8 +627,15 @@ class BorutaShapSelector:
                     "objective": "binary",
                     "metric": "auc",
                     "verbosity": -1,
+                    "bagging_seed": seed,
+                    "feature_fraction_seed": seed,
+                    "data_random_seed": seed,
+                    "extra_seed": seed,
+                    "deterministic": True,
+                    "force_row_wise": True,
                 },
             )
+            common.pop("force_col_wise", None)
             return model_class(**common)
         return model_class(**common)
 

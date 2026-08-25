@@ -1,6 +1,9 @@
+# Шаги пайплайна. Повторы метода с разными параметрами разрешены.
+order:
+  - psi: ${statistics.psi}
+  - lasso: ${model}
+
 statistics:
-  order:
-    - psi
   null_rate:
     threshold: 0.95
   low_variance:

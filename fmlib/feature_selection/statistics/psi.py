@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 
-from fmlib.feature_selection.base import FeatureDecision, StageContext
+from fmlib.feature_selection.base import FeatureDecision, StageContext, step_seed
 from fmlib.feature_selection.config import PsiConfig
 from fmlib.feature_selection.utils.verbose import emit as verbose_emit
 from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
@@ -323,8 +323,12 @@ class PsiSelector:
             )
             return train_df, test_df
         
-        # Get seed from context
-        seed = context.seed
+        # Prefer PsiConfig.seed, then the runner-assigned step seed.
+        seed = (
+            self.config.seed
+            if self.config.seed is not None
+            else step_seed(context)
+        )
         
         logger.info(f"PSISelector: Applying stratified subsampling to train set (max_rows={subsample_rows})")
         train_sampled = self._apply_stratified_sampling(train_df, target_col, subsample_rows, seed)

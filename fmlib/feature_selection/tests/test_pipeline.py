@@ -126,16 +126,16 @@ def test_feature_drop_file_runs_before_selectors_and_updates_schema(
     assert all(item.stage == "preprocessing" for item in manual_drops)
     assert dropped[0] not in result.schema.categorical
     assert dropped[1] not in result.schema.continuous
-    assert result.scores["feature_drop"]["dropped"] == dropped
-    assert result.scores["feature_drop"]["unknown"] == ["unknown_feature"]
+    assert result.scores["feature_drop#0"]["dropped"] == dropped
+    assert result.scores["feature_drop#0"]["unknown"] == ["unknown_feature"]
     assert result.stage_backends["preprocessing"] == "spark"
     assert (
         tmp_path
         / "artifacts"
-        / "preprocessing_feature_drop_results.json"
+        / "00_preprocessing_feature_drop_results.json"
     ).exists()
     model_artifact = SelectionResult.load(
-        tmp_path / "artifacts" / "model_lasso_results.json",
+        tmp_path / "artifacts" / "02_model_lasso_results.json",
     )
     final_artifact = SelectionResult.load(
         tmp_path / "artifacts" / "final_results.json",
@@ -157,7 +157,7 @@ def test_feature_drop_file_runs_before_selectors_and_updates_schema(
     assert (
         tmp_path
         / "artifacts"
-        / "preprocessing_feature_drop_results_1.json"
+        / "00_preprocessing_feature_drop_results_1.json"
     ).exists()
     assert (tmp_path / "artifacts" / "final_results_1.json").exists()
     assert all(feature in frame.columns for feature in dropped)
@@ -200,13 +200,13 @@ def test_test_run_preprocessing_samples_rows_and_drops_random_features(
         item.feature not in result.schema.candidate_features()
         for item in random_drops
     )
-    train_sample = result.scores["row_sample"]["splits"]["train"]
+    train_sample = result.scores["row_sample#1"]["splits"]["train"]
     assert train_sample["original_rows"] == 200
     assert train_sample["sampled_rows"] == 40
     assert isinstance(train_sample["seed"], int)
     assert len(frame) == 200
-    assert (tmp_path / "preprocessing_random_feature_drop_results.json").exists()
-    assert (tmp_path / "preprocessing_row_sample_results.json").exists()
+    assert (tmp_path / "00_preprocessing_random_feature_drop_results.json").exists()
+    assert (tmp_path / "01_preprocessing_row_sample_results.json").exists()
 
 
 def test_mutually_exclusive_inputs() -> None:
@@ -320,7 +320,7 @@ def test_precise_boruta_stage_produces_drops_and_scores(
     ]
     assert len(boruta_drops) == 1
     assert boruta_drops[0].stage == "precise"
-    assert result.scores["boruta_shap"]["model_type"] == "rf"
+    assert result.scores["boruta_shap#2"]["model_type"] == "rf"
 
 
 def test_correlation_drop_decisions_have_real_values() -> None:
@@ -430,8 +430,8 @@ def test_lightgbm_stage_produces_real_scores_without_stub_warning(
     assert result.selected_features == ["category"]
     assert [item.feature for item in result.dropped_features] == ["feature"]
     assert result.warnings == []
-    assert result.scores["lightgbm"]["importances"] == {"feature": 1.0}
-    assert result.scores["lightgbm"]["shap_importances"] == {"feature": 1.0}
+    assert result.scores["lightgbm#0"]["importances"] == {"feature": 1.0}
+    assert result.scores["lightgbm#0"]["shap_importances"] == {"feature": 1.0}
 
 
 def test_model_enabled_false_does_not_run_lightgbm(
@@ -572,8 +572,8 @@ def test_custom_statistics_order_runs_correlation_before_null_rate(tmp_path: Pat
         if event["stage"] == "start" and event["method"] in {"correlation", "null_rate"}
     ]
     assert starts == [("correlation", 0), ("null_rate", 1)]
-    assert (tmp_path / "statistics_correlation_results.json").exists()
-    assert (tmp_path / "statistics_null_rate_results.json").exists()
+    assert (tmp_path / "00_statistics_correlation_results.json").exists()
+    assert (tmp_path / "01_statistics_null_rate_results.json").exists()
 
 
 def test_utils_run_before_statistics(tmp_path: Path) -> None:
@@ -600,10 +600,10 @@ def test_utils_run_before_statistics(tmp_path: Path) -> None:
         and event["method"] in {"row_sample", "null_rate", "correlation"}
     ]
     assert starts == [("row_sample", 0), ("null_rate", 1), ("correlation", 2)]
-    assert result.scores["row_sample"]["splits"]["train"]["sampled_rows"] == 25
-    assert (tmp_path / "statistics_null_rate_results.json").exists()
-    assert (tmp_path / "preprocessing_row_sample_results.json").exists()
-    assert (tmp_path / "statistics_correlation_results.json").exists()
+    assert result.scores["row_sample#0"]["splits"]["train"]["sampled_rows"] == 25
+    assert (tmp_path / "01_statistics_null_rate_results.json").exists()
+    assert (tmp_path / "00_preprocessing_row_sample_results.json").exists()
+    assert (tmp_path / "02_statistics_correlation_results.json").exists()
 
 
 def test_unknown_statistics_order_method_is_config_error() -> None:

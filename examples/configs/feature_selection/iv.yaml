@@ -1,6 +1,9 @@
+# Шаги пайплайна. Повторы метода с разными параметрами разрешены.
+# ${statistics.iv} — ссылка OmegaConf на пресет ниже.
+order:
+  - iv: ${statistics.iv}
+
 statistics:
-  order:
-    - iv
   iv:
     threshold: 0.02
     num_bins: 10

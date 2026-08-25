@@ -1,7 +1,11 @@
+# Корневой order — единственный список шагов. ${...} — ссылки OmegaConf.
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - catboost_rfe: ${model}
+
 statistics:
-  order:
-    - null_rate
-    - constants
   null_rate:
     threshold: 0.95
   constants:

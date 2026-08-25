@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Sequence
 
-from fmlib.feature_selection.base import FeatureDecision, StageContext, stub_drop_features
+from fmlib.feature_selection.base import FeatureDecision, StageContext, step_seed, stub_drop_features
 from fmlib.feature_selection.config import ModelConfig
 
 
@@ -37,7 +37,7 @@ class RandomForestSelector:
         """
         return stub_drop_features(
             candidates,
-            seed=context.seed,
+            seed=step_seed(context),
             stage=self.stage_name,
             method=self.method_name,
         )

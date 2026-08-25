@@ -1052,7 +1052,7 @@ class TestIvConfigAndPipeline:
         assert "weak" not in result.selected_features
         assert "strong" in result.selected_features
         assert "cat_signal" in result.selected_features
-        assert (tmp_path / "statistics_iv_results.json").exists()
+        assert (tmp_path / "00_statistics_iv_results.json").exists()
 
     def test_statistics_iv_block_holds_hyperparameters(self) -> None:
         config = FeatureSelectionConfig.from_dict(
@@ -1076,13 +1076,14 @@ class TestIvConfigAndPipeline:
         standalone = FeatureSelectionConfig.from_yaml(
             _REPO_ROOT / "examples/configs/feature_selection/iv.yaml",
         )
-        assert standalone.statistics.order == ("iv",)
+        assert [step.method for step in standalone.order] == ["iv"]
+        assert standalone.order[0].params["threshold"] == 0.02
         assert standalone.statistics.iv.threshold == 0.02
         assert standalone.statistics.iv.num_bins == 10
 
         main = FeatureSelectionConfig.from_yaml(
             _REPO_ROOT / "examples/big_c/main_conf.yaml",
         )
-        assert "iv" not in main.statistics.order
+        assert "iv" not in [step.method for step in main.order]
         assert main.statistics.iv.threshold == 0.02
         assert main.statistics.iv.max_threshold is None

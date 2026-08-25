@@ -30,7 +30,7 @@ def load_feature_names(path: Union[str, Path]) -> list[str]:
     Text files are line-oriented: empty lines and ``#`` comments are ignored.
 
     JSON files use the same artifact that ``SelectionResult.save`` writes
-    (``final_results.json`` or ``{stage}_{method}_results.json``). Names are
+    (``final_results.json`` or ``{step}_{stage}_{method}_results.json``). Names are
     taken from ``dropped_features`` in save order.
     """
     file_path = Path(path).expanduser()

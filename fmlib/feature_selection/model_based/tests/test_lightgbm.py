@@ -194,6 +194,8 @@ def test_select_stores_flat_json_compatible_scores(
     assert scores["shap_importances"] == {"first": 0.7, "second": 0.3}
     assert scores["lgbm_threshold"] == 0.85
     assert scores["shap_threshold"] == 0.85
+    assert scores["selection_mode"] == "aggregated"
+    assert scores["min_set_share"] == 1.0
     assert scores["optuna_mode"] == "global"
     assert scores["fold_execution"] == "driver"
     assert scores["global_best_params"] == {"n_estimators": 120}
@@ -260,8 +262,11 @@ def test_options_use_typed_fallbacks_and_execution_row_cap() -> None:
     assert options["n_folds"] == 4
     assert options["n_trials"] == 1
     assert options["optuna_mode"] == "global"
+    assert options["selection_mode"] == "aggregated"
+    assert options["min_set_share"] == 1.0
     assert options["n_jobs"] == -1
     assert options["shap_max_rows"] == 5_000
+    assert options["seed"] == 17
 
 
 def test_options_enable_per_fold_nested_tuning() -> None:
@@ -281,6 +286,23 @@ def test_options_enable_per_fold_nested_tuning() -> None:
     assert options["optuna_mode"] == "per_fold"
     assert options["n_jobs"] == 2
     assert options["shap_max_rows"] == 500
+
+
+def test_options_enable_vote_selection() -> None:
+    context = _context(
+        _frame(),
+        params={
+            "selection_mode": "vote",
+            "min_set_share": 0.5,
+        },
+    )
+
+    options = LightGbmSelector(
+        context.config.model,
+    )._resolve_options(context)
+
+    assert options["selection_mode"] == "vote"
+    assert options["min_set_share"] == 0.5
 
 
 def test_options_accept_legacy_driver_n_jobs_alias() -> None:
@@ -408,6 +430,8 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         ({"n_folds": 1}, "n_folds"),
         ({"sample_fraction": 0.0}, "sample_fraction"),
         ({"optuna_mode": "driver"}, "optuna_mode"),
+        ({"selection_mode": "mean"}, "selection_mode"),
+        ({"min_set_share": 0.0}, "min_set_share"),
         ({"n_jobs": 0}, "n_jobs"),
         ({"driver_n_jobs": 0}, "n_jobs"),
         ({"n_jobs": -2}, "n_jobs"),
@@ -559,6 +583,109 @@ def test_aggregate_importances_preserves_cumulative_intersection() -> None:
     assert details["lgbm_selected"] == ["first", "second"]
     assert details["shap_selected"] == ["first", "second"]
     assert details["selected_features"] == ["first", "second"]
+
+
+def test_vote_importances_requires_all_sets_when_share_is_one() -> None:
+    features = ["first", "second", "third"]
+    # threshold 0.8 keeps the prefix whose cumsum is <= 0.8.
+    # [0.5, 0.3, 0.2] -> first+second; [0.6, 0.3, 0.1] -> first only.
+    vote = LightGbmSelector._vote_importances(
+        features,
+        [
+            np.array([0.5, 0.3, 0.2]),
+            np.array([0.5, 0.3, 0.2]),
+        ],
+        [
+            np.array([0.5, 0.3, 0.2]),
+            np.array([0.6, 0.3, 0.1]),
+        ],
+        lgbm_threshold=0.8,
+        shap_threshold=0.8,
+        min_set_share=1.0,
+    )
+
+    assert vote["n_sets"] == 4
+    assert vote["set_presence"] == {
+        "first": 1.0,
+        "second": 0.75,
+        "third": 0.0,
+    }
+    assert vote["selected_features"] == ["first"]
+    assert vote["fold_sets"]["1"]["lgbm"] == ["first", "second"]
+    assert vote["fold_sets"]["2"]["shap"] == ["first"]
+
+
+def test_vote_importances_keeps_features_that_hit_the_share() -> None:
+    features = ["first", "second", "third"]
+    vote = LightGbmSelector._vote_importances(
+        features,
+        [
+            np.array([0.5, 0.3, 0.2]),
+            np.array([0.5, 0.3, 0.2]),
+        ],
+        [
+            np.array([0.5, 0.3, 0.2]),
+            np.array([0.6, 0.3, 0.1]),
+        ],
+        lgbm_threshold=0.8,
+        shap_threshold=0.8,
+        min_set_share=0.75,
+    )
+
+    assert vote["selected_features"] == ["first", "second"]
+    assert "third" not in vote["selected_features"]
+
+
+def test_vote_importances_rejects_zero_fold_totals() -> None:
+    with pytest.raises(ExecutionError, match="non-positive total"):
+        LightGbmSelector._vote_importances(
+            ["first"],
+            [np.array([0.0]), np.array([1.0])],
+            [np.array([1.0]), np.array([1.0])],
+            lgbm_threshold=0.85,
+            shap_threshold=0.85,
+            min_set_share=1.0,
+        )
+
+
+def test_select_vote_uses_set_presence_and_vote_reasons(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    context = _context(
+        _frame(),
+        params={"selection_mode": "vote", "min_set_share": 0.75},
+    )
+    selector = LightGbmSelector(context.config.model)
+    _mock_backends(selector, monkeypatch)
+    details = _mock_details()
+    details["selected_features"] = ["first"]
+    details["set_presence"] = {"first": 1.0, "second": 0.5}
+    details["n_sets"] = 4
+    details["fold_sets"] = {
+        "1": {"lgbm": ["first"], "shap": ["first"]},
+        "2": {"lgbm": ["first"], "shap": ["first", "second"]},
+    }
+    monkeypatch.setattr(
+        selector,
+        "_select_robust_features",
+        lambda **_kwargs: details,
+    )
+
+    decisions = selector.select(context, ["first", "second"])
+
+    assert decisions[0].keep is True
+    assert decisions[0].reason == "passed_lgbm_shap_vote"
+    assert decisions[0].value == pytest.approx(1.0)
+    assert decisions[0].threshold == pytest.approx(0.75)
+    assert decisions[1].keep is False
+    assert decisions[1].reason == "failed_lgbm_shap_vote"
+    assert decisions[1].value == pytest.approx(0.5)
+    scores = context.scores["lightgbm"]
+    assert scores["selection_mode"] == "vote"
+    assert scores["min_set_share"] == 0.75
+    assert scores["n_sets"] == 4
+    assert scores["set_presence"] == {"first": 1.0, "second": 0.5}
+    assert scores["fold_sets"]["2"]["shap"] == ["first", "second"]
 
 
 def test_aggregate_importances_rejects_zero_totals() -> None:
@@ -968,6 +1095,12 @@ def test_trial_parameters_preserve_search_space_and_execution_limits() -> None:
     assert 8 <= params["n_estimators"] <= 12
     assert 0.01 <= params["learning_rate"] <= 0.2
     assert params["random_state"] == 7
+    assert params["bagging_seed"] == 7
+    assert params["feature_fraction_seed"] == 7
+    assert params["data_random_seed"] == 7
+    assert params["extra_seed"] == 7
+    assert params["deterministic"] is True
+    assert params["force_row_wise"] is True
     assert params["n_jobs"] == 2
     assert params["objective"] == "binary"
 

@@ -1,6 +1,9 @@
+# Шаги пайплайна. Повторы метода с разными параметрами разрешены.
+order:
+  - null_rate: ${statistics.null_rate}
+  - lasso: ${model}
+
 statistics:
-  order:
-    - null_rate
   null_rate:
     threshold: 0.95
 

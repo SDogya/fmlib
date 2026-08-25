@@ -3,15 +3,24 @@
 #   model.method: lasso | random_forest
 #   statistics.stability_classifier
 #
-# Пайплайн: preprocessing (если enabled) → statistics.order → model → precise.
-# Дубликаты в statistics.order запрещены. Параметры методов — в их блоках,
-# не в списке order. Model и precise — ровно один method, включаются enabled.
+# Пайплайн: корневой order. Повторы метода с разными параметрами разрешены.
+# Параметры — инлайн или ссылка OmegaConf ${...} на пресеты ниже.
+# Если order нет — шаги собираются из preprocessing.enabled / statistics.order /
+# model.enabled / precise.enabled.
 #
 # Schema (FeatureSchema) в YAML не живёт — передаётся в fit_select().
 # Для lightgbm / boruta_shap / iv нужен task_type='binary_classification' и target.
 # output_dir — аргумент fit_select(), не поле этого файла.
 #
 # Optuna только из params.optuna_params (n_trials, n_startup_trials, sampler, timeout).
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - low_variance: ${statistics.low_variance}
+  - correlation: ${statistics.correlation}
+  - psi: ${statistics.psi}
+  - lightgbm: ${model}
 
 preprocessing:
   feature_drop:
@@ -21,7 +30,7 @@ preprocessing:
     # Из JSON берутся dropped_features. Относительный path — от этого YAML.
     path: null
     # true: ошибка, если имя не в кандидатах schema.
-    # false: пропустить и записать в scores.feature_drop.unknown.
+    # false: пропустить и записать в scores["feature_drop#<step>"].unknown.
     strict: false
 
   random_feature_drop:
@@ -39,15 +48,6 @@ preprocessing:
     stratified: true
 
 statistics:
-  order:
-    - null_rate
-    - constants
-    - low_variance
-    - correlation
-    - psi
-    # iv — binary_classification + target; параметры в statistics.iv
-    # - iv
-
   null_rate:
     # Дроп, если доля null строго выше порога. Диапазон [0, 1].
     threshold: 0.95
@@ -94,6 +94,7 @@ statistics:
     batch_size: 50
     # Потоки Pandas PSI. -1 = все ядра драйвера.
     n_jobs: -1
+    seed: 17                 # иначе execution.seed
     # Потолок строк для сэмпла PSI; null — все доступные.
     subsample_rows: null
 
@@ -133,6 +134,7 @@ model:
     optuna_mode: global
     # Потоки LightGBM на драйвере, не Optuna. -1 = все ядра.
     n_jobs: -1
+    seed: 17                 # иначе execution.seed
     # Максимум строк валидации для SHAP в каждом фолде.
     shap_max_rows: 5000
     # Материализация Spark→pandas. Фолды идут только на драйвере.

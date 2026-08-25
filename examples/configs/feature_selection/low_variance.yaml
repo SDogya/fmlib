@@ -1,6 +1,9 @@
+# Шаги пайплайна. Повторы метода с разными параметрами разрешены.
+order:
+  - low_variance: ${statistics.low_variance}
+  - lasso: ${model}
+
 statistics:
-  order:
-    - low_variance
   low_variance:
     min_variance: 0.001
     scale_method: "standard"

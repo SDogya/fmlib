@@ -12,20 +12,17 @@ from fmlib.feature_selection.backends.spark import (
     ensure_spark_session,
     get_columns,
 )
-from fmlib.feature_selection.base import StageContext
+from fmlib.feature_selection.base import StageContext, bind_process_rng
 from fmlib.feature_selection.config import FeatureSelectionConfig
 from fmlib.feature_selection.exceptions import ConfigError, SchemaError
-from fmlib.feature_selection.model_based.stage import STUB_METHODS, ModelBasedStage
-from fmlib.feature_selection.precise.stage import PreciseStage
 from fmlib.feature_selection.result import (
     DroppedFeature,
     SelectionResult,
     _next_available_path,
     stage_backends_for_config,
 )
+from fmlib.feature_selection.runner import STUB_METHODS, run_order
 from fmlib.feature_selection.schema import FeatureSchema, ensure_no_feature_leak
-from fmlib.feature_selection.statistics.stage import StatisticsStage
-from fmlib.feature_selection.utils.stage import UtilsStage
 from fmlib.feature_selection.utils.verbose import (
     VERBOSE_LOG_FILENAME,
     VerboseRecorder,
@@ -41,8 +38,8 @@ logger = logging.getLogger(__name__)
 class FeatureSelectionPipeline:
     """Configurable feature selection pipeline.
 
-    Utils run first when enabled, then ``statistics.order``, then one model
-    selector if ``model.enabled``, then precise if ``precise.enabled``.
+    Steps run in ``config.order``. Each step may come from any stage
+    (preprocessing, statistics, model, precise); repeats are allowed.
 
     Args:
         config: Validated pipeline configuration.
@@ -51,10 +48,6 @@ class FeatureSelectionPipeline:
     def __init__(self: FeatureSelectionPipeline, config: FeatureSelectionConfig) -> None:
         config.validate()
         self.config = config
-        self._utils = UtilsStage()
-        self._statistics = StatisticsStage()
-        self._model = ModelBasedStage()
-        self._precise = PreciseStage()
 
     def fit_select(
         self: FeatureSelectionPipeline,
@@ -105,11 +98,7 @@ class FeatureSelectionPipeline:
                 n_categorical=len(schema.categorical),
                 n_continuous=len(schema.continuous),
                 n_candidates=len(schema.candidate_features()),
-                statistics_order=list(self.config.statistics.order),
-                model_enabled=self.config.model.enabled,
-                model_method=self.config.model.method,
-                precise_enabled=self.config.precise.enabled,
-                precise_method=self.config.precise.method,
+                order_methods=[step.method for step in self.config.order],
                 dataset_splits=list(resolved),
                 datasets=recorder.snapshot_datasets(resolved),
                 output_dir=str(output_dir) if output_dir is not None else None,
@@ -137,14 +126,12 @@ class FeatureSelectionPipeline:
             run_seed=seed,
             output_dir=Path(output_dir) if output_dir is not None else None,
         )
+        bind_process_rng(seed)
 
         output_path = context.output_dir
         remaining = list(candidates)
         try:
-            remaining, _ = self._utils.run(context, remaining)
-            remaining, _ = self._statistics.run(context, remaining)
-            remaining, _ = self._model.run(context, remaining)
-            remaining, _ = self._precise.run(context, remaining)
+            remaining, _ = run_order(context, remaining)
             schema = context.schema
 
             dropped = [
@@ -160,12 +147,19 @@ class FeatureSelectionPipeline:
                 if not item.keep
             ]
 
-            warnings = []
-            if self.config.model.enabled and self.config.model.method in STUB_METHODS:
-                warnings.append(
-                    f"Model selector {self.config.model.method!r} is a stub; "
-                    "replace it with a real algorithm.",
+            warnings = [
+                (
+                    f"Model selector {method!r} is a stub; "
+                    "replace it with a real algorithm."
                 )
+                for method in sorted(
+                    {
+                        step.method
+                        for step in self.config.order
+                        if step.method in STUB_METHODS
+                    },
+                )
+            ]
 
             if recorder.enabled("pipeline"):
                 recorder.emit(

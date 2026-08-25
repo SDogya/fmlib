@@ -26,6 +26,7 @@ from fmlib.feature_selection import (
 )
 from fmlib.feature_selection.config import (
     NullRateConfig,
+    PipelineStepConfig,
     StatisticsConfig,
 )
 
@@ -90,7 +91,7 @@ def main() -> None:
     # 3. Configure feature selection using proper dataclass objects
     print("\n3. Configuring FeatureSelectionPipeline...")
     config = FeatureSelectionConfig(
-        order=("null_rate",),
+        order=(PipelineStepConfig("null_rate", {"threshold": 0.5}),),
         statistics=StatisticsConfig(
             null_rate=NullRateConfig(threshold=0.5),
         ),

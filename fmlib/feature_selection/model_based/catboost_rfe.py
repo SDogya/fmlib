@@ -12,7 +12,7 @@ from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
-from fmlib.feature_selection.base import FeatureDecision, StageContext
+from fmlib.feature_selection.base import FeatureDecision, StageContext, resolve_step_seed
 from fmlib.feature_selection.config import ModelConfig
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.utils.default_model_param_spaces import (
@@ -149,7 +149,7 @@ class CatBoostRfeSelector:
                 extra_cols=(time_col,),
                 max_rows=options["max_rows"],
                 sample_fraction=options["sample_fraction"],
-                seed=context.seed,
+                seed=options["seed"],
                 method_name=self.method_name,
             )
             details = run_catboost_rfe(
@@ -163,7 +163,7 @@ class CatBoostRfeSelector:
                 optuna_params=options["optuna_params"],
                 feature_selection_params=options["feature_selection_params"],
                 num_features_to_select=target_count,
-                seed=context.seed,
+                seed=options["seed"],
                 method_name=self.method_name,
             )
         except (BackendError, ExecutionError):
@@ -274,6 +274,7 @@ class CatBoostRfeSelector:
                 "optuna_enabled": optuna_settings["enabled"],
                 "optuna_params": dict(optuna_params),
                 "feature_selection_params": dict(feature_selection_params),
+                "seed": resolve_step_seed(params, context),
             }
             if options["sample_fraction"] is not None:
                 options["sample_fraction"] = float(options["sample_fraction"])
@@ -450,6 +451,7 @@ def tune_parameters(
             objective,
             n_trials=settings["n_trials"],
             timeout=settings["timeout"],
+            n_jobs=1,
         )
     except ExecutionError:
         raise

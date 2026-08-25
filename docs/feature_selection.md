@@ -7,23 +7,23 @@
 Spark используется для проекции и стратифицированного сэмплирования, после чего
 ограниченная выборка материализуется в `pandas` и всё дальнейшее считается на драйвере.
 
-Пайплайн собирается из четырёх стадий: [`UtilsStage`](../fmlib/feature_selection/utils/stage.py),
-[`StatisticsStage`](../fmlib/feature_selection/statistics/stage.py),
-[`ModelBasedStage`](../fmlib/feature_selection/model_based/stage.py) и
-[`PreciseStage`](../fmlib/feature_selection/precise/stage.py). Каждая стадия получает список
-кандидатов, возвращает суженный список и `FeatureDecision` по каждому выброшенному
-признаку: на каком шаге, каким методом и по какому порогу его убрали.
+Пайплайн — один цикл в [`runner.py`](../fmlib/feature_selection/runner.py) по корневому
+`order`. Каждый шаг помечает решения тегом стадии из реестра методов:
+`preprocessing` / `statistics` / `model` / `precise`. Кандидаты сужаются после шага;
+у выброшенного признака в `FeatureDecision` видно, на каком шаге, каким методом и
+по какому порогу его убрали.
 
-```
-preprocessing  →  statistics  →  model  →  precise
-```
+Повторы одного метода с разными параметрами разрешены. После шага скоры лежат в
+`result.scores["{method}#{step_index}"]` (например `null_rate#0`, `null_rate#3`),
+а JSON артефакта — `{step_index:02d}_{stage}_{method}_results.json`.
 
 - **preprocessing** — ручные исключения из файла, срез строк, случайное прореживание
   признаков для тестовых прогонов;
 - **statistics** — дешёвые пофичевые фильтры без модели: пропуски, константы,
   низкая дисперсия, корреляции, PSI, Information Value;
-- **model** — ровно один модельный селектор: `lightgbm` или `catboost_rfe`;
-- **precise** — необязательная финальная стадия: `boruta_shap`.
+- **model** — модельный селектор: `lightgbm` или `catboost_rfe` (можно несколько
+  раз в `order`);
+- **precise** — необязательный финальный отбор: `boruta_shap`.
 
 ## 🧩 Запуск
 
@@ -64,36 +64,71 @@ result.dropped           # кто выпал, на каком шаге и поч
 
 ## ⚙️ Конфиг
 
-### Стадия statistics
+### Корневой `order`
 
-Состав и порядок фильтров задаются списком `order`. Метода нет в списке — он не
-запустится, даже если блок параметров описан.
+Состав, порядок и повторы шагов задаются списком `order`. YAML грузится через
+`OmegaConf.load(..., resolve=True)`: ссылки `${null_rate.wide}` резолвятся без
+`hydra.compose`. После resolve каждый элемент — одноключевая мапа
+`метод → параметры`. Инлайн без ссылки тоже ок: `- null_rate: {threshold: 0.95}`.
 
 ```yaml
-statistics:
-  order:                     # ← что выполнить и в какой последовательности
-    - null_rate
-    - constants
-    - low_variance
-    - correlation
+order:
+  - feature_drop: ${feature_drop.default}
+  - null_rate: ${null_rate.wide}
+  - lightgbm: ${lightgbm.pass1}
+  - null_rate: ${null_rate.tight}    # повтор с другими параметрами
+  - boruta_shap: ${boruta_shap.default}
 
-  null_rate:
-    threshold: 0.95
+feature_drop:
+  default: {path: drops.txt, strict: false}
 
-  psi:                       # блок есть, в order нет → не выполнится
-    threshold: 0.25
+null_rate:
+  wide: {threshold: 0.99}
+  tight: {threshold: 0.90}
+
+lightgbm:
+  pass1:
+    n_folds: 5
+    n_jobs: -1
+    seed: 17            # опционально; нет ключа → execution.seed
+    lgbm_threshold: 0.85
+
+execution:
+  seed: 42              # дефолт на весь пайплайн
 ```
 
-Метод в `order` без своего блока работает на дефолтах. Дубликаты и неизвестные имена
-отвергаются на загрузке конфига.
+`params.seed` у шага читается так же, как `params.n_jobs`: ключ рядом с остальными
+параметрами метода (в том числе во вложенных `model.params` / `precise.params`).
+Нет ключа — берётся `execution.seed`. В `optuna_params` сид не кладут.
+`study.optimize` всегда идёт с `n_jobs=1`. Бит-в-бит не обещаем при
+`n_jobs != 1` у модели и на GPU CatBoost.
 
-### Стадии model и precise
+Корневые ключи-каталоги (`null_rate`, `lightgbm`, …) — пресеты для `${}`; они не
+ошибка. Если метода нет в `order`, он не запустится, даже если пресет описан.
 
-У каждой свой `enabled` и ровно один `method`:
+Если ключа `order` **нет**, шаги собираются из старого вида:
+`preprocessing.*.enabled`, `statistics.order`, `model.enabled`/`method`,
+`precise.enabled`/`method`. Если `order` **есть** — он единственный источник шагов,
+флаги `enabled` игнорируются. Вложенный `statistics.order` по-прежнему список
+уникальных имён и нужен только этой совместимости.
+
+Готовые примеры: [`pipeline_catboost_rfe.yaml`](../examples/configs/feature_selection/pipeline_catboost_rfe.yaml)
+и [`pipeline_lightgbm.yaml`](../examples/configs/feature_selection/pipeline_lightgbm.yaml).
+
+### Модельные и precise-шаги
+
+Параметры модельного шага — это `params` плюс опционально `selection` и
+`cross_validation` (как у вложенного `model:`). Ссылка `${model}` на весь блок
+тоже работает: `enabled` и `method` из мапы выкидываются. Для `boruta_shap`
+обычно ссылаются на `${precise.params}`.
 
 ```yaml
+order:
+  - catboost_rfe: ${model}
+  - boruta_shap: ${precise.params}
+
 model:
-  enabled: true
+  enabled: true          # игнорируется, если есть корневой order
   method: catboost_rfe
   params: {...}
   selection:
@@ -105,16 +140,13 @@ precise:
   params: {...}
 ```
 
-Готовые примеры: [`pipeline_catboost_rfe.yaml`](../examples/configs/feature_selection/pipeline_catboost_rfe.yaml)
-и [`pipeline_lightgbm.yaml`](../examples/configs/feature_selection/pipeline_lightgbm.yaml).
-
 ## 🧪 Модельные селекторы
 
 | | `catboost_rfe` | `lightgbm` | `boruta_shap` |
 |---|---|---|---|
 | стадия | model | model | precise |
 | категориальные | **оценивает** (`cat_features`) | пропускает без решения | пропускает без решения |
-| критерий отбора | до `selection.max_features` | кумулятивные пороги важности | статистический тест против теневых признаков |
+| критерий отбора | до `selection.max_features` | кумулятивные пороги (`aggregated` или `vote`) | статистический тест против теневых признаков |
 | `selection.max_features` | используется | **не читается** | не читается |
 | eval для Optuna | **out-of-time** по `schema.time` | случайный 80/20 | случайный 80/20 |
 | блок `parameters` | обязателен | необязателен | необязателен |
@@ -134,9 +166,17 @@ precise:
 
 ### `lightgbm`
 
-Обучает по одной модели на каждый внешний фолд, усредняет split-важности и SHAP,
-оставляет пересечение кумулятивных порогов. `optuna_mode: global` подбирает параметры
-один раз, `per_fold` — независимо на каждом фолде.
+Обучает по одной модели на каждый внешний фолд. `optuna_mode: global` подбирает
+параметры один раз, `per_fold` — независимо на каждом фолде.
+
+Отбор признаков зависит от `model.params.selection_mode`:
+
+- `aggregated` (дефолт) — усредняет split-важности и SHAP по фолдам, режет каждый
+  канал своим кумулятивным порогом (`lgbm_threshold` / `shap_threshold`) и
+  оставляет пересечение.
+- `vote` — в каждом фолде тот же кумулятив считается отдельно по split и по SHAP
+  (`2 * n_folds` наборов). Признак остаётся, если попал в долю не ниже
+  `min_set_share` этих наборов. `min_set_share: 1.0` — должен быть во всех.
 
 ### `boruta_shap`
 
@@ -295,7 +335,7 @@ StringType is not supported
 - **`correlation` берёт первые `max_rows` строк** через `.limit()`, а не случайную
   выборку. На данных, партиционированных по времени, это первые месяцы.
 - **`boruta_shap` молча отбрасывает категориальные.** Сколько признаков стадия
-  реально оценила, видно в `result.scores["boruta_shap"]`.
+  реально оценила, видно в `result.scores["boruta_shap#<step>"]`.
 - **`cross_validation.strategy`** принимает `group` и `time_based`, но реализована
   только `stratified`.
 - **`execution.local_memory_limit` и `allow_local_fallback`** объявлены в схеме и
@@ -388,8 +428,9 @@ deltas = [a - b for a, b in zip(appr, base)]
 
 ### Повторные прогоны с разными сидами
 
-Для честного сравнения наборов одного прогона мало: `seed` управляет и разбиением на
-фолды, и сэмплером Optuna. Повторы нужны, когда дельта сопоставима с
+Для честного сравнения наборов одного прогона мало: `execution.seed` (или
+`params.seed` шага) управляет сэмплом, фолдами, сэмплером Optuna и внутренними
+сидами бустинга. Повторы нужны, когда дельта сопоставима с
 `test_auc_std_diagnostic`. Если дельта заметно больше — эффект виден и без них.
 
 ## Стоимость отбора

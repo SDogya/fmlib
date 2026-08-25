@@ -1,11 +1,19 @@
 # Полный пайплайн: statistics → catboost_rfe → boruta_shap.
 #
-# statistics.order задаёт состав и порядок фильтров. Метод, не попавший
+# Корневой order — единственный список шагов. Метод, не попавший
 # в список, не запускается, даже если его блок параметров описан ниже.
 #
 # Оценка времени на ~2500 признаках и 700k строк: statistics — минуты,
 # catboost_rfe — часы (основной вклад — Optuna), boruta_shap — часы
 # (основной вклад — SHAP по строкам). См. комментарии в блоках.
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - low_variance: ${statistics.low_variance}
+  - correlation: ${statistics.correlation}
+  - catboost_rfe: ${model}
+  - boruta_shap: ${precise.params}
 
 preprocessing:
   feature_drop:
@@ -21,12 +29,6 @@ preprocessing:
     stratified: true
 
 statistics:
-  order:
-    - null_rate
-    - constants
-    - low_variance
-    - correlation
-
   null_rate:
     threshold: 0.95          # доля пропусков, выше которой признак отбрасывается
 

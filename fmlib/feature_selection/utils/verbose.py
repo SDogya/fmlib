@@ -46,6 +46,7 @@ _FEATURE_LIST_KEYS = frozenset(
         "shap_selected",
         "lgbm_dropped",
         "shap_dropped",
+        "fold_sets",
     },
 )
 

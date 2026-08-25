@@ -5,13 +5,17 @@
 # fmlib/feature_selection/utils/default_model_param_spaces.py.
 # Любая мапа в YAML полностью заменяет этот fallback: незаданные ключи
 # из дефолта не подмешиваются. Скаляр уходит в модель как есть.
+#
+# Корневой order — единственный список шагов. ${...} — ссылки OmegaConf.
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - low_variance: ${statistics.low_variance}
+  - correlation: ${statistics.correlation}
+  - lightgbm: ${model}
 
 statistics:
-  order:
-    - null_rate
-    - constants
-    - low_variance
-    - correlation
   null_rate:
     threshold: 0.95
   constants:
@@ -34,6 +38,7 @@ model:
     n_folds: 5
     optuna_mode: global      # global — подбор один раз; per_fold — на каждом фолде
     n_jobs: -1
+    seed: 17                 # иначе execution.seed
     shap_max_rows: 5000
 
     # Блок общий для всех методов с Optuna (lightgbm, catboost_rfe, boruta_shap).
@@ -45,9 +50,13 @@ model:
       sampler: TPE           # TPE | RANDOM | GRID
       timeout: null          # секунды или null
 
-    # Отбор: признак проходит, если попал в кумулятивный порог И по
-    # split-важности LightGBM, И по SHAP. model.selection.max_features
-    # этим селектором НЕ используется.
+    # Отбор. selection_mode:
+    #   aggregated — среднее по фолдам, два кумулятива, пересечение (дефолт);
+    #   vote — кумулятив в каждом фолде по split и по SHAP (2*n_folds наборов),
+    #          признак живёт если доля наборов >= min_set_share.
+    # model.selection.max_features этим селектором НЕ используется.
+    selection_mode: aggregated
+    min_set_share: 1.0       # только vote; 1.0 = должен быть во всех наборах
     lgbm_threshold: 0.85
     shap_threshold: 0.85
 
@@ -66,8 +75,8 @@ model:
         log: true
       min_child_samples: 20  # скаляр: не подбирается
 
-    # objective, metric, verbosity, n_jobs и random_state проставляются
-    # библиотекой принудительно и переопределению не подлежат.
+    # objective, metric, verbosity, n_jobs, random_state и внутренние
+    # сиды LightGBM проставляются библиотекой принудительно.
 
 precise:
   enabled: false

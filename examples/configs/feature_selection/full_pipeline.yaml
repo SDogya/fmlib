@@ -1,4 +1,5 @@
-# Полный пайплайн: статистики -> catboost_rfe -> boruta_shap.
+# Полный пайплайн: статистики -> catboost_rfe.
+# Корневой order — единственный список шагов. ${...} — ссылки OmegaConf.
 # Конфигурация проверена end-to-end на Spark.
 #
 # Запуск:
@@ -18,12 +19,14 @@
 #       output_dir="./fs_run",
 #   )
 
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - low_variance: ${statistics.low_variance}
+  - correlation: ${statistics.correlation}
+  - catboost_rfe: ${model}
+
 statistics:
-  order:
-    - null_rate
-    - constants
-    - low_variance
-    - correlation
 
   null_rate:
     threshold: 0.95          # доля пропусков, выше которой признак отбрасывается

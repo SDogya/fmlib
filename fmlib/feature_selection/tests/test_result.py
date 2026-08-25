@@ -124,7 +124,7 @@ def test_intermediate_result_preserves_context_scores(tmp_path: Path) -> None:
         context=context,
     )
 
-    loaded = SelectionResult.load(tmp_path / "model_lightgbm_results.json")
+    loaded = SelectionResult.load(tmp_path / "00_model_lightgbm_results.json")
     assert loaded.scores == context.scores
     assert loaded.selected_features == ["age", "segment"]
     assert [item.feature for item in loaded.dropped_features] == ["balance"]
@@ -177,7 +177,7 @@ def test_precise_intermediate_result_preserves_boruta_scores(
     )
 
     loaded = SelectionResult.load(
-        tmp_path / "precise_boruta_shap_results.json",
+        tmp_path / "00_precise_boruta_shap_results.json",
     )
     assert loaded.scores == context.scores
     assert loaded.dropped_features[0].stage == "precise"

@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from fmlib.feature_selection.base import StageContext, resolve_step_seed
 from fmlib.feature_selection.config import FeatureSelectionConfig
 from fmlib.feature_selection.exceptions import ConfigError
 
@@ -11,6 +12,7 @@ from fmlib.feature_selection.exceptions import ConfigError
 def test_defaults_validate() -> None:
     config = FeatureSelectionConfig()
     config.validate()
+    assert config.order == ()
     assert config.statistics.order == ()
     assert config.model.enabled is False
     assert config.model.method == "lightgbm"
@@ -79,6 +81,7 @@ def test_iv_config_validation_and_order() -> None:
         },
     )
     assert config.statistics.order == ("iv",)
+    assert [step.method for step in config.order] == ["iv"]
     assert config.statistics.iv.threshold == 0.05
     assert config.statistics.iv.num_bins == 8
     assert config.statistics.iv.max_threshold == 5.0
@@ -143,6 +146,7 @@ def test_from_yaml_roundtrip(tmp_path: Path) -> None:
     config = FeatureSelectionConfig.from_yaml(path)
     assert config.statistics.correlation.method == "spearman"
     assert config.statistics.order == ("correlation",)
+    assert [step.method for step in config.order] == ["feature_drop", "correlation"]
     assert config.preprocessing.feature_drop.enabled is True
     assert config.preprocessing.feature_drop.path == str(drop_path)
     assert config.model.enabled is False
@@ -315,6 +319,8 @@ def test_test_run_preprocessing_config_validation(
         ({"optuna_params": {"enabled": "yes"}}, "optuna_params.enabled"),
         ({"n_jobs": 0}, "n_jobs"),
         ({"n_jobs": -2}, "n_jobs"),
+        ({"seed": True}, "seed"),
+        ({"seed": 1.5}, "seed"),
     ],
 )
 def test_boruta_precise_params_validation(
@@ -444,6 +450,197 @@ def test_legacy_n_trials_in_lightgbm_params_is_allowed() -> None:
     assert config.model.params["driver_n_jobs"] == 4
 
 
+def test_lightgbm_selection_mode_roundtrip() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "model": {
+                "enabled": True,
+                "method": "lightgbm",
+                "params": {
+                    "selection_mode": "vote",
+                    "min_set_share": 0.6,
+                    "lgbm_threshold": 0.8,
+                    "shap_threshold": 0.9,
+                },
+            },
+        },
+    )
+    assert config.model.params["selection_mode"] == "vote"
+    assert config.model.params["min_set_share"] == 0.6
+    payload = config.to_dict()["model"]["params"]
+    assert payload["selection_mode"] == "vote"
+    assert payload["min_set_share"] == 0.6
+
+
+def test_params_seed_roundtrip() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "model": {
+                "enabled": True,
+                "method": "lightgbm",
+                "params": {"seed": 17, "n_jobs": -1},
+            },
+            "precise": {
+                "method": "boruta_shap",
+                "params": {"seed": 0, "n_jobs": 1},
+            },
+            "statistics": {"psi": {"seed": 17, "n_jobs": -1}},
+            "execution": {"seed": 42},
+        },
+    )
+    assert config.model.params["seed"] == 17
+    assert config.precise.params["seed"] == 0
+    assert config.statistics.psi.seed == 17
+    payload = config.to_dict()
+    assert payload["model"]["params"]["seed"] == 17
+    assert payload["precise"]["params"]["seed"] == 0
+    assert payload["statistics"]["psi"]["seed"] == 17
+
+
+def test_params_seed_omitted_keeps_execution_default() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "model": {"enabled": True, "method": "lightgbm", "params": {"n_jobs": 1}},
+            "execution": {"seed": 42},
+        },
+    )
+    assert "seed" not in config.model.params
+    assert config.statistics.psi.seed is None
+    assert config.execution.seed == 42
+
+
+def test_order_step_seed_roundtrip() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "order": [
+                {"lightgbm": {"n_jobs": 1, "seed": 17}},
+                {"psi": {"seed": 0}},
+            ],
+            "execution": {"seed": 42},
+        },
+    )
+    assert config.order[0].params["seed"] == 17
+    assert config.order[1].params["seed"] == 0
+
+
+def test_order_nested_model_params_seed_roundtrip() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "order": [
+                {
+                    "lightgbm": {
+                        "method": "lightgbm",
+                        "params": {"n_jobs": 1, "seed": 17},
+                    },
+                },
+            ],
+            "execution": {"seed": 42},
+        },
+    )
+    context = StageContext(
+        spark=None,
+        datasets={},
+        schema=None,
+        config=config,
+        seed=42,
+        candidates=[],
+    )
+    assert resolve_step_seed(config.order[0].params, context) == 17
+
+
+@pytest.mark.parametrize(
+    ("payload", "message"),
+    [
+        (
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {"seed": True},
+                },
+            },
+            "seed",
+        ),
+        (
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {"seed": 1.5},
+                },
+            },
+            "seed",
+        ),
+        (
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {"seed": "17"},
+                },
+            },
+            "seed",
+        ),
+        (
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "catboost_rfe",
+                    "params": {"seed": True, "parameters": {"iterations": 10}},
+                    "selection": {"max_features": 5},
+                },
+            },
+            "seed",
+        ),
+        (
+            {
+                "precise": {
+                    "method": "boruta_shap",
+                    "params": {"seed": True},
+                },
+            },
+            "seed",
+        ),
+        (
+            {"statistics": {"psi": {"seed": True}}},
+            "seed",
+        ),
+        (
+            {"order": [{"psi": {"seed": 1.5}}]},
+            "seed",
+        ),
+    ],
+)
+def test_params_seed_rejects_non_int(payload: dict, message: str) -> None:
+    with pytest.raises(ConfigError, match=message):
+        FeatureSelectionConfig.from_dict(payload)
+
+
+@pytest.mark.parametrize(
+    ("params", "message"),
+    [
+        ({"selection_mode": "mean"}, "selection_mode"),
+        ({"min_set_share": 0.0}, "min_set_share"),
+        ({"min_set_share": 1.5}, "min_set_share"),
+        ({"min_set_share": True}, "min_set_share"),
+    ],
+)
+def test_lightgbm_selection_mode_validation(
+    params: dict,
+    message: str,
+) -> None:
+    with pytest.raises(ConfigError, match=message):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": params,
+                },
+            },
+        )
+
+
 def test_verbose_false_by_default() -> None:
     config = FeatureSelectionConfig.from_dict({"execution": {"seed": 1}})
     assert config.execution.verbose.any_enabled() is False
@@ -510,9 +707,77 @@ def test_statistics_order_rejects_duplicates_and_unknown() -> None:
         )
 
 
-def test_top_level_order_is_rejected() -> None:
-    with pytest.raises(ConfigError, match="Top-level order is not supported"):
+def test_top_level_order_accepts_repeats_and_inline_params() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "order": [
+                {"null_rate": {"threshold": 0.99}},
+                {"null_rate": {"threshold": 0.9}},
+            ],
+            "model": {"enabled": True, "method": "lasso"},
+            "statistics": {"order": ["correlation"]},
+        },
+    )
+    assert [step.method for step in config.order] == ["null_rate", "null_rate"]
+    assert config.order[0].params["threshold"] == 0.99
+    assert config.order[1].params["threshold"] == 0.9
+    assert config.to_dict()["order"] == [
+        {"null_rate": {"threshold": 0.99}},
+        {"null_rate": {"threshold": 0.9}},
+    ]
+
+
+def test_top_level_order_rejects_non_mapping_and_unknown_method() -> None:
+    with pytest.raises(ConfigError, match="must be a mapping with exactly one"):
         FeatureSelectionConfig.from_dict({"order": ["null_rate"]})
+    with pytest.raises(ConfigError, match="Unknown method in order"):
+        FeatureSelectionConfig.from_dict({"order": [{"xgboost": {}}]})
+
+
+def test_nested_layout_without_order_compiles_to_steps() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "preprocessing": {
+                "row_sample": {"enabled": True, "max_rows": 10, "stratified": False},
+            },
+            "statistics": {"order": ["null_rate"]},
+            "model": {"enabled": True, "method": "lightgbm"},
+            "precise": {"enabled": False, "method": "none"},
+        },
+    )
+    assert [step.method for step in config.order] == [
+        "row_sample",
+        "null_rate",
+        "lightgbm",
+    ]
+    assert config.order[0].params["max_rows"] == 10
+
+
+def test_from_yaml_resolves_order_interpolations(tmp_path: Path) -> None:
+    path = tmp_path / "fs.yaml"
+    path.write_text(
+        "\n".join(
+            [
+                "order:",
+                "  - null_rate: ${null_rate.wide}",
+                "  - null_rate: ${null_rate.tight}",
+                "null_rate:",
+                "  wide:",
+                "    threshold: 0.99",
+                "  tight:",
+                "    threshold: 0.9",
+                "execution:",
+                "  seed: 7",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
+    config = FeatureSelectionConfig.from_yaml(path)
+    assert [step.method for step in config.order] == ["null_rate", "null_rate"]
+    assert config.order[0].params["threshold"] == 0.99
+    assert config.order[1].params["threshold"] == 0.9
+    assert config.execution.seed == 7
 
 
 def test_statistics_order_roundtrip() -> None:
@@ -527,9 +792,41 @@ def test_statistics_order_roundtrip() -> None:
         },
     )
     assert config.statistics.order == ("null_rate", "correlation")
+    assert [step.method for step in config.order] == [
+        "null_rate",
+        "correlation",
+        "lightgbm",
+    ]
+    assert config.order[0].params["threshold"] == 0.9
     assert config.statistics.null_rate.threshold == 0.9
     assert config.model.enabled is True
     assert config.to_dict()["statistics"]["order"] == ["null_rate", "correlation"]
+
+
+def test_empty_explicit_order_does_not_compile_nested() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "order": [],
+            "statistics": {"order": ["correlation"]},
+            "model": {"enabled": True, "method": "lasso"},
+        },
+    )
+    assert config.order == ()
+
+
+def test_repeated_methods_get_indexed_score_keys() -> None:
+    from types import SimpleNamespace
+
+    from fmlib.feature_selection.runner import _relocate_step_scores
+
+    context = SimpleNamespace(scores={"null_rate": {"threshold": 0.99}})
+    _relocate_step_scores(context, "null_rate", 0)
+    context.scores["null_rate"] = {"threshold": 0.9}
+    _relocate_step_scores(context, "null_rate", 3)
+    assert context.scores == {
+        "null_rate#0": {"threshold": 0.99},
+        "null_rate#3": {"threshold": 0.9},
+    }
 
 
 def test_precise_enabled_requires_boruta_shap() -> None:
@@ -555,5 +852,36 @@ def test_catboost_rfe_requires_max_features_when_enabled() -> None:
                 },
             },
         )
+
+
+@pytest.mark.parametrize(
+    ("relpath", "methods"),
+    [
+        ("examples/configs/feature_selection/iv.yaml", ("iv",)),
+        ("examples/configs/feature_selection/null.yaml", ("null_rate", "lasso")),
+        (
+            "examples/big_c/main_conf.yaml",
+            ("null_rate", "constants", "low_variance", "correlation", "psi", "lightgbm"),
+        ),
+        (
+            "examples/configs/feature_selection/pipeline_lightgbm.yaml",
+            (
+                "null_rate",
+                "constants",
+                "low_variance",
+                "correlation",
+                "lightgbm",
+                "boruta_shap",
+            ),
+        ),
+    ],
+)
+def test_example_yamls_expose_top_level_order(
+    relpath: str,
+    methods: tuple[str, ...],
+) -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    config = FeatureSelectionConfig.from_yaml(repo_root / relpath)
+    assert tuple(step.method for step in config.order) == methods
 
 

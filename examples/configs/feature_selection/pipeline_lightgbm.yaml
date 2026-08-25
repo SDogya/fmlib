@@ -1,5 +1,7 @@
 # Полный пайплайн: statistics → lightgbm → boruta_shap.
 #
+# Корневой order — единственный список шагов. ${...} — ссылки OmegaConf.
+#
 # Отличия от pipeline_catboost_rfe.yaml:
 #   • lightgbm оценивает только continuous, категориальные проходят стадию
 #     насквозь без решения (catboost_rfe — единственный, кто их оценивает);
@@ -7,6 +9,14 @@
 #     числа признаков: model.selection.max_features этим методом НЕ читается;
 #   • есть встроенное пространство поиска Optuna, поэтому блок parameters
 #     необязателен — без него работают дефолты из кода.
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - low_variance: ${statistics.low_variance}
+  - correlation: ${statistics.correlation}
+  - lightgbm: ${model}
+  - boruta_shap: ${precise.params}
 
 preprocessing:
   feature_drop:
@@ -22,12 +32,6 @@ preprocessing:
     stratified: true
 
 statistics:
-  order:
-    - null_rate
-    - constants
-    - low_variance
-    - correlation
-
   null_rate:
     threshold: 0.95
 
@@ -54,8 +58,13 @@ model:
     n_folds: 5
     optuna_mode: global      # global — подбор один раз; per_fold — на каждом фолде
     n_jobs: -1
+    seed: 17                 # иначе execution.seed
     shap_max_rows: 5000      # строк на расчёт SHAP внутри фолда
 
+    # aggregated — среднее по фолдам, два кумулятива, пересечение.
+    # vote — 2*n_folds наборов (split и SHAP в каждом фолде), порог min_set_share.
+    selection_mode: aggregated
+    min_set_share: 1.0
     # Признак проходит, если попал в кумулятивный порог И по split-важности
     # LightGBM, И по SHAP. Порог 0.85 = «оставить признаки, дающие 85% массы».
     lgbm_threshold: 0.85
@@ -99,6 +108,8 @@ precise:
 
   params:
     model_type: lgbm
+    n_jobs: -1
+    seed: 17                 # иначе execution.seed
     max_rows: 250000         # стоимость определяется строками: SHAP по каждой
     sample_fraction: null
     boruta_trials: 50

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import random
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional, Protocol, Sequence
@@ -105,6 +106,41 @@ def step_seed(context: StageContext) -> int:
     return context.run_seed
 
 
+def resolve_step_seed(
+    params: Mapping[str, Any] | None,
+    context: StageContext,
+) -> int:
+    """Return ``params.seed`` when set, otherwise ``execution.seed``.
+
+    Looks at the step mapping first, then at a nested ``params`` block so
+    ``- lightgbm: ${model}`` (where seed lives in ``model.params``) works
+    the same as a flat ``- lightgbm: {seed: 17}``.
+
+    Does not fall back to ``context.run_seed``: a previous step's override
+    must not leak into a later step that omitted ``seed``.
+    """
+    if params is None:
+        return context.seed
+    if params.get("seed") is not None:
+        return int(params["seed"])
+    nested = params.get("params")
+    if isinstance(nested, Mapping) and nested.get("seed") is not None:
+        return int(nested["seed"])
+    return context.seed
+
+
+def bind_process_rng(seed: int) -> None:
+    """Bind the process-wide ``random`` and NumPy RNGs to ``seed``.
+
+    ``PYTHONHASHSEED`` is left unchanged. Bit-identical results are not
+    guaranteed when a model uses ``n_jobs != 1`` or CatBoost GPU.
+    """
+    import numpy as np
+
+    random.seed(seed)
+    np.random.seed(seed % (2**32))
+
+
 def persist_step_artifact(
     context: StageContext,
     remaining: Sequence[str],
@@ -112,7 +148,10 @@ def persist_step_artifact(
     stage_name: str,
     method_name: str,
 ) -> None:
-    """Write a per-method artifact when ``context.output_dir`` is set."""
+    """Write a per-method artifact when ``context.output_dir`` is set.
+
+    The file name is ``{step_index:02d}_{stage}_{method}_results.json``.
+    """
     output_dir = context.output_dir
     if output_dir is None:
         return
@@ -125,6 +164,7 @@ def persist_step_artifact(
         method_name=method_name,
         output_dir=output_dir,
         context=context,
+        step_index=context.step_index,
     )
 
 
