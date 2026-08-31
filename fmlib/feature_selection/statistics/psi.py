@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 import logging
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -190,16 +190,25 @@ class PsiSelector:
         feature_cols = list(candidates)
         if not feature_cols:
             return []
+        metrics = self.compute(context, feature_cols)
+        return self.apply(metrics, feature_cols, context)
+
+    def compute(
+        self: PsiSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return ``{feature: psi}`` for ``candidates``."""
+        feature_cols = list(candidates)
+        if not feature_cols:
+            return {"values": {}}
 
         threshold = self.config.threshold
         num_bins = self.config.num_bins
         eps = self.config.eps
 
         train_df, test_df = self._resolve_population_pair(context)
-
-        # Apply stratified sampling if configured
         train_df, test_df = self._apply_subsample_if_needed(context, train_df, test_df)
-
         is_pyspark = hasattr(train_df, "stat") and hasattr(train_df, "agg")
 
         if verbose_enabled(context, self.method_name):
@@ -222,12 +231,6 @@ class PsiSelector:
         else:
             psi_scores = self._compute_pandas_psi(train_df, test_df, feature_cols, num_bins, eps)
 
-        decisions: list[FeatureDecision] = []
-        for col in feature_cols:
-            score = psi_scores.get(col, 0.0)
-            keep = score <= threshold
-            decisions.append(self._make_decision(col, keep=keep, score=score, threshold=threshold))
-
         if verbose_enabled(context, self.method_name) and psi_scores:
             values = [float(score) for score in psi_scores.values()]
             verbose_emit(
@@ -241,7 +244,25 @@ class PsiSelector:
                 psi_mean=round(sum(values) / len(values), 6),
                 threshold=threshold,
             )
+        return {"values": psi_scores}
 
+    def apply(
+        self: PsiSelector,
+        metrics: Mapping[str, Any],
+        candidates: Sequence[str],
+        context: StageContext,
+    ) -> list[FeatureDecision]:
+        """Keep/drop remaining features by the current PSI threshold."""
+        del context
+        values = metrics.get("values", metrics)
+        if not isinstance(values, Mapping):
+            values = {}
+        threshold = self.config.threshold
+        decisions: list[FeatureDecision] = []
+        for col in candidates:
+            score = float(values.get(col, 0.0))
+            keep = score <= threshold
+            decisions.append(self._make_decision(col, keep=keep, score=score, threshold=threshold))
         return decisions
 
     def _resolve_population_pair(self, context: StageContext) -> Tuple[Any, Any]:

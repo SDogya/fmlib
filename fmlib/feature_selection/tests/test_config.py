@@ -7,6 +7,7 @@ import pytest
 from fmlib.feature_selection.base import StageContext, resolve_step_seed
 from fmlib.feature_selection.config import FeatureSelectionConfig
 from fmlib.feature_selection.exceptions import ConfigError
+from fmlib.feature_selection.schema import FeatureSchema
 
 
 def test_defaults_validate() -> None:
@@ -22,6 +23,8 @@ def test_defaults_validate() -> None:
     assert config.statistics.correlation.threshold == 0.95
     assert config.statistics.correlation.tie_break == "original_order"
     assert config.statistics.correlation.max_rows == 100_000
+    assert config.statistics.cache.enabled is False
+    assert config.statistics.cache.path is None
     assert config.precise.method == "none"
 
 
@@ -174,13 +177,15 @@ def test_feature_drop_config_requires_path_when_enabled() -> None:
         )
 
 
-def test_feature_drop_config_roundtrip_from_dict() -> None:
+def test_feature_drop_config_roundtrip_from_dict(tmp_path: Path) -> None:
+    drop_path = tmp_path / "drop.txt"
+    drop_path.write_text("legacy_feature\n", encoding="utf-8")
     config = FeatureSelectionConfig.from_dict(
         {
             "preprocessing": {
                 "feature_drop": {
                     "enabled": True,
-                    "path": "/tmp/drop.txt",
+                    "path": str(drop_path),
                     "strict": True,
                 },
             },
@@ -188,7 +193,7 @@ def test_feature_drop_config_roundtrip_from_dict() -> None:
     )
 
     assert config.preprocessing.feature_drop.enabled is True
-    assert config.preprocessing.feature_drop.path == "/tmp/drop.txt"
+    assert config.preprocessing.feature_drop.path == str(drop_path)
     assert config.preprocessing.feature_drop.strict is True
     assert config.to_dict()["preprocessing"]["feature_drop"]["enabled"] is True
 
@@ -842,6 +847,34 @@ def test_precise_enabled_requires_boruta_shap() -> None:
     assert config.precise.method == "boruta_shap"
 
 
+def test_feature_drop_missing_file_is_config_error(tmp_path: Path) -> None:
+    missing = tmp_path / "does_not_exist.txt"
+    with pytest.raises(ConfigError, match="file not found"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "preprocessing": {
+                    "feature_drop": {
+                        "enabled": True,
+                        "path": str(missing),
+                    },
+                },
+            },
+        )
+
+
+def test_catboost_rfe_requires_parameters_when_enabled() -> None:
+    with pytest.raises(ConfigError, match="parameters is required"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "catboost_rfe",
+                    "selection": {"max_features": 5},
+                },
+            },
+        )
+
+
 def test_catboost_rfe_requires_max_features_when_enabled() -> None:
     with pytest.raises(ConfigError, match="max_features"):
         FeatureSelectionConfig.from_dict(
@@ -849,10 +882,186 @@ def test_catboost_rfe_requires_max_features_when_enabled() -> None:
                 "model": {
                     "enabled": True,
                     "method": "catboost_rfe",
+                    "params": {"parameters": {"iterations": 10}},
                     "selection": {"max_features": None},
                 },
             },
         )
+
+
+def test_catboost_rfe_rejects_alias_clash() -> None:
+    with pytest.raises(ConfigError, match="aliases together"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "catboost_rfe",
+                    "params": {
+                        "parameters": {"iterations": 10, "n_estimators": 10},
+                    },
+                    "selection": {"max_features": 5},
+                },
+            },
+        )
+
+
+def test_lightgbm_rejects_alias_clash_and_typo() -> None:
+    with pytest.raises(ConfigError, match="aliases together"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {
+                        "parameters": {"n_estimators": 8, "num_iterations": 8},
+                    },
+                },
+            },
+        )
+    with pytest.raises(ConfigError, match="unknown parameter"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {"parameters": {"n_estmators": 8}},
+                },
+            },
+        )
+    with pytest.raises(ConfigError, match="unknown parameter"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {"parameters": {"num_leavees": 16}},
+                },
+            },
+        )
+
+
+def test_lightgbm_rejects_forced_parameter_keys() -> None:
+    with pytest.raises(ConfigError, match="must not set"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {"parameters": {"random_state": 1}},
+                },
+            },
+        )
+
+
+def test_boruta_rejects_rf_key_on_lgbm() -> None:
+    with pytest.raises(ConfigError, match="unknown parameter"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "precise": {
+                    "method": "boruta_shap",
+                    "params": {
+                        "model_type": "lgbm",
+                        "parameters": {"min_samples_split": 2},
+                    },
+                },
+            },
+        )
+
+
+def test_malformed_optuna_spec_is_config_error() -> None:
+    with pytest.raises(ConfigError, match="must define 'min' and 'max'"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "lightgbm",
+                    "params": {
+                        "parameters": {"num_leaves": {"type": "int"}},
+                    },
+                },
+            },
+        )
+
+
+def test_psi_num_bins_must_be_at_least_two() -> None:
+    with pytest.raises(ConfigError, match=r"psi\.num_bins"):
+        FeatureSelectionConfig.from_dict({"statistics": {"psi": {"num_bins": 0}}})
+    with pytest.raises(ConfigError, match=r"num_bins"):
+        FeatureSelectionConfig.from_dict({"order": [{"psi": {"num_bins": 0}}]})
+
+
+def test_statistics_cache_roundtrip() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "statistics": {
+                "cache": {
+                    "enabled": True,
+                    "path": "metrics.json",
+                    "force_recompute": True,
+                },
+            },
+        },
+    )
+    assert config.statistics.cache.enabled is True
+    assert config.statistics.cache.path == "metrics.json"
+    assert config.statistics.cache.force_recompute is True
+    payload = config.to_dict()["statistics"]["cache"]
+    assert payload == {
+        "enabled": True,
+        "path": "metrics.json",
+        "force_recompute": True,
+    }
+
+
+def test_order_prerequisites_require_target_and_time() -> None:
+    from fmlib.feature_selection.runner import validate_order_prerequisites
+
+    lightgbm_config = FeatureSelectionConfig.from_dict({"order": [{"lightgbm": {}}]})
+    no_target = FeatureSchema(
+        categorical=(),
+        continuous=("a",),
+        target=None,
+        task_type="binary_classification",
+    )
+    context = StageContext(
+        spark=None,
+        datasets={"train": None},
+        schema=no_target,
+        config=lightgbm_config,
+        seed=0,
+        candidates=["a"],
+    )
+    with pytest.raises(ConfigError, match="target"):
+        validate_order_prerequisites(context)
+
+    catboost_config = FeatureSelectionConfig.from_dict(
+        {
+            "order": [
+                {
+                    "catboost_rfe": {
+                        "parameters": {"iterations": 10},
+                        "selection": {"max_features": 5},
+                    },
+                },
+            ],
+        },
+    )
+    no_time = FeatureSchema(
+        categorical=(),
+        continuous=("a",),
+        target="response",
+        task_type="binary_classification",
+    )
+    context = StageContext(
+        spark=None,
+        datasets={"train": None},
+        schema=no_time,
+        config=catboost_config,
+        seed=0,
+        candidates=["a"],
+    )
+    with pytest.raises(ConfigError, match="FeatureSchema.time"):
+        validate_order_prerequisites(context)
 
 
 @pytest.mark.parametrize(

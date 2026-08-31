@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from fmlib.feature_selection.base import (
     FeatureDecision,
@@ -11,6 +11,7 @@ from fmlib.feature_selection.base import (
     bind_process_rng,
     persist_step_artifact,
     resolve_step_seed,
+    step_seed,
 )
 from fmlib.feature_selection.config import (
     ConstantsConfig,
@@ -32,7 +33,7 @@ from fmlib.feature_selection.config import (
     _build_section,
     split_model_step_params,
 )
-from fmlib.feature_selection.exceptions import ConfigError, SchemaError
+from fmlib.feature_selection.exceptions import BackendError, ConfigError, SchemaError
 from fmlib.feature_selection.model_based.catboost_rfe import CatBoostRfeSelector
 from fmlib.feature_selection.model_based.lasso import LassoSelector
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
@@ -45,6 +46,13 @@ from fmlib.feature_selection.statistics.low_variance import LowVarianceSelector
 from fmlib.feature_selection.statistics.null_rate import NullRateSelector
 from fmlib.feature_selection.statistics.psi import PsiSelector
 from fmlib.feature_selection.statistics.stability_classifier import StabilityClassifierSelector
+from fmlib.feature_selection.utils.model_param_validate import validate_model_parameters
+from fmlib.feature_selection.utils.statistics_cache import (
+    CACHEABLE_METHODS,
+    StatisticsMetricsCache,
+    compute_fingerprint,
+    resolve_cache_path,
+)
 from fmlib.feature_selection.utils.steps import (
     FeatureDropStep,
     RandomFeatureDropStep,
@@ -60,6 +68,7 @@ _PREPROCESSING_METHODS = frozenset(
 _MODEL_METHODS = frozenset(
     {"lasso", "random_forest", "catboost_rfe", "lightgbm"},
 )
+_BINARY_MODEL_METHODS = frozenset({"lightgbm", "catboost_rfe", "boruta_shap"})
 
 
 def run_order(
@@ -77,9 +86,10 @@ def run_order(
     """
     remaining = list(candidates)
     decisions: list[FeatureDecision] = []
+    cache = _open_stats_cache(context)
     for step in context.config.order:
         before = len(context.decisions)
-        remaining = _run_step(context, step, remaining)
+        remaining = _run_step(context, step, remaining, cache=cache)
         step_decisions = context.decisions[before:]
         decisions.extend(step_decisions)
         _relocate_step_scores(context, step.method, context.step_index)
@@ -93,10 +103,51 @@ def run_order(
     return remaining, decisions
 
 
+def validate_order_prerequisites(context: StageContext) -> None:
+    """Fail before any step if schema, extras or parameters cannot run.
+
+    Walks the whole ``order`` so a missing target or SHAP extra surfaces at
+    ``fit_select`` start instead of after hours of statistics.
+    """
+    for index, step in enumerate(context.config.order):
+        section = f"order[{index}].{step.method}"
+        if step.method == "psi":
+            settings = _build_section(PsiConfig, step.params, section)
+            _validate_psi(context, settings)
+        elif step.method == "iv":
+            _validate_iv(context)
+        elif step.method == "stability_classifier":
+            _validate_stability(context)
+        elif step.method in _MODEL_METHODS:
+            if context.schema.target is None:
+                msg = "model stage requires FeatureSchema.target."
+                raise ConfigError(msg)
+            if step.method in _BINARY_MODEL_METHODS:
+                _require_binary_task(step.method, context)
+            if step.method == "catboost_rfe" and not context.schema.time:
+                msg = (
+                    "catboost_rfe: FeatureSchema.time is required for the "
+                    "out-of-time split. Set time to the period column."
+                )
+                raise ConfigError(msg)
+            model_params, _, _ = split_model_step_params(step.params)
+            _require_method_extras(step.method, model_params)
+            _revalidate_model_parameters(step.method, model_params)
+        elif step.method == "boruta_shap":
+            if not context.schema.target:
+                msg = "boruta_shap requires FeatureSchema.target."
+                raise ConfigError(msg)
+            _require_binary_task(step.method, context)
+            _require_method_extras(step.method, step.params)
+            _revalidate_model_parameters(step.method, step.params)
+
+
 def _run_step(
     context: StageContext,
     step: PipelineStepConfig,
     candidates: Sequence[str],
+    *,
+    cache: StatisticsMetricsCache | None = None,
 ) -> list[str]:
     """Build and execute one order step."""
     context.run_seed = resolve_step_seed(step.params, context)
@@ -155,7 +206,16 @@ def _run_step(
         msg = f"Unknown method in order: {step.method!r}."
         raise ConfigError(msg)
 
-    step_decisions = run_selector_logged(selector, context, candidates)
+    if (
+        cache is not None
+        and step.method in CACHEABLE_METHODS
+        and hasattr(selector, "compute")
+        and hasattr(selector, "apply")
+    ):
+        cached_selector = _CachedStatisticsSelector(selector, cache)
+        step_decisions = run_selector_logged(cached_selector, context, candidates)
+    else:
+        step_decisions = run_selector_logged(selector, context, candidates)
     context.decisions.extend(step_decisions)
     remaining = apply_drop_decisions(candidates, step_decisions)
     context.candidates = remaining
@@ -281,3 +341,167 @@ def _validate_stability(context: StageContext) -> None:
             "Remove stability_classifier from order or provide additional splits."
         )
         raise SchemaError(msg)
+
+
+def _open_stats_cache(context: StageContext) -> StatisticsMetricsCache | None:
+    """Open the statistics metrics cache when ``statistics.cache.enabled``."""
+    settings = context.config.statistics.cache
+    if not settings.enabled:
+        return None
+    path = resolve_cache_path(settings.path)
+    return StatisticsMetricsCache.load(
+        path,
+        force_recompute=settings.force_recompute,
+    )
+
+
+def _run_cached_statistics(
+    selector: Any,
+    context: StageContext,
+    remaining: Sequence[str],
+    cache: StatisticsMetricsCache,
+) -> list[FeatureDecision]:
+    """Lookup or compute metrics on the full candidate set, then apply thresholds."""
+    method = selector.method_name
+    fingerprint = compute_fingerprint(
+        method,
+        selector.config,
+        max_local_rows=context.config.execution.max_local_rows,
+        seed=step_seed(context),
+    )
+    force = bool(context.config.statistics.cache.force_recompute)
+    metrics = None if force else cache.lookup(method, fingerprint)
+    full_features = list(context.schema.candidate_features())
+    if metrics is None:
+        metrics = selector.compute(context, full_features)
+        cache.upsert(method, fingerprint, metrics)
+    return selector.apply(metrics, remaining, context)
+
+
+class _CachedStatisticsSelector:
+    """Adapter so cached compute/apply still goes through verbose logging."""
+
+    def __init__(
+        self: _CachedStatisticsSelector,
+        selector: Any,
+        cache: StatisticsMetricsCache,
+    ) -> None:
+        self._selector = selector
+        self._cache = cache
+        self.method_name = selector.method_name
+
+    def select(
+        self: _CachedStatisticsSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> list[FeatureDecision]:
+        return _run_cached_statistics(
+            self._selector,
+            context,
+            candidates,
+            self._cache,
+        )
+
+
+def _require_binary_task(method: str, context: StageContext) -> None:
+    """Require binary classification for model / precise selectors that need it."""
+    if context.schema.task_type == "binary_classification":
+        return
+    msg = (
+        f"{method}: only task_type='binary_classification' is supported; "
+        f"got {context.schema.task_type!r}."
+    )
+    raise ConfigError(msg)
+
+
+def _revalidate_model_parameters(method: str, params: Mapping[str, Any]) -> None:
+    """Re-check aliases and unknown names for configs built without ``from_dict``."""
+    parameters = params.get("parameters", {})
+    if method == "lightgbm":
+        validate_model_parameters(
+            parameters if isinstance(parameters, Mapping) else {},
+            library="lightgbm",
+            method_name=method,
+        )
+        return
+    if method == "catboost_rfe":
+        validate_model_parameters(
+            parameters if isinstance(parameters, Mapping) else {},
+            library="catboost",
+            method_name=method,
+            require_non_empty=True,
+        )
+        return
+    if method == "boruta_shap":
+        model_type = str(params.get("model_type", "lgbm")).lower()
+        library = "random_forest" if model_type == "rf" else "lightgbm"
+        validate_model_parameters(
+            parameters if isinstance(parameters, Mapping) else {},
+            library=library,
+            method_name=method,
+            ignore_keys=(
+                frozenset({"bootstrap_type"})
+                if library == "lightgbm"
+                else frozenset()
+            ),
+        )
+
+
+def _require_method_extras(method: str, params: Mapping[str, Any]) -> None:
+    """Import optional extras for a step before any fold or trial runs."""
+    optuna_needed = _optuna_enabled(params)
+    if method == "lightgbm":
+        _import_or_fail("lightgbm", "lightgbm: LightGBM is required. Install the lightgbm optional dependency.")
+        _import_or_fail("shap", "lightgbm: SHAP is required. Install the shap optional dependency.")
+        if optuna_needed:
+            _import_or_fail("optuna", "lightgbm: Optuna is required. Install the optuna optional dependency.")
+        return
+    if method == "catboost_rfe":
+        try:
+            from catboost import CatBoostClassifier  # noqa: F401
+        except ImportError as exc:
+            msg = "catboost_rfe: CatBoost is required. Install the catboost optional dependency."
+            raise BackendError(msg) from exc
+        if optuna_needed:
+            _import_or_fail("optuna", "catboost_rfe: Optuna is required. Install the optuna optional dependency.")
+        return
+    if method == "boruta_shap":
+        try:
+            from BorutaShap import BorutaShap  # noqa: F401
+        except ImportError as exc:
+            msg = "boruta_shap: BorutaShap is required. Install the BorutaShap optional dependency."
+            raise BackendError(msg) from exc
+        model_type = str(params.get("model_type", "lgbm")).lower()
+        if model_type == "rf":
+            try:
+                from sklearn.ensemble import RandomForestClassifier  # noqa: F401
+            except ImportError as exc:
+                msg = (
+                    "boruta_shap: scikit-learn RandomForest is required for "
+                    "model_type='rf'."
+                )
+                raise BackendError(msg) from exc
+        else:
+            _import_or_fail(
+                "lightgbm",
+                "boruta_shap: LightGBM is required for model_type='lgbm'.",
+            )
+        if optuna_needed:
+            _import_or_fail("optuna", "boruta_shap: Optuna is required. Install the optuna optional dependency.")
+
+
+def _optuna_enabled(params: Mapping[str, Any]) -> bool:
+    """Whether this step will run Optuna (default true, matching selectors)."""
+    optuna_params = params.get("optuna_params", {})
+    if not isinstance(optuna_params, Mapping):
+        return True
+    return optuna_params.get("enabled", True) is not False
+
+
+def _import_or_fail(module: str, message: str) -> None:
+    """Import ``module`` or raise ``BackendError`` with ``message``."""
+    try:
+        __import__(module)
+    except ImportError as exc:
+        msg = message
+        raise BackendError(msg) from exc

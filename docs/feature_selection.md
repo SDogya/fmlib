@@ -115,6 +115,44 @@ execution:
 Готовые примеры: [`pipeline_catboost_rfe.yaml`](../examples/configs/feature_selection/pipeline_catboost_rfe.yaml)
 и [`pipeline_lightgbm.yaml`](../examples/configs/feature_selection/pipeline_lightgbm.yaml).
 
+### Fail-fast конфига
+
+`from_yaml` / `from_dict` проверяют не только типы YAML, но и содержимое
+`params.parameters` у каждого шага в `order`:
+
+- алиасы одной и той же кнопки библиотеки (`iterations` и `n_estimators` у
+  CatBoost, `n_estimators` и `num_iterations` у LightGBM);
+- опечатки в именах (`n_estmators` → подсказка `n_estimators`);
+- ключи, которые пайплайн всё равно перетирает (`random_state` в LightGBM);
+- форму Optuna-спеки (`type` / `min` / `max` / `values`);
+- что файл `feature_drop.path` существует и читается.
+
+На старте `fit_select`, до первого тяжёлого шага, пайплайн ещё раз проходит
+весь `order`: нужен ли `target` / `time`, есть ли `shap` / `lightgbm` /
+`catboost` / `BorutaShap` в окружении. Отсутствие extra на ноутбуке не валит
+`from_yaml`; падает уже запуск на кластере, сразу, а не на шаге 6 через 4 часа.
+
+### Кэш метрик статистик
+
+Метрики (`null_rate`, дисперсия, PSI, IV, матрица корреляций) не зависят от
+порога и от порядка статистик. Их можно посчитать один раз на полном списке
+`schema.candidate_features()` и потом только резать:
+
+```yaml
+statistics:
+  cache:
+    enabled: false          # дефолт: как сейчас, ничего не пишем
+    path: null              # null → statistics_metrics.json в cwd;
+                            # не кладите файл в collision-safe output_dir
+    force_recompute: false  # true — пересчитать методы из текущего order
+```
+
+Порог в fingerprint не входит: смена `null_rate.threshold` переиспользует те же
+доли пропусков. Смена compute-параметра (`low_variance.scale_method: robust` vs
+`minmax`) — отдельная запись рядом. Корреляция кэширует матрицу; кого выкинуть
+считается заново greedy по текущим remaining. `stability_classifier` не кэшируется.
+На кластере задайте явный `path`.
+
 ### Модельные и precise-шаги
 
 Параметры модельного шага — это `params` плюс опционально `selection` и

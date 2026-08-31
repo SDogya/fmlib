@@ -21,7 +21,7 @@ from fmlib.feature_selection.result import (
     _next_available_path,
     stage_backends_for_config,
 )
-from fmlib.feature_selection.runner import STUB_METHODS, run_order
+from fmlib.feature_selection.runner import STUB_METHODS, run_order, validate_order_prerequisites
 from fmlib.feature_selection.schema import FeatureSchema, ensure_no_feature_leak
 from fmlib.feature_selection.utils.verbose import (
     VERBOSE_LOG_FILENAME,
@@ -127,6 +127,8 @@ class FeatureSelectionPipeline:
             output_dir=Path(output_dir) if output_dir is not None else None,
         )
         bind_process_rng(seed)
+
+        validate_order_prerequisites(context)
 
         output_path = context.output_dir
         remaining = list(candidates)

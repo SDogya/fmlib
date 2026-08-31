@@ -34,6 +34,30 @@ class LocalNumericSample:
     sample_fraction: float | None
 
 
+def _canonical_row_order(frame: pd.DataFrame) -> pd.DataFrame:
+    """Order rows by content so the frame does not depend on partitioning.
+
+    ``toPandas`` concatenates partitions in index order, so a materialized
+    frame carries whatever row order the input happened to be split into --
+    and Spark chooses that split from the cores available at read time, which
+    varies between runs. That order then reaches the tuning hold-out split,
+    LightGBM's binning and Boruta's shadow shuffles, so the same data selects
+    different features on a rerun even with every seed pinned.
+
+    Sorting by a row hash makes the order a property of the data instead.
+    Rows that collide are byte-identical for the selectors, so a stable sort
+    leaves nothing order-dependent behind.
+
+    Args:
+        frame: Materialized driver-local frame.
+
+    Returns:
+        The same rows in a partitioning-independent order.
+    """
+    keys = pd.util.hash_pandas_object(frame, index=False).to_numpy()
+    return frame.iloc[np.argsort(keys, kind="stable")].reset_index(drop=True)
+
+
 def prepare_numeric_frame(
     data: Any,
     *,
@@ -114,6 +138,7 @@ def prepare_numeric_frame(
 
     result = prepared.copy()
     result[target_col] = local[target_col].to_numpy()
+    result = _canonical_row_order(result)
     _store_local_numeric_sample(
         context,
         frame=result,
@@ -207,7 +232,7 @@ def prepare_mixed_frame(
         for column in numeric:
             local[column] = converted[column]
 
-    return local
+    return _canonical_row_order(local)
 
 
 def _materialize_spark(
