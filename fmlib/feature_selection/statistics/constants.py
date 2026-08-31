@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -71,8 +71,18 @@ class ConstantsSelector:
         """
         if not candidates:
             return []
+        metrics = self.compute(context, list(candidates))
+        return self.apply(metrics, candidates, context)
 
+    def compute(
+        self: ConstantsSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return ``{feature: {n_unique, max_frequency}}`` for ``candidates``."""
         columns = list(candidates)
+        if not columns:
+            return {"values": {}}
         train = context.datasets["train"]
         if _is_spark_dataframe(train):
             stats = self._compute_stats_spark(train, columns)
@@ -110,6 +120,36 @@ class ConstantsSelector:
                 max_frequency_min=min(frequencies),
                 max_frequency_max=max(frequencies),
             )
+        return {
+            "values": {
+                feature: {"n_unique": n_unique, "max_frequency": max_frequency}
+                for feature, (n_unique, max_frequency) in stats.items()
+            },
+        }
+
+    def apply(
+        self: ConstantsSelector,
+        metrics: Mapping[str, Any],
+        candidates: Sequence[str],
+        context: StageContext,
+    ) -> list[FeatureDecision]:
+        """Drop remaining features that violate uniqueness / frequency rules."""
+        del context
+        raw = metrics.get("values", metrics)
+        if not isinstance(raw, Mapping):
+            return []
+        remaining = set(candidates)
+        stats: dict[str, tuple[int, float]] = {}
+        for feature, payload in raw.items():
+            if feature not in remaining:
+                continue
+            if isinstance(payload, Mapping):
+                stats[str(feature)] = (
+                    int(payload.get("n_unique", 0)),
+                    float(payload.get("max_frequency", 0.0)),
+                )
+            elif isinstance(payload, (list, tuple)) and len(payload) == 2:
+                stats[str(feature)] = (int(payload[0]), float(payload[1]))
         return self._build_decisions(stats)
 
     def _compute_stats_spark(

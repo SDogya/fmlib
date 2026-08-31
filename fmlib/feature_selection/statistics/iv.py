@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -79,9 +79,29 @@ class IvSelector:
                 f"Got {schema.task_type!r}."
             )
             raise ConfigError(msg)
+        metrics = self.compute(context, list(candidates))
+        return self.apply(metrics, candidates, context)
 
-        train = context.datasets["train"]
+    def compute(
+        self: IvSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return ``{feature: iv}`` for ``candidates``."""
+        schema = context.schema
+        if not schema.target:
+            msg = "iv requires FeatureSchema.target."
+            raise ConfigError(msg)
+        if schema.task_type != "binary_classification":
+            msg = (
+                "iv requires FeatureSchema.task_type='binary_classification'. "
+                f"Got {schema.task_type!r}."
+            )
+            raise ConfigError(msg)
         columns = list(candidates)
+        if not columns:
+            return {"values": {}}
+        train = context.datasets["train"]
         categorical = set(schema.categorical)
         continuous = set(schema.continuous)
         if _is_spark_dataframe(train):
@@ -109,13 +129,6 @@ class IvSelector:
             )
             raise ExecutionError(msg)
 
-        context.scores[self.method_name] = {
-            "threshold": self.config.threshold,
-            "max_threshold": self.config.max_threshold,
-            "num_bins": self.config.num_bins,
-            "values": dict(iv_scores),
-        }
-
         if verbose_enabled(context, self.method_name) and iv_scores:
             values = list(iv_scores.values())
             n_low = sum(1 for value in values if value < self.config.threshold)
@@ -137,9 +150,32 @@ class IvSelector:
                 iv_max=max(values),
                 iv_mean=round(sum(values) / len(values), 6),
             )
+        return {"values": iv_scores}
 
+    def apply(
+        self: IvSelector,
+        metrics: Mapping[str, Any],
+        candidates: Sequence[str],
+        context: StageContext,
+    ) -> list[FeatureDecision]:
+        """Drop remaining features whose IV is outside the configured range."""
+        values = metrics.get("values", metrics)
+        if not isinstance(values, Mapping):
+            values = {}
+        remaining = set(candidates)
+        scored = {
+            feature: float(value)
+            for feature, value in values.items()
+            if feature in remaining
+        }
+        context.scores[self.method_name] = {
+            "threshold": self.config.threshold,
+            "max_threshold": self.config.max_threshold,
+            "num_bins": self.config.num_bins,
+            "values": dict(scored),
+        }
         decisions: list[FeatureDecision] = []
-        for feature, value in iv_scores.items():
+        for feature, value in scored.items():
             if value < self.config.threshold:
                 decisions.append(
                     FeatureDecision(

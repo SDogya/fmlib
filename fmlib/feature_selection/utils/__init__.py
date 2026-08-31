@@ -8,6 +8,7 @@ from fmlib.feature_selection.utils.optuna_space import (
     resolve_optuna_settings,
     split_parameters,
     suggest_parameter,
+    validate_parameter_spec,
 )
 
 __all__ = [
@@ -18,4 +19,5 @@ __all__ = [
     "resolve_optuna_settings",
     "split_parameters",
     "suggest_parameter",
+    "validate_parameter_spec",
 ]

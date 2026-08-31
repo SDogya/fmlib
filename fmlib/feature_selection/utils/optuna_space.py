@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Optional
 
-from fmlib.feature_selection.exceptions import ExecutionError
+from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
 
 SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
 PARAMETER_TYPES = frozenset({"int", "float", "categorical"})
@@ -112,9 +112,87 @@ def _bounds(specification: Mapping[str, Any], name: str, method_name: str) -> tu
     low = specification.get("min", specification.get("low"))
     high = specification.get("max", specification.get("high"))
     if low is None or high is None:
-        msg = f"{method_name}: parameter {name!r} must define 'min' and 'max' (or 'low' and 'high')."
-        raise ExecutionError(msg)
+        msg = (
+            f"{method_name}: parameter {name!r} must define 'min' and 'max' "
+            "(or 'low' and 'high')."
+        )
+        raise ConfigError(msg)
     return low, high
+
+
+def validate_parameter_spec(
+    name: str,
+    specification: Mapping[str, Any],
+    *,
+    method_name: str,
+) -> None:
+    """Reject a malformed Optuna search-space entry.
+
+    Supported forms::
+
+        {"type": "int", "min": 4, "max": 8}
+        {"type": "float", "min": 0.01, "max": 0.3, "log": true}
+        {"type": "categorical", "values": ["a", "b"]}
+        {"values": ["a", "b"]}
+
+    Args:
+        name: Parameter name.
+        specification: Search space entry.
+        method_name: Selector name used in error messages.
+
+    Raises:
+        ConfigError: When the specification cannot be sampled.
+    """
+    if not isinstance(specification, Mapping):
+        msg = f"{method_name}: parameter {name!r} search space must be a mapping."
+        raise ConfigError(msg)
+
+    has_values = "values" in specification
+    parameter_type = str(
+        specification.get("type", "categorical" if has_values else "float"),
+    )
+    if parameter_type not in PARAMETER_TYPES:
+        msg = (
+            f"{method_name}: parameter {name!r} has unsupported type="
+            f"{parameter_type!r}. Expected one of: {sorted(PARAMETER_TYPES)}."
+        )
+        raise ConfigError(msg)
+
+    if has_values and parameter_type != "categorical":
+        msg = (
+            f"{method_name}: parameter {name!r} combines 'values' with "
+            f"type={parameter_type!r}. An explicit list is always a categorical "
+            "choice: use type='categorical' or omit 'type'."
+        )
+        raise ConfigError(msg)
+
+    if parameter_type == "categorical":
+        values = specification.get("values")
+        if not isinstance(values, (list, tuple)) or not values:
+            msg = (
+                f"{method_name}: categorical parameter {name!r} must define a "
+                "non-empty 'values' list."
+            )
+            raise ConfigError(msg)
+        return
+
+    low, high = _bounds(specification, name, method_name)
+    try:
+        if parameter_type == "int":
+            low_value = int(low)
+            high_value = int(high)
+        else:
+            low_value = float(low)
+            high_value = float(high)
+    except (TypeError, ValueError) as exc:
+        msg = f"{method_name}: parameter {name!r} has invalid bounds: {exc}."
+        raise ConfigError(msg) from exc
+    if low_value > high_value:
+        msg = (
+            f"{method_name}: parameter {name!r} has min > max "
+            f"({low_value} > {high_value})."
+        )
+        raise ConfigError(msg)
 
 
 def suggest_parameter(
@@ -145,33 +223,17 @@ def suggest_parameter(
     Raises:
         ExecutionError: When the specification is malformed.
     """
+    try:
+        validate_parameter_spec(name, specification, method_name=method_name)
+    except ConfigError as exc:
+        raise ExecutionError(str(exc)) from exc
+
     has_values = "values" in specification
     parameter_type = str(
         specification.get("type", "categorical" if has_values else "float"),
     )
-    if parameter_type not in PARAMETER_TYPES:
-        msg = (
-            f"{method_name}: parameter {name!r} has unsupported type={parameter_type!r}. "
-            f"Expected one of: {sorted(PARAMETER_TYPES)}."
-        )
-        raise ExecutionError(msg)
-
-    if has_values and parameter_type != "categorical":
-        # Optuna samples an explicit set only through suggest_categorical, so a
-        # numeric type cannot be honoured together with 'values'. Refuse instead
-        # of silently ignoring one of the two keys.
-        msg = (
-            f"{method_name}: parameter {name!r} combines 'values' with type={parameter_type!r}. "
-            "An explicit list is always a categorical choice: use type='categorical' or omit 'type'."
-        )
-        raise ExecutionError(msg)
-
     if parameter_type == "categorical":
-        values = specification.get("values")
-        if not isinstance(values, (list, tuple)) or not values:
-            msg = f"{method_name}: categorical parameter {name!r} must define a non-empty 'values' list."
-            raise ExecutionError(msg)
-        return trial.suggest_categorical(name, list(values))
+        return trial.suggest_categorical(name, list(specification["values"]))
 
     low, high = _bounds(specification, name, method_name)
     try:

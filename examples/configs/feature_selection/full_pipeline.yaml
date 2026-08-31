@@ -27,6 +27,10 @@ order:
   - catboost_rfe: ${catboost_rfe}
 
 statistics:
+  cache:
+    enabled: false           # true — считать метрики один раз на всех кандидатах
+    path: null               # null → statistics_metrics.json в cwd; на кластере задайте явный path
+    force_recompute: false   # true — переписать методы из текущего order
 
   null_rate:
     threshold: 0.95          # доля пропусков, выше которой признак отбрасывается

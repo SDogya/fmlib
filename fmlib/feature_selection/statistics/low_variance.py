@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
@@ -58,6 +58,19 @@ class LowVarianceSelector:
         columns = [column for column in candidates if column in continuous]
         if not columns:
             return []
+        metrics = self.compute(context, list(candidates))
+        return self.apply(metrics, candidates, context)
+
+    def compute(
+        self: LowVarianceSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return scaled variances keyed by continuous feature name."""
+        continuous = set(context.schema.continuous)
+        columns = [column for column in candidates if column in continuous]
+        if not columns:
+            return {"values": {}}
 
         train = context.datasets["train"]
         if _is_spark_dataframe(train):
@@ -101,9 +114,24 @@ class LowVarianceSelector:
                 scaled_variance_min=min(defined) if defined else None,
                 scaled_variance_max=max(defined) if defined else None,
             )
+        return {"values": scaled_variances}
 
+    def apply(
+        self: LowVarianceSelector,
+        metrics: Mapping[str, Any],
+        candidates: Sequence[str],
+        context: StageContext,
+    ) -> list[FeatureDecision]:
+        """Drop remaining continuous features below the variance threshold."""
+        del context
+        values = metrics.get("values", metrics)
+        if not isinstance(values, Mapping):
+            return []
+        remaining = set(candidates)
         decisions: list[FeatureDecision] = []
-        for feature, scaled_variance in scaled_variances.items():
+        for feature, scaled_variance in values.items():
+            if feature not in remaining:
+                continue
             if scaled_variance is not None and scaled_variance >= self.config.min_variance:
                 continue
             decisions.append(

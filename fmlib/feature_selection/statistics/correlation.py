@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -84,6 +84,19 @@ class CorrelationSelector:
         columns = [column for column in candidates if column in continuous]
         if len(columns) < 2:
             return []
+        metrics = self.compute(context, list(candidates))
+        return self.apply(metrics, candidates, context)
+
+    def compute(
+        self: CorrelationSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return the correlation matrix, null rates and evaluated feature order."""
+        continuous = set(context.schema.continuous)
+        columns = [column for column in candidates if column in continuous]
+        if len(columns) < 2:
+            return {"features": [], "matrix": [], "null_rates": {}}
 
         max_rows = min(self.config.max_rows, context.config.execution.max_local_rows)
         train = context.datasets["train"]
@@ -95,10 +108,7 @@ class CorrelationSelector:
             msg = f"correlation: unsupported train split type {type(train)!r}. Expected a Spark DataFrame or pandas DataFrame."
             raise ExecutionError(msg)
 
-        if len(evaluated) < 2:
-            return []
-
-        if verbose_enabled(context, self.method_name):
+        if verbose_enabled(context, self.method_name) and len(evaluated) >= 2:
             off_diag = np.abs(corr_matrix.copy())
             np.fill_diagonal(off_diag, 0.0)
             n_pairs = int(np.sum(off_diag > self.config.threshold) // 2)
@@ -120,8 +130,42 @@ class CorrelationSelector:
                 n_pairs_above_threshold=n_pairs,
                 max_abs_corr=float(np.max(finite)) if finite.size else None,
             )
+        return {
+            "features": list(evaluated),
+            "matrix": corr_matrix.tolist() if len(evaluated) >= 2 else [],
+            "null_rates": dict(null_rates),
+        }
 
-        to_drop = self._resolve_drops(corr_matrix, null_rates, evaluated)
+    def apply(
+        self: CorrelationSelector,
+        metrics: Mapping[str, Any],
+        candidates: Sequence[str],
+        context: StageContext,
+    ) -> list[FeatureDecision]:
+        """Greedy-drop correlated pairs among the remaining features."""
+        del context
+        features = [str(name) for name in metrics.get("features", [])]
+        raw_matrix = metrics.get("matrix", [])
+        null_rates_raw = metrics.get("null_rates", {})
+        if not isinstance(null_rates_raw, Mapping):
+            null_rates_raw = {}
+        remaining = [name for name in candidates if name in set(features)]
+        if len(remaining) < 2 or len(features) < 2:
+            return []
+        matrix = np.asarray(raw_matrix, dtype=float)
+        if matrix.ndim != 2 or matrix.shape[0] != len(features) or matrix.shape[1] != len(features):
+            msg = (
+                "correlation: cached matrix shape does not match cached features. "
+                "Delete the statistics cache or set force_recompute: true."
+            )
+            raise ExecutionError(msg)
+        index = {name: position for position, name in enumerate(features)}
+        positions = [index[name] for name in remaining]
+        submatrix = matrix[np.ix_(positions, positions)]
+        null_rates = {
+            name: float(null_rates_raw.get(name, 0.0)) for name in remaining
+        }
+        to_drop = self._resolve_drops(submatrix, null_rates, remaining)
         return [
             FeatureDecision(
                 feature=feature,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -49,8 +49,18 @@ class NullRateSelector:
         """
         if not candidates:
             return []
+        metrics = self.compute(context, list(candidates))
+        return self.apply(metrics, candidates, context)
 
+    def compute(
+        self: NullRateSelector,
+        context: StageContext,
+        candidates: Sequence[str],
+    ) -> dict[str, Any]:
+        """Return ``{feature: null_share}`` for ``candidates``."""
         columns = list(candidates)
+        if not columns:
+            return {}
         train = context.datasets["train"]
         if _is_spark_dataframe(train):
             null_rates = self._compute_null_rates_spark(train, columns)
@@ -82,7 +92,20 @@ class NullRateSelector:
                 null_rate_mean=round(sum(rates) / len(rates), 6),
                 n_rows=len(train) if backend == "pandas" else None,
             )
+        return {"values": null_rates}
 
+    def apply(
+        self: NullRateSelector,
+        metrics: Mapping[str, Any],
+        candidates: Sequence[str],
+        context: StageContext,
+    ) -> list[FeatureDecision]:
+        """Drop remaining features whose cached null share exceeds the threshold."""
+        del context
+        values = metrics.get("values", metrics)
+        if not isinstance(values, Mapping):
+            values = {}
+        remaining = set(candidates)
         return [
             FeatureDecision(
                 feature=feature,
@@ -93,8 +116,8 @@ class NullRateSelector:
                 threshold=self.config.threshold,
                 keep=False,
             )
-            for feature, null_rate in null_rates.items()
-            if null_rate > self.config.threshold
+            for feature, null_rate in values.items()
+            if feature in remaining and null_rate > self.config.threshold
         ]
 
     def _compute_null_rates_spark(

@@ -8,6 +8,9 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
 from fmlib.feature_selection.exceptions import ConfigError
+from fmlib.feature_selection.utils.model_param_validate import (
+    validate_model_parameters,
+)
 
 PSI_MODES = frozenset({"month_over_month", "train_valid"})
 MODEL_METHODS = frozenset({"lasso", "random_forest", "catboost_rfe", "lightgbm"})
@@ -312,9 +315,8 @@ def _validate_optuna_params_block(
 def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
     """Validate method-specific CatBoost RFE configuration.
 
-    Only the shape of provided values is checked here. Presence of
-    ``parameters`` is enforced by the selector at run time so a disabled
-    default config stays constructible.
+    ``parameters`` must be a non-empty mapping: aliases and unknown names are
+    rejected here so a typo does not wait until the model is constructed.
     """
     parameters = params.get("parameters", {})
     if not isinstance(parameters, Mapping):
@@ -324,6 +326,12 @@ def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
             "{'type': 'int', 'min': 4, 'max': 8}."
         )
         raise ConfigError(msg)
+    validate_model_parameters(
+        parameters,
+        library="catboost",
+        method_name="catboost_rfe",
+        require_non_empty=True,
+    )
 
     for name in ("eval_months", "max_rows"):
         _require_positive_int(params.get(name), f"model.params.{name}")
@@ -359,6 +367,15 @@ def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
 
 def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
     """Validate method-specific LightGBM configuration."""
+    parameters = params.get("parameters", {})
+    if not isinstance(parameters, Mapping):
+        msg = "model.params.parameters must be a mapping."
+        raise ConfigError(msg)
+    validate_model_parameters(
+        parameters,
+        library="lightgbm",
+        method_name="lightgbm",
+    )
     _require_positive_int(params.get("n_trials"), "model.params.n_trials")
     _validate_optuna_params_block("model", params)
     _validate_optional_seed(params.get("seed"), "model.params.seed")
@@ -488,6 +505,13 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
     if not isinstance(parameters, Mapping):
         msg = "precise.params.parameters must be a mapping."
         raise ConfigError(msg)
+    library = "random_forest" if model_type == "rf" else "lightgbm"
+    validate_model_parameters(
+        parameters,
+        library=library,
+        method_name="boruta_shap",
+        ignore_keys=frozenset({"bootstrap_type"}) if library == "lightgbm" else frozenset(),
+    )
     _validate_optuna_params_block("precise", params, extra_int_keys=("niter",))
     optuna_params = params.get("optuna_params", {})
     sampler = str(optuna_params.get("sampler", "TPE")).upper()
@@ -635,6 +659,24 @@ class StabilityClassifierConfig:
 
 
 @dataclass(frozen=True)
+class StatisticsCacheConfig:
+    """Optional on-disk cache of statistical metrics.
+
+    Metrics are computed on the full ``schema.candidate_features()`` list and
+    stored by method plus compute-parameter fingerprint. Thresholds are applied
+    later and are not part of the fingerprint.
+
+    ``path`` is a file, not a directory. It is **not** placed inside the
+    collision-safe ``output_dir`` so later runs can reuse it. ``null`` means
+    ``statistics_metrics.json`` in the process working directory.
+    """
+
+    enabled: bool = False
+    path: Optional[str] = None
+    force_recompute: bool = False
+
+
+@dataclass(frozen=True)
 class StatisticsConfig:
     """Statistical stage configuration."""
 
@@ -646,6 +688,7 @@ class StatisticsConfig:
     psi: PsiConfig = field(default_factory=PsiConfig)
     iv: IvConfig = field(default_factory=IvConfig)
     stability_classifier: StabilityClassifierConfig = field(default_factory=StabilityClassifierConfig)
+    cache: StatisticsCacheConfig = field(default_factory=StatisticsCacheConfig)
 
 
 @dataclass(frozen=True)
@@ -899,6 +942,11 @@ class FeatureSelectionConfig:
                 "preprocessing.feature_drop.enabled is true."
             )
             raise ConfigError(msg)
+        if feature_drop.enabled:
+            _require_readable_feature_drop(
+                feature_drop.path,
+                "preprocessing.feature_drop.path",
+            )
         random_drop = self.preprocessing.random_feature_drop
         if random_drop.enabled and (
             isinstance(random_drop.n_features, bool)
@@ -948,6 +996,8 @@ class FeatureSelectionConfig:
                 msg,
             )
         _validate_optional_seed(self.statistics.psi.seed, "statistics.psi.seed")
+        _validate_psi_config(self.statistics.psi, "statistics.psi")
+        _validate_statistics_cache(self.statistics.cache)
         if self.model.method not in MODEL_METHODS:
             msg = f"Unsupported model.method={self.model.method!r}. Expected one of: {sorted(MODEL_METHODS)}."
             raise ConfigError(
@@ -1129,6 +1179,11 @@ class FeatureSelectionConfig:
                 StabilityClassifierConfig,
                 statistics_raw.get("stability_classifier", {}),
                 "statistics.stability_classifier",
+            ),
+            cache=_build_section(
+                StatisticsCacheConfig,
+                statistics_raw.get("cache", {}),
+                "statistics.cache",
             ),
         )
 
@@ -1338,6 +1393,7 @@ def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
             if settings.path is None or not str(settings.path).strip():
                 msg = f"{section}.path is required."
                 raise ConfigError(msg)
+            _require_readable_feature_drop(settings.path, f"{section}.path")
         elif step.method == "random_feature_drop":
             settings = _build_section(RandomFeatureDropConfig, params, section)
             if (
@@ -1402,6 +1458,7 @@ def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
                 msg = f"Unsupported {section}.mode={settings.mode!r}."
                 raise ConfigError(msg)
             _validate_optional_seed(settings.seed, f"{section}.seed")
+            _validate_psi_config(settings, section)
         elif step.method == "iv":
             settings = _build_section(IvConfig, params, section)
             _validate_iv_config(settings)
@@ -1427,6 +1484,95 @@ def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
                     raise ConfigError(msg)
         elif step.method == "boruta_shap":
             _validate_boruta_params(params)
+
+
+def _validate_statistics_cache(config: StatisticsCacheConfig) -> None:
+    """Validate the optional statistics metrics cache block."""
+    _require_bool("statistics.cache.enabled", config.enabled)
+    _require_bool("statistics.cache.force_recompute", config.force_recompute)
+    if config.path is not None and (
+        isinstance(config.path, bool) or not isinstance(config.path, str)
+    ):
+        msg = "statistics.cache.path must be a string or null."
+        raise ConfigError(msg)
+
+
+def _require_readable_feature_drop(path: Optional[str], section: str) -> None:
+    """Fail when the drop list cannot be read or has no names."""
+    from fmlib.feature_selection.utils.feature_drop import load_feature_names
+
+    if path is None or not str(path).strip():
+        msg = f"{section} is required."
+        raise ConfigError(msg)
+    file_path = Path(str(path)).expanduser()
+    if not file_path.is_file():
+        msg = f"{section}: file not found: {str(file_path)!r}."
+        raise ConfigError(msg)
+    load_feature_names(file_path)
+
+
+def _validate_psi_config(config: PsiConfig, section: str = "statistics.psi") -> None:
+    """Validate Population Stability Index numeric settings."""
+    if (
+        isinstance(config.threshold, bool)
+        or not isinstance(config.threshold, (int, float))
+        or float(config.threshold) < 0.0
+    ):
+        msg = f"{section}.threshold must be a non-negative number."
+        raise ConfigError(msg)
+    if (
+        isinstance(config.num_bins, bool)
+        or not isinstance(config.num_bins, int)
+        or config.num_bins < 2
+    ):
+        msg = f"{section}.num_bins must be an integer >= 2."
+        raise ConfigError(msg)
+    if not isinstance(config.month_column, str) or not config.month_column.strip():
+        msg = f"{section}.month_column must be a non-empty string."
+        raise ConfigError(msg)
+    if (
+        isinstance(config.test_months, bool)
+        or not isinstance(config.test_months, int)
+        or config.test_months < 1
+    ):
+        msg = f"{section}.test_months must be a positive integer."
+        raise ConfigError(msg)
+    if (
+        isinstance(config.eps, bool)
+        or not isinstance(config.eps, (int, float))
+        or not 0.0 < float(config.eps) <= 1.0
+    ):
+        msg = f"{section}.eps must be in (0, 1]."
+        raise ConfigError(msg)
+    if (
+        isinstance(config.relative_error, bool)
+        or not isinstance(config.relative_error, (int, float))
+        or not 0.0 < float(config.relative_error) <= 1.0
+    ):
+        msg = f"{section}.relative_error must be in (0, 1]."
+        raise ConfigError(msg)
+    if (
+        isinstance(config.batch_size, bool)
+        or not isinstance(config.batch_size, int)
+        or config.batch_size < 1
+    ):
+        msg = f"{section}.batch_size must be a positive integer."
+        raise ConfigError(msg)
+    if (
+        isinstance(config.n_jobs, bool)
+        or not isinstance(config.n_jobs, int)
+        or config.n_jobs == 0
+        or config.n_jobs < -1
+    ):
+        msg = f"{section}.n_jobs must be -1 or a positive integer."
+        raise ConfigError(msg)
+    if config.subsample_rows is not None and (
+        isinstance(config.subsample_rows, bool)
+        or not isinstance(config.subsample_rows, int)
+        or config.subsample_rows < 1
+    ):
+        msg = f"{section}.subsample_rows must be a positive integer or null."
+        raise ConfigError(msg)
 
 
 def _validate_iv_config(config: IvConfig) -> None:
