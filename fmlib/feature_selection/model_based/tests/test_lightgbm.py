@@ -514,7 +514,10 @@ def test_pandas_preparation_accepts_decimal_numeric_objects() -> None:
     )
 
     assert matrix.dtype == np.float64
-    assert matrix[0, 0] == 0.0
+    # Row order is canonical, not input order, so compare the column's contents.
+    assert sorted(matrix[:, 0].tolist()) == sorted(
+        float(value) for value in frame["first"]
+    )
 
 
 def test_pandas_continuous_columns_must_exist_and_be_numeric() -> None:
@@ -827,7 +830,8 @@ def test_spark_preparation_uses_declared_columns_and_supports_dots(spark: Any) -
     assert features == ["foo.bar"]
     assert matrix.shape == (10, 1)
     assert target.shape == (10,)
-    assert matrix[:, 0].tolist() == [float(index) for index in range(10)]
+    # Row order is canonical, not partition order, so compare as a set.
+    assert sorted(matrix[:, 0].tolist()) == [float(index) for index in range(10)]
 
 
 def test_search_space_defaults_to_established_ranges() -> None:
