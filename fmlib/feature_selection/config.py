@@ -352,9 +352,9 @@ def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
     if not isinstance(selection_params, Mapping):
         msg = "model.params.feature_selection_params must be a mapping."
         raise ConfigError(msg)
-    _require_positive_int(
-        selection_params.get("steps"),
-        "model.params.feature_selection_params.steps",
+    _validate_catboost_rfe_schedule(
+        selection_params,
+        "model.params.feature_selection_params",
     )
     algorithm = selection_params.get("algorithm")
     if algorithm is not None and algorithm not in CATBOOST_RFE_ALGORITHMS:
@@ -363,6 +363,26 @@ def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
             f"{algorithm!r}. Expected one of: {sorted(CATBOOST_RFE_ALGORITHMS)}."
         )
         raise ConfigError(msg)
+
+
+def _validate_catboost_rfe_schedule(
+    selection_params: Mapping[str, Any],
+    section: str,
+) -> None:
+    """Reject mixed or non-positive elimination schedules."""
+    has_steps = "steps" in selection_params
+    has_drop = "feature_drop_per_step" in selection_params
+    if has_steps and has_drop:
+        msg = (
+            f"{section}: set either 'steps' or 'feature_drop_per_step', "
+            "not both."
+        )
+        raise ConfigError(msg)
+    _require_positive_int(selection_params.get("steps"), f"{section}.steps")
+    _require_positive_int(
+        selection_params.get("feature_drop_per_step"),
+        f"{section}.feature_drop_per_step",
+    )
 
 
 def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:

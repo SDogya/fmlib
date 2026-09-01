@@ -7,15 +7,23 @@ the run instead of skipping.
 
 from __future__ import annotations
 
+from itertools import pairwise
+
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig
-from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
-from fmlib.feature_selection.model_based.catboost_rfe import CatBoostRfeSelector, split_out_of_time
+from fmlib.feature_selection.model_based.catboost_rfe import (
+    CatBoostRfeSelector,
+    _pop_elimination_schedule,
+    constant_drop_targets,
+    run_catboost_rfe,
+    split_out_of_time,
+)
 from fmlib.feature_selection.schema import FeatureSchema
+from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.utils.default_model_param_spaces import CATBOOST_RFE_SEARCH_SPACE
 from fmlib.feature_selection.utils.local_data import prepare_mixed_frame
 
@@ -308,23 +316,155 @@ def test_steps_default_leaves_more_than_one_measurement() -> None:
 
 def test_non_positive_steps_are_rejected() -> None:
     """``steps`` below one cannot describe an elimination schedule."""
-    _require_catboost()
-    context = _context(
-        _frame(),
-        schema=_schema(),
-        params={
-            "parameters": _PARAMETERS,
-            "optuna_params": {"enabled": False},
-            "feature_selection_params": {"steps": 0},
-        },
-        max_features=1,
-    )
-
-    with pytest.raises(ExecutionError, match="steps must be >= 1"):
-        CatBoostRfeSelector(context.config.model).select(
-            context,
-            ["cat_a", "num_a", "num_b"],
+    with pytest.raises(ConfigError, match="feature_selection_params.steps"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "catboost_rfe",
+                    "params": {
+                        "parameters": _PARAMETERS,
+                        "feature_selection_params": {"steps": 0},
+                    },
+                    "selection": {"max_features": 1},
+                },
+            },
         )
+
+
+def test_constant_drop_targets_schedule() -> None:
+    assert constant_drop_targets(10, 4, 3) == [7, 4]
+    assert constant_drop_targets(8, 3, 10) == [3]
+    assert constant_drop_targets(5, 5, 2) == []
+    with pytest.raises(ValueError, match="feature_drop_per_step"):
+        constant_drop_targets(10, 4, 0)
+
+
+def test_runtime_rejects_steps_and_feature_drop_per_step_together() -> None:
+    with pytest.raises(ExecutionError, match="cannot set both"):
+        _pop_elimination_schedule(
+            {"steps": 5, "feature_drop_per_step": 3},
+            method_name="catboost_rfe",
+        )
+
+
+def test_config_rejects_steps_and_feature_drop_per_step_together() -> None:
+    with pytest.raises(ConfigError, match="not both"):
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "enabled": True,
+                    "method": "catboost_rfe",
+                    "params": {
+                        "parameters": _PARAMETERS,
+                        "feature_selection_params": {
+                            "steps": 5,
+                            "feature_drop_per_step": 3,
+                        },
+                    },
+                    "selection": {"max_features": 8},
+                },
+            },
+        )
+
+
+def test_config_accepts_feature_drop_per_step_without_steps() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "model": {
+                "enabled": True,
+                "method": "catboost_rfe",
+                "params": {
+                    "parameters": _PARAMETERS,
+                    "feature_selection_params": {"feature_drop_per_step": 3},
+                },
+                "selection": {"max_features": 8},
+            },
+        },
+    )
+    assert config.model.params["feature_selection_params"]["feature_drop_per_step"] == 3
+    assert "steps" not in config.model.params["feature_selection_params"]
+
+
+def test_config_accepts_steps_without_feature_drop_per_step() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "model": {
+                "enabled": True,
+                "method": "catboost_rfe",
+                "params": {
+                    "parameters": _PARAMETERS,
+                    "feature_selection_params": {"steps": 4},
+                },
+                "selection": {"max_features": 8},
+            },
+        },
+    )
+    assert config.model.params["feature_selection_params"]["steps"] == 4
+
+
+def test_feature_drop_per_step_drops_a_constant_count() -> None:
+    """Each round removes ``feature_drop_per_step`` names until max_features."""
+    _require_catboost()
+    frame = _frame()
+    frame["num_c"] = frame["num_a"] * 0.5
+    frame["num_d"] = frame["num_b"] + 1.0
+    frame["num_e"] = (frame["num_a"] % 5).astype(float)
+    features = ["cat_a", "num_a", "num_b", "num_c", "num_d", "num_e"]
+    drop_per_step = 2
+    max_features = 3
+    details = run_catboost_rfe(
+        frame,
+        feature_cols=features,
+        categorical_cols=["cat_a"],
+        target_col="target",
+        time_col="month_part",
+        eval_months=1,
+        parameters=_PARAMETERS,
+        optuna_params={"enabled": False},
+        feature_selection_params={
+            "algorithm": "RecursiveByPredictionValuesChange",
+            "feature_drop_per_step": drop_per_step,
+        },
+        num_features_to_select=max_features,
+        seed=0,
+    )
+    assert details["elimination_mode"] == "feature_drop_per_step"
+    assert details["feature_drop_per_step"] == drop_per_step
+    assert details["steps"] == 2
+    assert len(details["eliminated_features"]) == len(features) - max_features
+    assert len(details["selected_features"]) == max_features
+    removed = details["loss_graph"]["removed_features_count"]
+    assert removed[0] == 0
+    deltas = [later - earlier for earlier, later in pairwise(removed)]
+    assert deltas[:-1] == [drop_per_step] * (len(deltas) - 1)
+    assert 1 <= deltas[-1] <= drop_per_step
+
+
+def test_steps_mode_keeps_a_single_select_features_call() -> None:
+    """The geometric ``steps`` path still goes through one CatBoost elimination."""
+    _require_catboost()
+    details = run_catboost_rfe(
+        _frame(),
+        feature_cols=["cat_a", "num_a", "num_b"],
+        categorical_cols=["cat_a"],
+        target_col="target",
+        time_col="month_part",
+        eval_months=1,
+        parameters=_PARAMETERS,
+        optuna_params={"enabled": False},
+        feature_selection_params={
+            "algorithm": "RecursiveByPredictionValuesChange",
+            "steps": 2,
+        },
+        num_features_to_select=1,
+        seed=0,
+    )
+    assert details["elimination_mode"] == "steps"
+    assert details["steps"] == 2
+    assert "feature_drop_per_step" not in details
+    assert len(details["eliminated_features"]) == 2
+    assert len(details["selected_features"]) == 1
 
 
 # --- search space ----------------------------------------------------------

@@ -34,6 +34,29 @@ _DEFAULT_EVAL_MONTHS = 1
 # Each step retrains CatBoost, so this is also a direct time multiplier.
 _DEFAULT_RFE_STEPS = 10
 
+
+def constant_drop_targets(
+    n_features: int,
+    max_features: int,
+    drop_per_step: int,
+) -> list[int]:
+    """Return ``num_features_to_select`` after each constant-drop round.
+
+    The last round may drop fewer than ``drop_per_step`` so the count never
+    goes below ``max_features``.
+    """
+    if drop_per_step < 1:
+        msg = "feature_drop_per_step must be >= 1."
+        raise ValueError(msg)
+    remaining = n_features
+    targets: list[int] = []
+    while remaining > max_features:
+        drop_now = min(drop_per_step, remaining - max_features)
+        remaining -= drop_now
+        targets.append(remaining)
+    return targets
+
+
 ALGORITHMS = frozenset(
     {
         "RecursiveByLossFunctionChange",
@@ -206,6 +229,7 @@ class CatBoostRfeSelector:
             # "features removed" axis into "features left".
             "loss_graph": details["loss_graph"],
             "steps": details["steps"],
+            "elimination_mode": details["elimination_mode"],
             "n_candidates": len(features),
             "eval_strategy": "out_of_time",
             "eval_periods": details["eval_periods"],
@@ -213,6 +237,10 @@ class CatBoostRfeSelector:
             "eval_rows": details["eval_rows"],
             "categorical_evaluated": categorical,
         }
+        if details.get("feature_drop_per_step") is not None:
+            context.scores[self.method_name]["feature_drop_per_step"] = details[
+                "feature_drop_per_step"
+            ]
         logger.info(
             "%s: evaluated %d features, kept %d",
             self.method_name,
@@ -580,34 +608,52 @@ def run_catboost_rfe(
         raise ExecutionError(msg)
     selection_params.pop("num_features_to_select", None)
     selection_params.pop("train_final_model", None)
-    # One elimination step yields a two-point loss curve, which cannot show
-    # where the loss starts rising. Leaving the value to CatBoost makes the
-    # curve's resolution depend on the installed version, so pin a default.
-    steps = int(selection_params.pop("steps", _DEFAULT_RFE_STEPS))
-    if steps < 1:
-        msg = f"{method_name}: feature_selection_params.steps must be >= 1."
-        raise ExecutionError(msg)
+    mode, schedule_value = _pop_elimination_schedule(selection_params, method_name=method_name)
 
-    model = catboost_classifier(**best_params)
-    try:
-        summary = model.select_features(
-            fit_pool,
-            eval_set=eval_pool,
-            features_for_select=features,
-            num_features_to_select=num_features_to_select,
+    if mode == "feature_drop_per_step":
+        selected, eliminated, loss_graph, n_rounds = _eliminate_constant_drop(
+            catboost_classifier=catboost_classifier,
+            pool_class=pool_class,
+            fit_frame=fit_frame,
+            eval_frame=eval_frame,
+            features=features,
+            categorical_cols=categorical,
+            target_col=target_col,
+            best_params=best_params,
+            extra_selection_params=selection_params,
             algorithm=algorithm,
-            steps=steps,
-            train_final_model=False,
-            **selection_params,
+            drop_per_step=schedule_value,
+            num_features_to_select=num_features_to_select,
+            method_name=method_name,
         )
-    except Exception as exc:  # noqa: BLE001 - normalize CatBoost failures
-        msg = f"{method_name}: CatBoost recursive elimination failed: {exc}"
-        raise ExecutionError(msg) from exc
+        payload_steps = n_rounds
+    else:
+        model = catboost_classifier(**best_params)
+        try:
+            summary = model.select_features(
+                fit_pool,
+                eval_set=eval_pool,
+                features_for_select=features,
+                num_features_to_select=num_features_to_select,
+                algorithm=algorithm,
+                steps=schedule_value,
+                train_final_model=False,
+                **selection_params,
+            )
+        except Exception as exc:  # noqa: BLE001 - normalize CatBoost failures
+            msg = f"{method_name}: CatBoost recursive elimination failed: {exc}"
+            raise ExecutionError(msg) from exc
+        selected = _names_from_summary(summary, features, "selected_features_names", "selected_features")
+        eliminated = _names_from_summary(
+            summary,
+            features,
+            "eliminated_features_names",
+            "eliminated_features",
+        )
+        loss_graph = summary.get("loss_graph")
+        payload_steps = schedule_value
 
-    selected = [str(name) for name in summary.get("selected_features_names", [])]
-    eliminated = [str(name) for name in summary.get("eliminated_features_names", [])]
-
-    return {
+    result: dict[str, Any] = {
         "selected_features": selected,
         "eliminated_features": eliminated,
         "best_params": best_params,
@@ -615,9 +661,164 @@ def run_catboost_rfe(
         "optuna_trials": completed_trials,
         "algorithm": algorithm,
         "num_features_to_select": num_features_to_select,
-        "steps": steps,
+        "steps": payload_steps,
+        "elimination_mode": mode,
         "eval_periods": eval_periods,
         "fit_rows": len(fit_frame),
         "eval_rows": len(eval_frame),
-        "loss_graph": summary.get("loss_graph"),
+        "loss_graph": loss_graph,
+    }
+    if mode == "feature_drop_per_step":
+        result["feature_drop_per_step"] = schedule_value
+    return result
+
+
+def _pop_elimination_schedule(
+    selection_params: dict[str, Any],
+    *,
+    method_name: str,
+) -> tuple[str, int]:
+    """Return ``(mode, steps_or_drop)`` and strip those keys from ``selection_params``."""
+    has_steps = "steps" in selection_params
+    has_drop = "feature_drop_per_step" in selection_params
+    if has_steps and has_drop:
+        msg = (
+            f"{method_name}: feature_selection_params cannot set both "
+            "'steps' and 'feature_drop_per_step'."
+        )
+        raise ExecutionError(msg)
+    if has_drop:
+        raw = selection_params.pop("feature_drop_per_step")
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < 1:
+            msg = f"{method_name}: feature_selection_params.feature_drop_per_step must be >= 1."
+            raise ExecutionError(msg)
+        return "feature_drop_per_step", raw
+    raw_steps = selection_params.pop("steps", _DEFAULT_RFE_STEPS)
+    steps = int(raw_steps)
+    if steps < 1:
+        msg = f"{method_name}: feature_selection_params.steps must be >= 1."
+        raise ExecutionError(msg)
+    return "steps", steps
+
+
+def _names_from_summary(
+    summary: Mapping[str, Any],
+    remaining: Sequence[str],
+    names_key: str,
+    index_key: str,
+) -> list[str]:
+    """Prefer name lists from CatBoost; fall back to indices into ``remaining``."""
+    names = summary.get(names_key)
+    if names:
+        return [str(name) for name in names]
+    indices = summary.get(index_key) or []
+    resolved: list[str] = []
+    for index in indices:
+        position = int(index)
+        if 0 <= position < len(remaining):
+            resolved.append(remaining[position])
+    return resolved
+
+
+def _eliminate_constant_drop(
+    *,
+    catboost_classifier: Any,
+    pool_class: Any,
+    fit_frame: pd.DataFrame,
+    eval_frame: pd.DataFrame,
+    features: Sequence[str],
+    categorical_cols: Sequence[str],
+    target_col: str,
+    best_params: Mapping[str, Any],
+    extra_selection_params: Mapping[str, Any],
+    algorithm: str,
+    drop_per_step: int,
+    num_features_to_select: int,
+    method_name: str,
+) -> tuple[list[str], list[str], Any, int]:
+    """Drop a fixed count per ``select_features(..., steps=1)`` round."""
+    remaining = list(features)
+    eliminated: list[str] = []
+    graphs: list[Any] = []
+    cumulative_removed: list[int] = []
+    try:
+        targets = constant_drop_targets(len(remaining), num_features_to_select, drop_per_step)
+    except ValueError as exc:
+        msg = f"{method_name}: {exc}"
+        raise ExecutionError(msg) from exc
+
+    categorical_set = set(categorical_cols)
+    for target in targets:
+        cats = [name for name in remaining if name in categorical_set]
+        fit_pool = pool_class(
+            fit_frame.loc[:, remaining],
+            fit_frame[target_col],
+            cat_features=cats,
+        )
+        eval_pool = pool_class(
+            eval_frame.loc[:, remaining],
+            eval_frame[target_col],
+            cat_features=cats,
+        )
+        model = catboost_classifier(**best_params)
+        try:
+            summary = model.select_features(
+                fit_pool,
+                eval_set=eval_pool,
+                features_for_select=remaining,
+                num_features_to_select=target,
+                algorithm=algorithm,
+                steps=1,
+                train_final_model=False,
+                **extra_selection_params,
+            )
+        except Exception as exc:
+            msg = f"{method_name}: CatBoost recursive elimination failed: {exc}"
+            raise ExecutionError(msg) from exc
+        dropped = _names_from_summary(
+            summary,
+            remaining,
+            "eliminated_features_names",
+            "eliminated_features",
+        )
+        kept = _names_from_summary(
+            summary,
+            remaining,
+            "selected_features_names",
+            "selected_features",
+        )
+        if not kept:
+            kept = [name for name in remaining if name not in set(dropped)]
+        eliminated.extend(dropped)
+        remaining = kept
+        graphs.append(summary.get("loss_graph"))
+        cumulative_removed.append(len(eliminated))
+
+    return remaining, eliminated, _stitch_constant_drop_loss(graphs, cumulative_removed), len(targets)
+
+
+def _stitch_constant_drop_loss(
+    graphs: Sequence[Any],
+    cumulative_removed: Sequence[int],
+) -> dict[str, Any] | None:
+    """Rebuild a loss_graph whose x axis is features removed from the original set."""
+    if not graphs:
+        return None
+    removed_counts: list[int] = [0]
+    loss_values: list[Any] = []
+    first = graphs[0] if isinstance(graphs[0], Mapping) else None
+    if first and first.get("loss_values"):
+        loss_values.append(first["loss_values"][0])
+    else:
+        loss_values.append(None)
+    for graph, total_removed in zip(graphs, cumulative_removed, strict=False):
+        if not isinstance(graph, Mapping) or not graph.get("loss_values"):
+            continue
+        values = list(graph["loss_values"])
+        removed_counts.append(int(total_removed))
+        loss_values.append(values[-1])
+    return {
+        "removed_features_count": removed_counts,
+        "loss_values": loss_values,
+        "main_indices": list(range(len(loss_values))),
     }
