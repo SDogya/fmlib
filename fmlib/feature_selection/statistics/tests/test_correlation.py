@@ -3,16 +3,61 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
 from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import CorrelationConfig, FeatureSelectionConfig
-from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import ExecutionError
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistics.correlation import CorrelationSelector
+from fmlib.feature_selection.utils.conftest import require_spark_session
+from fmlib.feature_selection.utils.local_data import sample_frame_rows
+
+
+def _schema(
+    *,
+    continuous: tuple[str, ...] = ("first", "second", "independent"),
+    categorical: tuple[str, ...] = ("category",),
+    target: str | None = "response",
+    task_type: str = "binary_classification",
+) -> FeatureSchema:
+    return FeatureSchema(
+        categorical=categorical,
+        continuous=continuous,
+        target=target,  # type: ignore[arg-type]
+        task_type=task_type,
+    )
+
+
+def _pandas_context(
+    frame: pd.DataFrame,
+    *,
+    continuous: tuple[str, ...] = ("first", "second", "independent"),
+    categorical: tuple[str, ...] = ("category",),
+    max_local_rows: int = 1_000_000,
+    target: str | None = "response",
+    task_type: str = "binary_classification",
+    seed: int = 0,
+) -> StageContext:
+    schema = _schema(
+        continuous=continuous,
+        categorical=categorical,
+        target=target,
+        task_type=task_type,
+    )
+    return StageContext(
+        spark=None,
+        datasets={"train": frame},
+        schema=schema,
+        config=FeatureSelectionConfig.from_dict(
+            {"execution": {"max_local_rows": max_local_rows}},
+        ),
+        seed=seed,
+        candidates=schema.candidate_features(),
+    )
 
 
 def _context(
@@ -22,18 +67,14 @@ def _context(
     categorical: tuple[str, ...] = ("category",),
     max_local_rows: int = 1_000_000,
 ) -> StageContext:
-    config = FeatureSelectionConfig.from_dict({"execution": {"max_local_rows": max_local_rows}})
-    schema = FeatureSchema(
-        categorical=categorical,
-        continuous=continuous,
-        target="response",
-        task_type="binary_classification",
-    )
+    schema = _schema(continuous=continuous, categorical=categorical)
     return StageContext(
         spark=require_spark_session(),
         datasets={"train": frame},
         schema=schema,
-        config=config,
+        config=FeatureSelectionConfig.from_dict(
+            {"execution": {"max_local_rows": max_local_rows}},
+        ),
         seed=0,
         candidates=schema.candidate_features(),
     )
@@ -54,7 +95,7 @@ def _frame() -> pd.DataFrame:
 def test_uses_schema_continuous_not_all_numeric_columns() -> None:
     frame = _frame()
     # ``independent`` is numeric in the frame but absent from schema.continuous.
-    context = _context(frame, continuous=("first", "second"))
+    context = _pandas_context(frame, continuous=("first", "second"))
     selector = CorrelationSelector(CorrelationConfig(threshold=0.9, tie_break="original_order"))
 
     decisions = selector.select(context, ["category", "first", "second", "independent"])
@@ -67,7 +108,10 @@ def test_null_rate_tie_break_drops_more_incomplete_feature() -> None:
     frame = _frame()
     selector = CorrelationSelector(CorrelationConfig(threshold=0.9, tie_break="null_rate"))
 
-    decisions = selector.select(_context(frame), ["category", "first", "second", "independent"])
+    decisions = selector.select(
+        _pandas_context(frame),
+        ["category", "first", "second", "independent"],
+    )
 
     assert len(decisions) == 1
     assert decisions[0].feature == "second"
@@ -79,7 +123,7 @@ def test_original_order_drops_later_feature() -> None:
     frame = _frame()
     selector = CorrelationSelector(CorrelationConfig(threshold=0.9, tie_break="original_order"))
 
-    decisions = selector.select(_context(frame), ["second", "first"])
+    decisions = selector.select(_pandas_context(frame), ["second", "first"])
 
     assert [decision.feature for decision in decisions] == ["first"]
 
@@ -87,7 +131,7 @@ def test_original_order_drops_later_feature() -> None:
 def test_threshold_is_strict() -> None:
     selector = CorrelationSelector(CorrelationConfig(threshold=1.0))
 
-    decisions = selector.select(_context(_frame()), ["first", "second"])
+    decisions = selector.select(_pandas_context(_frame()), ["first", "second"])
 
     assert decisions == []
 
@@ -101,7 +145,7 @@ def test_skips_all_null_columns_before_correlation() -> None:
             "response": [0, 1, 0],
         },
     )
-    context = _context(frame, continuous=("first", "second", "all_null"), categorical=())
+    context = _pandas_context(frame, continuous=("first", "second", "all_null"), categorical=())
     selector = CorrelationSelector(CorrelationConfig(threshold=0.9, tie_break="original_order"))
 
     decisions = selector.select(context, ["first", "second", "all_null"])
@@ -110,21 +154,40 @@ def test_skips_all_null_columns_before_correlation() -> None:
     assert "all_null" not in {decision.feature for decision in decisions}
 
 
-def test_row_limit_changes_which_pairs_are_correlated() -> None:
-    """Only the first ``max_rows`` rows participate in the correlation matrix."""
+def test_requires_target_to_bound_rows() -> None:
+    frame = pd.DataFrame({"first": [1.0, 2.0], "second": [1.0, 2.0]})
+    context = _pandas_context(
+        frame,
+        continuous=("first", "second"),
+        categorical=(),
+        target=None,
+    )
+    selector = CorrelationSelector(CorrelationConfig(threshold=0.9))
+    with pytest.raises(ExecutionError, match="FeatureSchema.target"):
+        selector.select(context, ["first", "second"])
+
+
+def test_stratified_sample_is_not_a_row_prefix() -> None:
+    """A prefix of one class is perfectly correlated; the other class is noise.
+
+    Taking the first ``max_rows`` rows would drop ``second``. Stratified sampling
+    mixes classes, so the pair stays below the threshold.
+    """
+    n_class = 20
     frame = pd.DataFrame(
         {
-            "first": [1.0, 2.0, 3.0, 10.0, 20.0, 30.0],
-            "second": [2.0, 4.0, 6.0, 0.0, 50.0, -10.0],
-            "response": [0, 1, 0, 1, 0, 1],
+            "first": list(range(n_class)) + list(range(100, 100 + n_class)),
+            "second": [2 * value for value in range(n_class)] + list(range(n_class)),
+            "response": [0] * n_class + [1] * n_class,
         },
     )
-    context = _context(frame, continuous=("first", "second"), categorical=())
-    limited = CorrelationSelector(CorrelationConfig(threshold=0.95, max_rows=3))
-    full = CorrelationSelector(CorrelationConfig(threshold=0.95, max_rows=100))
+    context = _pandas_context(frame, continuous=("first", "second"), categorical=())
+    selector = CorrelationSelector(CorrelationConfig(threshold=0.95, max_rows=10))
+    head_corr = frame.head(10)[["first", "second"]].corr().iloc[0, 1]
+    assert abs(float(head_corr)) == pytest.approx(1.0)
 
-    assert [decision.feature for decision in limited.select(context, ["first", "second"])] == ["second"]
-    assert full.select(context, ["first", "second"]) == []
+    decisions = selector.select(context, ["first", "second"])
+    assert decisions == []
 
 
 def test_execution_max_local_rows_caps_correlation_max_rows() -> None:
@@ -132,19 +195,32 @@ def test_execution_max_local_rows_caps_correlation_max_rows() -> None:
         {
             "first": [1.0, 2.0, 3.0, 10.0, 20.0, 30.0],
             "second": [2.0, 4.0, 6.0, 0.0, 50.0, -10.0],
-            "response": [0, 1, 0, 1, 0, 1],
+            "response": [0, 0, 0, 1, 1, 1],
         },
     )
-    # correlation.max_rows is large, but execution.max_local_rows=3 must win.
-    context = _context(
+    context = _pandas_context(
         frame,
         continuous=("first", "second"),
         categorical=(),
         max_local_rows=3,
     )
     selector = CorrelationSelector(CorrelationConfig(threshold=0.95, max_rows=100_000))
+    captured: dict[str, Any] = {}
+    original = sample_frame_rows
 
-    assert [decision.feature for decision in selector.select(context, ["first", "second"])] == ["second"]
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        captured["max_rows"] = kwargs["max_rows"]
+        captured["stratified"] = kwargs["stratified"]
+        return original(*args, **kwargs)
+
+    with patch(
+        "fmlib.feature_selection.statistics.correlation.sample_frame_rows",
+        wrapped,
+    ):
+        selector.select(context, ["first", "second"])
+
+    assert captured["max_rows"] == 3
+    assert captured["stratified"] is True
 
 
 def test_spark_uses_ml_correlation_on_limited_rows_without_to_pandas(
@@ -158,8 +234,8 @@ def test_spark_uses_ml_correlation_on_limited_rows_without_to_pandas(
             (
                 str(index % 2),
                 float(index),
-                float(index) if index < 4 else float((index * 7) % 11),
-                float(index % 3),
+                float(index),
+                0.0,
                 index % 2,
             )
             for index in range(20)

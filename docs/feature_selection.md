@@ -149,8 +149,9 @@ statistics:
 
 Порог в fingerprint не входит: смена `null_rate.threshold` переиспользует те же
 доли пропусков. Смена compute-параметра (`low_variance.scale_method: robust` vs
-`minmax`) — отдельная запись рядом. Корреляция кэширует матрицу; кого выкинуть
-считается заново greedy по текущим remaining. `stability_classifier` не кэшируется.
+`minmax`) — отдельная запись рядом. Корреляция кэширует матрицу (в fingerprint
+ещё `max_rows` и `seed` сэмпла); кого выкинуть считается заново greedy по
+текущим remaining. `stability_classifier` не кэшируется.
 На кластере задайте явный `path`.
 
 ### Модельные и precise-шаги
@@ -370,8 +371,9 @@ StringType is not supported
 - **`low_variance` при `scale_method: standard` не работает** — z-оценка делает
   дисперсию равной 1 для всех колонок, порог перестаёт на что-либо влиять.
   Нужен `minmax` или `robust`.
-- **`correlation` берёт первые `max_rows` строк** через `.limit()`, а не случайную
-  выборку. На данных, партиционированных по времени, это первые месяцы.
+- **`correlation` режет train до `max_rows` стратифицированным сэмплом по
+  `schema.target`** (при `task_type: regression` — случайный сэмпл с сидом),
+  не первыми N строками партиции.
 - **`boruta_shap` молча отбрасывает категориальные.** Сколько признаков стадия
   реально оценила, видно в `result.scores["boruta_shap#<step>"]`.
 - **`cross_validation.strategy`** принимает `group` и `time_based`, но реализована

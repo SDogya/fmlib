@@ -368,6 +368,7 @@ def _run_cached_statistics(
         selector.config,
         max_local_rows=context.config.execution.max_local_rows,
         seed=step_seed(context),
+        task_type=context.schema.task_type,
     )
     force = bool(context.config.statistics.cache.force_recompute)
     metrics = None if force else cache.lookup(method, fingerprint)

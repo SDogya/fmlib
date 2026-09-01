@@ -8,9 +8,10 @@ import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
-from fmlib.feature_selection.base import FeatureDecision, StageContext
+from fmlib.feature_selection.base import FeatureDecision, StageContext, step_seed
 from fmlib.feature_selection.config import CorrelationConfig
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
+from fmlib.feature_selection.utils.local_data import sample_frame_rows
 from fmlib.feature_selection.utils.verbose import emit as verbose_emit
 from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
@@ -33,7 +34,9 @@ class CorrelationSelector:
     Pairwise correlation on continuous candidates:
 
     1. take ``candidates ∩ schema.continuous`` (not Spark dtype discovery);
-    2. bound the train split to ``min(config.max_rows, execution.max_local_rows)``;
+    2. bound the train split to ``min(config.max_rows, execution.max_local_rows)``
+       with a target-stratified sample (random sample when ``task_type`` is
+       ``regression``), not the first N rows;
     3. drop all-null columns (Spark ``Imputer`` cannot fit them);
     4. fill remaining nulls with the column median;
     5. compute the pairwise correlation matrix;
@@ -99,11 +102,11 @@ class CorrelationSelector:
             return {"features": [], "matrix": [], "null_rates": {}}
 
         max_rows = min(self.config.max_rows, context.config.execution.max_local_rows)
-        train = context.datasets["train"]
+        train, n_rows_in, n_rows_sampled, stratified = self._bound_train(context, max_rows)
         if _is_spark_dataframe(train):
             corr_matrix, null_rates, evaluated = self._compute_stats_spark(train, columns, max_rows)
         elif isinstance(train, pd.DataFrame):
-            corr_matrix, null_rates, evaluated = self._compute_stats_pandas(train, columns, max_rows)
+            corr_matrix, null_rates, evaluated = self._compute_stats_pandas(train, columns)
         else:
             msg = f"correlation: unsupported train split type {type(train)!r}. Expected a Spark DataFrame or pandas DataFrame."
             raise ExecutionError(msg)
@@ -122,6 +125,9 @@ class CorrelationSelector:
                 tie_break=self.config.tie_break,
                 threshold=self.config.threshold,
                 max_rows=max_rows,
+                stratified=stratified,
+                n_rows_in=n_rows_in,
+                n_rows_sampled=n_rows_sampled,
                 n_continuous_in=len(columns),
                 n_evaluated=len(evaluated),
                 n_skipped=len(columns) - len(evaluated),
@@ -179,13 +185,37 @@ class CorrelationSelector:
             for feature, corr_value in to_drop.items()
         ]
 
+    def _bound_train(
+        self: CorrelationSelector,
+        context: StageContext,
+        max_rows: int,
+    ) -> tuple[Any, int, int, bool]:
+        """Cap train rows with a target-stratified (or random) sample."""
+        target = context.schema.target
+        if not target:
+            msg = (
+                "correlation: FeatureSchema.target is required to bound rows "
+                "with stratified sampling."
+            )
+            raise ExecutionError(msg)
+        stratified = context.schema.task_type != "regression"
+        sampled, n_in, n_out = sample_frame_rows(
+            context.datasets["train"],
+            target_col=target,
+            max_rows=max_rows,
+            stratified=stratified,
+            seed=step_seed(context),
+            method_name=self.method_name,
+        )
+        return sampled, n_in, n_out, stratified
+
     def _compute_stats_spark(
         self: CorrelationSelector,
         train: Any,
         columns: list[str],
         max_rows: int,
     ) -> tuple[np.ndarray, dict[str, float], list[str]]:
-        """Compute correlation stats with Spark ML on a bounded row projection.
+        """Compute correlation stats with Spark ML on a sampled row projection.
 
         Filter all-null columns, median-impute, assemble a feature vector,
         then call ``Correlation.corr``.
@@ -203,7 +233,8 @@ class CorrelationSelector:
 
         aliases = {column: f"c{index}" for index, column in enumerate(columns)}
         projected = train.select(
-            *[_quoted_col(column).alias(aliases[column]) for column in columns]).limit(max_rows).cache()
+            *[_quoted_col(column).alias(aliases[column]) for column in columns],
+        ).cache()
 
         try:
             aggregations = [F.count("*").alias("__total__")]
@@ -277,7 +308,6 @@ class CorrelationSelector:
         self: CorrelationSelector,
         frame: pd.DataFrame,
         columns: list[str],
-        max_rows: int,
     ) -> tuple[np.ndarray, dict[str, float], list[str]]:
         """Compute correlation stats for an already-local pandas DataFrame."""
         missing = [column for column in columns if column not in frame.columns]
@@ -285,7 +315,7 @@ class CorrelationSelector:
             msg = f"correlation: columns missing from train DataFrame: {missing}."
             raise ExecutionError(msg)
 
-        bounded = frame.loc[:, columns].head(max_rows)
+        bounded = frame.loc[:, columns]
         if bounded.empty:
             return np.empty((0, 0)), dict.fromkeys(columns, 0.0), []
 

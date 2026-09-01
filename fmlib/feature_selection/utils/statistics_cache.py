@@ -34,6 +34,7 @@ def compute_fingerprint(
     *,
     max_local_rows: int,
     seed: int | None = None,
+    task_type: str | None = None,
 ) -> dict[str, Any]:
     """Build the cache key for one statistics method.
 
@@ -54,6 +55,8 @@ def compute_fingerprint(
         return {
             "method": str(getattr(settings, "method", "pearson")),
             "max_rows": max_rows,
+            "seed": seed,
+            "stratified": str(task_type or "") != "regression",
         }
     if method == "psi":
         fingerprint: dict[str, Any] = {

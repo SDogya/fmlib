@@ -270,3 +270,29 @@ def test_fingerprint_omits_thresholds() -> None:
     )
     assert constants_default == {}
     assert constants_min == {"min_unique": 5}
+    pearson = compute_fingerprint(
+        "correlation",
+        CorrelationConfig(threshold=0.9, method="pearson"),
+        max_local_rows=1000,
+        seed=0,
+        task_type="binary_classification",
+    )
+    other_seed = compute_fingerprint(
+        "correlation",
+        CorrelationConfig(threshold=0.5, method="pearson"),
+        max_local_rows=1000,
+        seed=1,
+        task_type="binary_classification",
+    )
+    regression = compute_fingerprint(
+        "correlation",
+        CorrelationConfig(threshold=0.9, method="pearson"),
+        max_local_rows=1000,
+        seed=0,
+        task_type="regression",
+    )
+    assert pearson["seed"] == 0
+    assert pearson["stratified"] is True
+    assert pearson["max_rows"] == 1000
+    assert other_seed["seed"] == 1
+    assert regression["stratified"] is False

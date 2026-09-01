@@ -565,7 +565,9 @@ class CorrelationConfig:
 
     Only ``FeatureSchema.continuous`` candidates are evaluated. Categorical features
     pass through unchanged. Correlation is computed on at most
-    ``min(max_rows, execution.max_local_rows)`` train rows.
+    ``min(max_rows, execution.max_local_rows)`` train rows, sampled
+    proportionally by ``FeatureSchema.target`` (a seeded random sample when
+    ``task_type`` is ``regression``).
 
     Tie-breaking for a correlated pair:
 
