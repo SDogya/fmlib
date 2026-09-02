@@ -1,0 +1,33 @@
+# `cheap` with the two thresholds the seed sweep argued against replaced.
+#
+# iv 0.02 -> 0.005: 0.02 is the scorecard convention, and on santander it cost
+# 0.037 AUC for features that carry signal a tree finds. 0.005 keeps twice as
+# many and lands inside the seed-to-seed noise on every dataset here, while
+# still cutting synth_wide to 6% of its columns.
+#
+# correlation 0.95 -> 0.8: measured free (delta inside noise) everywhere and
+# worth 18% of the columns on bioresponse; on the anonymised sets it removes
+# nothing at either threshold, so the looser bound costs nothing there.
+order:
+  - null_rate:
+      threshold: 0.95
+  - constants:
+      max_frequency: 0.999
+      chunk_size: 500
+  - low_variance:
+      min_variance: 0.01
+      scale_method: robust
+  - correlation:
+      method: pearson
+      threshold: 0.8
+      tie_break: null_rate
+      max_rows: 100000
+  - iv:
+      threshold: 0.005
+      max_threshold: 3.0     # an IV this high is usually leakage, not signal
+      num_bins: 10
+      max_levels: 50
+
+execution:
+  seed: 42
+  max_local_rows: 500000
