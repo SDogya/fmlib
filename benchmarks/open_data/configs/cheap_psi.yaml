@@ -1,0 +1,35 @@
+# `cheap` plus stability: PSI compares the earlier months against the latest.
+# On the real datasets the month column is assigned at random, so here PSI
+# measures its own cost with nothing to find. On synth_wide the drift is real
+# and named, which is where PSI's benefit is scored.
+order:
+  - null_rate:
+      threshold: 0.95
+  - constants:
+      max_frequency: 0.999
+      chunk_size: 500
+  - low_variance:
+      min_variance: 0.01
+      scale_method: robust
+  - psi:
+      mode: month_over_month
+      threshold: 0.25
+      num_bins: 10
+      month_column: month_part
+      test_months: 4
+      max_levels: 50
+      n_jobs: 8
+  - correlation:
+      method: pearson
+      threshold: 0.95
+      tie_break: null_rate
+      max_rows: 100000
+  - iv:
+      threshold: 0.02
+      max_threshold: 3.0
+      num_bins: 10
+      max_levels: 50
+
+execution:
+  seed: 42
+  max_local_rows: 500000

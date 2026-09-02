@@ -1,0 +1,7 @@
+dataset,pipeline,status,features_in,features_out,kept_%,select_s,peak_rss_gb,auc_test,auc_valid,fit_s,error,informative_recall,informative_precision,drifting_kept,drifting_total,auc_delta
+synth_wide,baseline,ok,602,602,100.0,0.0,3.12,0.97277,0.96759,46.65,,,,,,0.0
+synth_wide,cheap,ok,602,25,4.2,107.8,3.59,0.9645,0.95849,2.64,,0.6,0.96,0.0,30.0,-0.00827
+synth_wide,cheap_psi,ok,602,25,4.2,112.8,3.59,0.9645,0.95849,2.82,,0.6,0.96,0.0,30.0,-0.00827
+synth_wide,lightgbm,ok,602,419,69.6,149.3,3.62,0.97439,0.96792,25.77,,1.0,0.0955,8.0,30.0,0.00162
+synth_wide,full,ok,602,21,3.5,165.8,3.71,0.95813,0.95184,2.5,,0.5,0.9524,0.0,30.0,-0.01464
+synth_wide,full_boruta,ok,602,21,3.5,579.7,3.76,0.95813,0.95184,2.23,,0.5,0.9524,0.0,30.0,-0.01464

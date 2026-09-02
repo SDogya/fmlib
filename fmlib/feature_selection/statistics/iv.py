@@ -10,6 +10,7 @@ import pandas as pd
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import IvConfig
+from fmlib.feature_selection.backends.spark import persist_unless_cached
 from fmlib.feature_selection.exceptions import BackendError, ConfigError, ExecutionError
 from fmlib.feature_selection.utils.verbose import emit as verbose_emit
 from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
@@ -294,14 +295,7 @@ class IvSelector:
             else:
                 categorical_idx.append(index)
 
-        is_cached = getattr(prepared, "is_cached", False)
-        should_unpersist = False
-        if not is_cached:
-            try:
-                prepared = prepared.persist()
-                should_unpersist = True
-            except Exception:
-                should_unpersist = False
+        prepared, release_prepared = persist_unless_cached(prepared)
         try:
             scores: dict[str, float] = {}
             if numeric_idx:
@@ -314,11 +308,7 @@ class IvSelector:
                 )
             return {name: scores.get(name, 0.0) for name in columns}
         finally:
-            if should_unpersist:
-                try:
-                    prepared.unpersist()
-                except Exception:
-                    pass
+            release_prepared()
 
     def _spark_numeric_iv(
         self: IvSelector,
@@ -612,7 +602,15 @@ def _binary_mapping(unique: Any, *, method: str) -> dict[Any, float]:
         )
         raise ExecutionError(msg)
     if len(labels) <= 1:
-        return {labels[0]: 1.0} if labels else {}
+        # A single class makes every bin all-good or all-bad, so IV is 0.0 for
+        # every feature and the threshold drops the entire candidate list. That
+        # is indistinguishable in the artifact from "measured and uninformative".
+        msg = (
+            f"{method}: target has {len(labels)} distinct non-null value(s); "
+            "Information Value needs both classes present. Check the split, "
+            "the sampling bounds and the target column."
+        )
+        raise ExecutionError(msg)
     as_set = set(labels)
     if as_set <= {0, 1, 0.0, 1.0, False, True}:
         return {
@@ -643,10 +641,6 @@ def _spark_binary_target(frame: Any, target: str, y_col: Any) -> Any:
         raise ExecutionError(msg) from exc
     labels = [item for item in distinct if item is not None]
     mapping = _binary_mapping(labels, method="iv")
-    if not mapping:
-        return F.lit(0.0)
-    if len(mapping) == 1:
-        return F.lit(next(iter(mapping.values())))
     (label_a, bit_a), (label_b, bit_b) = list(mapping.items())
     return F.when(y_col == F.lit(label_a), float(bit_a)).otherwise(float(bit_b))
 

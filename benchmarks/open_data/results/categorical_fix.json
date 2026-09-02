@@ -1,0 +1,141 @@
+[
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 207,
+    "seconds": 0.0,
+    "peak_rss_gb": 0.76,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 207,
+      "auc_valid": 0.77137,
+      "auc_test": 0.7893,
+      "best_iteration": 33,
+      "fit_seconds": 1.49
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 55,
+    "seconds": 77.38,
+    "peak_rss_gb": 0.86,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 152
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 55,
+      "auc_valid": 0.77632,
+      "auc_test": 0.77937,
+      "best_iteration": 94,
+      "fit_seconds": 1.37
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 26,
+    "seconds": 56.77,
+    "peak_rss_gb": 0.86,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 130
+      },
+      {
+        "step": "statistics.constants",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 7
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 13
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 29
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 26,
+      "auc_valid": 0.79904,
+      "auc_test": 0.78667,
+      "best_iteration": 18,
+      "fit_seconds": 0.41
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 9,
+    "seconds": 234.07,
+    "peak_rss_gb": 0.86,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 130
+      },
+      {
+        "step": "statistics.constants",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 7
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 13
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 28
+      },
+      {
+        "step": "precise.boruta_shap",
+        "dropped": 18
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 9,
+      "auc_valid": 0.78288,
+      "auc_test": 0.79624,
+      "best_iteration": 17,
+      "fit_seconds": 0.33
+    },
+    "ground_truth": {},
+    "error": ""
+  }
+]

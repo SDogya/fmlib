@@ -1,0 +1,25 @@
+# Statistics only: no model is trained, so this is the cost floor.
+# Order matters -- each filter runs on whatever the previous one left.
+order:
+  - null_rate:
+      threshold: 0.95
+  - constants:
+      max_frequency: 0.999
+      chunk_size: 500
+  - low_variance:
+      min_variance: 0.01
+      scale_method: robust
+  - correlation:
+      method: pearson
+      threshold: 0.95
+      tie_break: null_rate
+      max_rows: 100000
+  - iv:
+      threshold: 0.02
+      max_threshold: 3.0     # an IV this high is usually leakage, not signal
+      num_bins: 10
+      max_levels: 50
+
+execution:
+  seed: 42
+  max_local_rows: 500000

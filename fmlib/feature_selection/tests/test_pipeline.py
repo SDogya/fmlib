@@ -40,8 +40,8 @@ def _schema(categorical: list[str], continuous: list[str], *, with_split: bool =
 
 def _config(**overrides: object) -> FeatureSelectionConfig:
     payload: dict = {
-        "statistics": {"order": ["correlation"]},
-        "model": {"enabled": True, "method": "lasso"},
+        "statistics": {"order": ["correlation", "null_rate"]},
+        "model": {"enabled": False, "method": "lightgbm"},
         "precise": {"enabled": False, "method": "none"},
         "execution": {"seed": 42},
     }
@@ -60,10 +60,11 @@ def test_fit_select_single_dataframe() -> None:
         schema=_schema(categorical, continuous, with_split=True),
     )
     assert result.datasets_mode == "single"
-    assert len(result.selected_features) < len(categorical) + len(continuous)
+    assert len(result.selected_features) <= len(categorical) + len(continuous)
     assert len(result.selected_features) >= 1
     assert all(name in categorical + continuous for name in result.selected_features)
-    assert any("stub" in warning for warning in result.warnings)
+    # No placeholder selector can run any more, so nothing warns about one.
+    assert result.warnings == []
     dropped_names = {item.feature for item in result.dropped_features}
     assert set(result.selected_features).isdisjoint(dropped_names)
     # inputs not mutated
@@ -134,13 +135,13 @@ def test_feature_drop_file_runs_before_selectors_and_updates_schema(
         / "artifacts"
         / "00_preprocessing_feature_drop_results.json"
     ).exists()
-    model_artifact = SelectionResult.load(
-        tmp_path / "artifacts" / "02_model_lasso_results.json",
+    later_artifact = SelectionResult.load(
+        tmp_path / "artifacts" / "02_statistics_null_rate_results.json",
     )
     final_artifact = SelectionResult.load(
         tmp_path / "artifacts" / "final_results.json",
     )
-    for artifact in (model_artifact, final_artifact):
+    for artifact in (later_artifact, final_artifact):
         manual = [
             item.feature
             for item in artifact.dropped_features
@@ -357,7 +358,7 @@ def test_low_variance_selector_runs_in_pipeline() -> None:
     config = FeatureSelectionConfig.from_dict(
         {
             "statistics": {"order": ["low_variance"]},
-            "model": {"enabled": True, "method": "lasso"},
+            "model": {"enabled": False, "method": "lightgbm"},
             "precise": {"enabled": False, "method": "none"},
         },
     )

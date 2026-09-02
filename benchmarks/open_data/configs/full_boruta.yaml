@@ -1,0 +1,53 @@
+# `full` with the precise stage appended. Boruta is by far the most expensive
+# step, so it runs last, on whatever survived, and on a bounded sample.
+order:
+  - null_rate:
+      threshold: 0.95
+  - constants:
+      max_frequency: 0.999
+      chunk_size: 500
+  - low_variance:
+      min_variance: 0.01
+      scale_method: robust
+  - correlation:
+      method: pearson
+      threshold: 0.95
+      tie_break: null_rate
+      max_rows: 100000
+  - iv:
+      threshold: 0.02
+      max_threshold: 3.0
+      num_bins: 10
+      max_levels: 50
+  - lightgbm:
+      n_folds: 3
+      max_rows: 200000
+      shap_max_rows: 20000
+      lgbm_threshold: 0.95
+      shap_threshold: 0.95
+      n_jobs: 8
+      seed: 42
+      optuna_params:
+        enabled: false
+      parameters:
+        n_estimators: 300
+        learning_rate: 0.05
+        num_leaves: 63
+        min_child_samples: 50
+  - boruta_shap:
+      model_type: lgbm
+      max_rows: 50000
+      boruta_trials: 30
+      n_jobs: 8
+      seed: 42
+      optuna_params:
+        enabled: false
+      parameters:
+        n_estimators: 200
+        learning_rate: 0.05
+        num_leaves: 31
+        min_child_samples: 50
+
+execution:
+  seed: 42
+  max_local_rows: 500000

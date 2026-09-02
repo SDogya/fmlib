@@ -1,0 +1,5 @@
+dataset,pipeline,status,features_in,features_out,kept_%,select_s,peak_rss_gb,auc_test,auc_valid,fit_s,error,auc_delta
+kdd09_appetency,baseline,ok,207,207,100.0,0.0,0.76,0.7893,0.77137,1.49,,0.0
+kdd09_appetency,lightgbm,ok,207,55,26.6,77.4,0.86,0.77937,0.77632,1.37,,-0.00993
+kdd09_appetency,full,ok,207,26,12.6,56.8,0.86,0.78667,0.79904,0.41,,-0.00263
+kdd09_appetency,full_boruta,ok,207,9,4.3,234.1,0.86,0.79624,0.78288,0.33,,0.00694

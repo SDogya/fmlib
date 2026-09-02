@@ -1,0 +1,606 @@
+[
+  {
+    "dataset": "madelon",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 500,
+    "seconds": 0.0,
+    "peak_rss_gb": 0.41,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 500,
+      "auc_valid": 0.87305,
+      "auc_test": 0.88222,
+      "best_iteration": 37,
+      "fit_seconds": 0.4
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "madelon",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 281,
+    "seconds": 3.19,
+    "peak_rss_gb": 0.44,
+    "steps": [
+      {
+        "step": "statistics.low_variance",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 10
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 207
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 281,
+      "auc_valid": 0.85467,
+      "auc_test": 0.84413,
+      "best_iteration": 25,
+      "fit_seconds": 0.24
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "madelon",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 281,
+    "seconds": 15.22,
+    "peak_rss_gb": 0.44,
+    "steps": [
+      {
+        "step": "statistics.low_variance",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 10
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 207
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 281,
+      "auc_valid": 0.85467,
+      "auc_test": 0.84413,
+      "best_iteration": 25,
+      "fit_seconds": 0.22
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "madelon",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 394,
+    "seconds": 2.84,
+    "peak_rss_gb": 0.45,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 106
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 394,
+      "auc_valid": 0.86828,
+      "auc_test": 0.85568,
+      "best_iteration": 27,
+      "fit_seconds": 0.29
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "madelon",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 227,
+    "seconds": 5.51,
+    "peak_rss_gb": 0.46,
+    "steps": [
+      {
+        "step": "statistics.low_variance",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 10
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 207
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 54
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 227,
+      "auc_valid": 0.87568,
+      "auc_test": 0.86996,
+      "best_iteration": 12,
+      "fit_seconds": 0.16
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "madelon",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 16,
+    "seconds": 24.52,
+    "peak_rss_gb": 0.47,
+    "steps": [
+      {
+        "step": "statistics.low_variance",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 10
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 207
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 58
+      },
+      {
+        "step": "precise.boruta_shap",
+        "dropped": 207
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 16,
+      "auc_valid": 0.8698,
+      "auc_test": 0.8618,
+      "best_iteration": 13,
+      "fit_seconds": 0.05
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "bioresponse",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 1776,
+    "n_features_out": 1776,
+    "seconds": 0.0,
+    "peak_rss_gb": 0.61,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 1776,
+      "auc_valid": 0.8639,
+      "auc_test": 0.87264,
+      "best_iteration": 166,
+      "fit_seconds": 1.12
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "bioresponse",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 1776,
+    "n_features_out": 148,
+    "seconds": 3.89,
+    "peak_rss_gb": 0.61,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 11
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1451
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 166
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 148,
+      "auc_valid": 0.8533,
+      "auc_test": 0.85088,
+      "best_iteration": 181,
+      "fit_seconds": 0.61
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "bioresponse",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 1776,
+    "n_features_out": 148,
+    "seconds": 4.42,
+    "peak_rss_gb": 0.61,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 11
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1451
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 166
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 148,
+      "auc_valid": 0.8533,
+      "auc_test": 0.85088,
+      "best_iteration": 181,
+      "fit_seconds": 0.59
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "bioresponse",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 1776,
+    "n_features_out": 377,
+    "seconds": 4.68,
+    "peak_rss_gb": 0.71,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 1399
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 377,
+      "auc_valid": 0.86187,
+      "auc_test": 0.8695,
+      "best_iteration": 108,
+      "fit_seconds": 0.51
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "bioresponse",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 1776,
+    "n_features_out": 107,
+    "seconds": 6.8,
+    "peak_rss_gb": 0.71,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 11
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1451
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 166
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 41
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 107,
+      "auc_valid": 0.8579,
+      "auc_test": 0.85483,
+      "best_iteration": 196,
+      "fit_seconds": 0.52
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "bioresponse",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 1776,
+    "n_features_out": 11,
+    "seconds": 34.19,
+    "peak_rss_gb": 0.71,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 11
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1451
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 166
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 42
+      },
+      {
+        "step": "precise.boruta_shap",
+        "dropped": 95
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 11,
+      "auc_valid": 0.80403,
+      "auc_test": 0.80728,
+      "best_iteration": 32,
+      "fit_seconds": 0.08
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 602,
+    "seconds": 0.0,
+    "peak_rss_gb": 3.24,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 602,
+      "auc_valid": 0.96759,
+      "auc_test": 0.97277,
+      "best_iteration": 397,
+      "fit_seconds": 37.57
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 25,
+    "seconds": 106.81,
+    "peak_rss_gb": 3.68,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 574
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 25,
+      "auc_valid": 0.95849,
+      "auc_test": 0.9645,
+      "best_iteration": 366,
+      "fit_seconds": 2.6
+    },
+    "ground_truth": {
+      "informative_recall": 0.6,
+      "informative_precision": 0.96,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 25,
+    "seconds": 108.91,
+    "peak_rss_gb": 3.68,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 574
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 25,
+      "auc_valid": 0.95849,
+      "auc_test": 0.9645,
+      "best_iteration": 366,
+      "fit_seconds": 2.51
+    },
+    "ground_truth": {
+      "informative_recall": 0.6,
+      "informative_precision": 0.96,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 419,
+    "seconds": 146.47,
+    "peak_rss_gb": 3.68,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 183
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 419,
+      "auc_valid": 0.96792,
+      "auc_test": 0.97439,
+      "best_iteration": 391,
+      "fit_seconds": 25.14
+    },
+    "ground_truth": {
+      "informative_recall": 1.0,
+      "informative_precision": 0.0955,
+      "drifting_kept": 8,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 21,
+    "seconds": 173.7,
+    "peak_rss_gb": 3.82,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 574
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 4
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 21,
+      "auc_valid": 0.95184,
+      "auc_test": 0.95813,
+      "best_iteration": 390,
+      "fit_seconds": 2.28
+    },
+    "ground_truth": {
+      "informative_recall": 0.5,
+      "informative_precision": 0.9524,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 21,
+    "seconds": 580.0,
+    "peak_rss_gb": 3.82,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 574
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 4
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 21,
+      "auc_valid": 0.95184,
+      "auc_test": 0.95813,
+      "best_iteration": 390,
+      "fit_seconds": 2.22
+    },
+    "ground_truth": {
+      "informative_recall": 0.5,
+      "informative_precision": 0.9524,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  }
+]

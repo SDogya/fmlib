@@ -1,0 +1,236 @@
+[
+  {
+    "dataset": "synth_wide",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 602,
+    "seconds": 0.0,
+    "peak_rss_gb": 3.12,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 602,
+      "auc_valid": 0.96759,
+      "auc_test": 0.97277,
+      "best_iteration": 397,
+      "fit_seconds": 46.65
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 25,
+    "seconds": 107.75,
+    "peak_rss_gb": 3.59,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 574
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 25,
+      "auc_valid": 0.95849,
+      "auc_test": 0.9645,
+      "best_iteration": 366,
+      "fit_seconds": 2.64
+    },
+    "ground_truth": {
+      "informative_recall": 0.6,
+      "informative_precision": 0.96,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 25,
+    "seconds": 112.77,
+    "peak_rss_gb": 3.59,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.psi",
+        "dropped": 30
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 544
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 25,
+      "auc_valid": 0.95849,
+      "auc_test": 0.9645,
+      "best_iteration": 366,
+      "fit_seconds": 2.82
+    },
+    "ground_truth": {
+      "informative_recall": 0.6,
+      "informative_precision": 0.96,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 419,
+    "seconds": 149.33,
+    "peak_rss_gb": 3.62,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 183
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 419,
+      "auc_valid": 0.96792,
+      "auc_test": 0.97439,
+      "best_iteration": 391,
+      "fit_seconds": 25.77
+    },
+    "ground_truth": {
+      "informative_recall": 1.0,
+      "informative_precision": 0.0955,
+      "drifting_kept": 8,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 21,
+    "seconds": 165.77,
+    "peak_rss_gb": 3.71,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.psi",
+        "dropped": 30
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 544
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 4
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 21,
+      "auc_valid": 0.95184,
+      "auc_test": 0.95813,
+      "best_iteration": 390,
+      "fit_seconds": 2.5
+    },
+    "ground_truth": {
+      "informative_recall": 0.5,
+      "informative_precision": 0.9524,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  },
+  {
+    "dataset": "synth_wide",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 602,
+    "n_features_out": 21,
+    "seconds": 579.68,
+    "peak_rss_gb": 3.76,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 574
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 4
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 21,
+      "auc_valid": 0.95184,
+      "auc_test": 0.95813,
+      "best_iteration": 390,
+      "fit_seconds": 2.23
+    },
+    "ground_truth": {
+      "informative_recall": 0.5,
+      "informative_precision": 0.9524,
+      "drifting_kept": 0,
+      "drifting_total": 30
+    },
+    "error": ""
+  }
+]

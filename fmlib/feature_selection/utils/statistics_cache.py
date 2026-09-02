@@ -7,6 +7,7 @@ reuses the same numbers. Compute-parameter changes (for example
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from pathlib import Path
@@ -28,6 +29,63 @@ CACHEABLE_METHODS = frozenset(
 )
 
 
+def dataset_fingerprint(
+    datasets: Mapping[str, Any],
+    schema: Any,
+    *,
+    dataset_id: Optional[str] = None,
+) -> dict[str, Any]:
+    """Identify the data a cached metric was measured on.
+
+    Without this the key is made of method parameters only, so ``null_rate``
+    -- whose key is otherwise empty -- reuses numbers measured on a different
+    table. The parts are cheap and change whenever the numbers would: the
+    candidate list, the target definition, and the shape of every split (which
+    also catches an upstream ``row_sample``).
+
+    ``dataset_id`` is the caller's own name for the data. Pass it whenever the
+    same logical dataset can arrive with a different row count (an incremental
+    load, a re-partition) and the metrics should still be reused.
+
+    Args:
+        datasets: Split name to DataFrame mapping, as resolved by the pipeline.
+        schema: Validated feature schema.
+        dataset_id: Optional stable identifier supplied by the caller.
+
+    Returns:
+        JSON-friendly mapping mixed into every per-method fingerprint.
+    """
+    candidates = list(schema.candidate_features())
+    payload: dict[str, Any] = {
+        "n_candidates": len(candidates),
+        "candidates_sha256": hashlib.sha256(
+            "\n".join(candidates).encode("utf-8"),
+        ).hexdigest()[:16],
+        "target": schema.target,
+        "task_type": schema.task_type,
+        "splits": {
+            name: _frame_shape(datasets[name]) for name in sorted(datasets)
+        },
+    }
+    if dataset_id is not None and str(dataset_id).strip():
+        payload["dataset_id"] = str(dataset_id)
+    return payload
+
+
+def _frame_shape(frame: Any) -> dict[str, Any]:
+    """Return ``{n_rows, n_cols}`` for a pandas or Spark frame."""
+    columns = getattr(frame, "columns", None)
+    n_cols = len(list(columns)) if columns is not None else None
+    try:
+        n_rows = int(len(frame))
+    except TypeError:
+        try:
+            n_rows = int(frame.count())
+        except Exception:  # noqa: BLE001 - unknown backend; shape stays partial
+            n_rows = None
+    return {"n_rows": n_rows, "n_cols": n_cols}
+
+
 def compute_fingerprint(
     method: str,
     settings: Any,
@@ -35,12 +93,35 @@ def compute_fingerprint(
     max_local_rows: int,
     seed: int | None = None,
     task_type: str | None = None,
+    data: Optional[Mapping[str, Any]] = None,
 ) -> dict[str, Any]:
     """Build the cache key for one statistics method.
 
     Thresholds are omitted: they are applied later. Only values that change
-    the stored numbers belong here.
+    the stored numbers belong here -- the method's compute parameters and,
+    via ``data``, the dataset those numbers were measured on.
     """
+    method_key = _method_fingerprint(
+        method,
+        settings,
+        max_local_rows=max_local_rows,
+        seed=seed,
+        task_type=task_type,
+    )
+    if data is None:
+        return method_key
+    return {"data": dict(data), **method_key}
+
+
+def _method_fingerprint(
+    method: str,
+    settings: Any,
+    *,
+    max_local_rows: int,
+    seed: int | None = None,
+    task_type: str | None = None,
+) -> dict[str, Any]:
+    """Compute-parameter part of the cache key for one statistics method."""
     if method == "null_rate":
         return {}
     if method == "constants":
@@ -63,7 +144,7 @@ def compute_fingerprint(
             "mode": str(getattr(settings, "mode", "train_valid")),
             "num_bins": int(getattr(settings, "num_bins", 10)),
             "subsample_rows": getattr(settings, "subsample_rows", None),
-            "eps": float(getattr(settings, "eps", 1e-4)),
+            "max_levels": getattr(settings, "max_levels", None),
             "relative_error": float(getattr(settings, "relative_error", 0.001)),
             "batch_size": int(getattr(settings, "batch_size", 100)),
             "month_column": str(getattr(settings, "month_column", "month_part")),
@@ -109,6 +190,7 @@ class StatisticsMetricsCache:
         payload: Mapping[str, Any] | None = None,
     ) -> None:
         self.path = path
+        self.data_fingerprint: Optional[dict[str, Any]] = None
         if payload is None:
             self._entries: list[dict[str, Any]] = []
         else:

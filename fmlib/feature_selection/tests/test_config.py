@@ -998,6 +998,7 @@ def test_statistics_cache_roundtrip() -> None:
                     "enabled": True,
                     "path": "metrics.json",
                     "force_recompute": True,
+                    "dataset_id": "unit-test",
                 },
             },
         },
@@ -1010,6 +1011,7 @@ def test_statistics_cache_roundtrip() -> None:
         "enabled": True,
         "path": "metrics.json",
         "force_recompute": True,
+        "dataset_id": "unit-test",
     }
 
 

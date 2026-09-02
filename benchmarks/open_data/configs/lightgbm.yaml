@@ -1,0 +1,27 @@
+# Model stage on its own, to separate what LightGBM + SHAP contributes from
+# what the cheap filters had already removed. Optuna is off so the comparison
+# is about selection, not about who drew the luckier hyper-parameters.
+order:
+  - lightgbm:
+      n_folds: 3
+      max_rows: 200000
+      shap_max_rows: 20000
+      lgbm_threshold: 0.95
+      shap_threshold: 0.95
+      selection_mode: aggregated
+      n_jobs: 8
+      seed: 42
+      optuna_params:
+        enabled: false
+      parameters:
+        n_estimators: 300
+        learning_rate: 0.05
+        num_leaves: 63
+        min_child_samples: 50
+        subsample: 0.8
+        subsample_freq: 1
+        colsample_bytree: 0.8
+
+execution:
+  seed: 42
+  max_local_rows: 500000

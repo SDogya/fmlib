@@ -22,7 +22,11 @@ from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.utils.default_model_param_spaces import (
     LIGHTGBM_SEARCH_SPACE,
 )
-from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
+from fmlib.feature_selection.utils.local_data import (
+    prepare_mixed_frame,
+    prepare_numeric_frame,
+    root_cause,
+)
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
     resolve_optuna_settings,
@@ -51,7 +55,7 @@ DEFAULT_SEARCH_SPACE: dict[str, dict[str, Any]] = LIGHTGBM_SEARCH_SPACE
 
 
 class LightGbmSelector:
-    """Select continuous features using LightGBM and SHAP importances.
+    """Select features using LightGBM and SHAP importances.
 
     The model algorithm follows ``shap_lgbm_spark.py``: tune a binary
     ``LGBMClassifier`` on a stratified hold-out split, execute outer folds
@@ -65,10 +69,13 @@ class LightGbmSelector:
     fold using only that fold's outer-train rows.
 
     Spark inputs are stratified before local materialization. Already-local
-    pandas inputs use equivalent bounded stratified sampling. Only current
-    candidates declared in ``FeatureSchema.continuous`` are evaluated;
-    categorical candidates pass through the model stage unchanged. Fold
-    training never ships code or packages to Spark executors.
+    pandas inputs use equivalent bounded stratified sampling. Both continuous
+    and categorical candidates are evaluated: categorical columns are handed to
+    LightGBM as pandas ``category`` dtype, which it splits on natively. When
+    any categorical candidate is present, numeric nulls are left as NaN for the
+    same reason -- LightGBM routes them itself, and imputing a median throws
+    away a missingness pattern that is often predictive. Fold training never
+    ships code or packages to Spark executors.
 
     The Optuna search space defaults to ``DEFAULT_SEARCH_SPACE`` when
     ``params.parameters`` has no mapping entries. Any mapping in that block
@@ -92,7 +99,7 @@ class LightGbmSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Evaluate continuous candidates with LightGBM and SHAP.
+        """Evaluate the current candidates with LightGBM and SHAP.
 
         Args:
             context: Shared stage context containing train data, schema, config,
@@ -100,8 +107,7 @@ class LightGbmSelector:
             candidates: Features still under consideration.
 
         Returns:
-            Keep/drop decisions for evaluated continuous features. Features
-            outside this selector's scope receive no decision and pass through.
+            Keep/drop decisions for every evaluated candidate.
 
         Raises:
             BackendError: When an optional ML dependency is unavailable.
@@ -127,9 +133,17 @@ class LightGbmSelector:
             raise ExecutionError(msg)
 
         continuous = set(context.schema.continuous)
-        feature_cols = [feature for feature in candidates if feature in continuous]
+        categorical = set(context.schema.categorical)
+        feature_cols = [
+            feature
+            for feature in candidates
+            if feature in continuous or feature in categorical
+        ]
         if not feature_cols:
             return []
+        categorical_cols = [
+            feature for feature in feature_cols if feature in categorical
+        ]
 
         options = self._resolve_options(context)
         self._load_backends(require_optuna=bool(options["search_space"]))
@@ -139,6 +153,7 @@ class LightGbmSelector:
                 df=train,
                 target_col=target_col,
                 feature_cols=feature_cols,
+                categorical_cols=categorical_cols,
                 n_trials=options["n_trials"],
                 n_startup_trials=options["n_startup_trials"],
                 sampler=options["sampler"],
@@ -386,8 +401,38 @@ class LightGbmSelector:
         sample_fraction: float | None,
         seed: int,
         context: Any | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-        """Build the bounded local numeric matrix used by the draft algorithm."""
+        categorical_cols: Sequence[str] = (),
+    ) -> tuple[Any, np.ndarray, list[str]]:
+        """Build the bounded local design matrix.
+
+        Categorical candidates are kept as pandas ``category`` columns and
+        numeric nulls are left alone: LightGBM splits on both natively, and
+        median-imputing a missing value destroys a signal that is often
+        predictive in its own right. Only a purely numeric feature set takes
+        the imputed path, which also keeps the sample shareable with
+        BorutaSHAP, whose RandomForest backend cannot handle NaN.
+
+        Returns:
+            Tuple of the design matrix, the target vector, and the feature
+            order the matrix columns follow.
+        """
+        categorical_cols = [name for name in categorical_cols if name in feature_cols]
+        if categorical_cols:
+            local = prepare_mixed_frame(
+                df,
+                target_col=target_col,
+                feature_cols=feature_cols,
+                categorical_cols=categorical_cols,
+                max_rows=max_rows,
+                sample_fraction=sample_fraction,
+                seed=seed,
+                method_name=self.method_name,
+            )
+            matrix = local.loc[:, feature_cols].copy()
+            for name in categorical_cols:
+                matrix[name] = matrix[name].astype("category")
+            return matrix, local[target_col].to_numpy(), list(feature_cols)
+
         local = prepare_numeric_frame(
             df,
             target_col=target_col,
@@ -410,6 +455,7 @@ class LightGbmSelector:
         df: Any,
         target_col: str,
         feature_cols: list[str],
+        categorical_cols: Sequence[str] = (),
         n_trials: int,
         n_folds: int,
         max_rows_limit: int,
@@ -448,6 +494,7 @@ class LightGbmSelector:
             sample_fraction,
             seed,
             context,
+            categorical_cols=categorical_cols,
         )
         classes, class_counts = np.unique(target, return_counts=True)
         if len(classes) != 2:
@@ -621,9 +668,9 @@ class LightGbmSelector:
         train_mask = np.ones(row_count, dtype=bool)
         train_mask[valid_indices] = False
         train_indices = np.flatnonzero(train_mask)
-        train_matrix = feature_matrix[train_indices]
+        train_matrix = _take_rows(feature_matrix, train_indices)
         train_target = target[train_indices]
-        valid_matrix = feature_matrix[valid_indices]
+        valid_matrix = _take_rows(feature_matrix, valid_indices)
 
         if optuna_mode == "per_fold":
             fold_space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
@@ -677,7 +724,7 @@ class LightGbmSelector:
                     sample_size,
                     replace=False,
                 )
-                shap_sample = valid_matrix[sample_indices]
+                shap_sample = _take_rows(valid_matrix, sample_indices)
             shap_values = shap.TreeExplainer(model).shap_values(shap_sample)
             normalized_shap = normalize_binary_shap_values(shap_values)
             shap_importances = np.abs(normalized_shap).mean(axis=0)
@@ -812,18 +859,35 @@ class LightGbmSelector:
         }
 
 
+def _take_rows(matrix: Any, indices: np.ndarray) -> Any:
+    """Row-select from either a numpy matrix or a pandas design frame.
+
+    The matrix is a DataFrame whenever categorical candidates are in play, and
+    `frame[indices]` would select *columns* there.
+    """
+    if isinstance(matrix, pd.DataFrame):
+        return matrix.iloc[indices]
+    return matrix[indices]
+
+
 def _cumulative_select(
     values: np.ndarray,
     feature_cols: list[str],
     threshold: float,
     *,
     empty_total_message: str,
+    min_features: int = 1,
 ) -> tuple[set[str], np.ndarray, np.ndarray]:
     """Normalize one importance vector and keep the cumulative prefix.
 
     Features are ranked by descending share. A feature stays if its
     running sum is ``<= threshold``. The crossing feature is excluded,
     matching the historical LightGBM cutoff.
+
+    ``min_features`` is a floor on the result. Without it a single dominant
+    feature -- one whose own share already exceeds ``threshold`` -- crosses the
+    cutoff on the first row and the prefix comes out empty, so the step drops
+    every candidate exactly when one of them carries all the signal.
     """
     total = float(np.sum(values))
     if not np.isfinite(total) or total <= 0.0:
@@ -841,6 +905,17 @@ def _cumulative_select(
     selected = set(
         ordered.loc[ordered["cumsum"] <= threshold, "feature"],
     )
+    floor = max(1, int(min_features))
+    if len(selected) < floor:
+        top = list(ordered["feature"].head(floor))
+        logger.warning(
+            "LightGbmSelector: cumulative threshold %.3f kept %d feature(s); "
+            "falling back to the top %d by importance.",
+            threshold,
+            len(selected),
+            len(top),
+        )
+        selected = set(top)
     cumsum_by_feature = ordered.set_index("feature")["cumsum"]
     ranked["cumsum"] = ranked["feature"].map(cumsum_by_feature)
     return (

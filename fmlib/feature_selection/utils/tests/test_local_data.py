@@ -99,3 +99,38 @@ def test_prepare_does_not_reuse_when_max_rows_differ(
     )
 
     assert calls["n"] == 2
+
+
+def test_mixed_frame_accepts_pandas_category_dtype() -> None:
+    """A column already typed ``category`` must survive null filling.
+
+    Parquet round-trips and ``astype("category")`` both produce this dtype, and
+    filling one with a label outside its categories raises rather than adding
+    the label. That took out every run whose categorical columns came from a
+    cached parquet split.
+    """
+    import numpy as np
+
+    from fmlib.feature_selection.utils.local_data import prepare_mixed_frame
+
+    frame = pd.DataFrame(
+        {
+            "cat": pd.Series(["a", "b", None] * 10, dtype="category"),
+            "num": np.arange(30, dtype=float),
+            "response": [0, 1, 0] * 10,
+        },
+    )
+
+    prepared = prepare_mixed_frame(
+        frame,
+        target_col="response",
+        feature_cols=["cat", "num"],
+        categorical_cols=["cat"],
+        max_rows=100,
+        sample_fraction=None,
+        seed=0,
+        method_name="probe",
+    )
+
+    assert sorted(prepared["cat"].unique()) == ["None", "a", "b"]
+    assert len(prepared) == len(frame)

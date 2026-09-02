@@ -27,3 +27,6 @@ catboost_info/
 
 # macOS
 .DS_Store
+
+# Промежуточные артефакты прогонов бенчмарка (сводка в results/*.csv|json)
+benchmarks/open_data/results/*/

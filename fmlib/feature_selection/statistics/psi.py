@@ -7,14 +7,87 @@ import logging
 from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import numpy as np
+import pandas as pd
 
 from fmlib.feature_selection.base import FeatureDecision, StageContext, step_seed
 from fmlib.feature_selection.config import PsiConfig
+from fmlib.feature_selection.backends.spark import persist_unless_cached
 from fmlib.feature_selection.exceptions import ExecutionError
+from fmlib.feature_selection.utils.local_data import sample_frame_rows
 from fmlib.feature_selection.utils.verbose import emit as verbose_emit
 from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 logger = logging.getLogger(__name__)
+
+_NULL_LEVEL = "__psi_null__"
+_OTHER_LEVEL = "__psi_other__"
+
+
+def psi_from_counts(
+    expected: Sequence[float],
+    actual: Sequence[float],
+) -> float:
+    """Population Stability Index from aligned per-bin counts.
+
+    An empty bin on either side takes the conventional ``1 / (2N)`` floor
+    instead of producing an infinite log ratio.
+    """
+    total_expected = float(sum(expected))
+    total_actual = float(sum(actual))
+    if total_expected <= 0.0 or total_actual <= 0.0:
+        return 0.0
+    floor_expected = 1.0 / (2.0 * total_expected)
+    floor_actual = 1.0 / (2.0 * total_actual)
+    psi = 0.0
+    for expected_count, actual_count in zip(expected, actual):
+        expected_share = expected_count / total_expected or floor_expected
+        actual_share = actual_count / total_actual or floor_actual
+        psi += (actual_share - expected_share) * math.log(actual_share / expected_share)
+    return float(psi)
+
+
+def _psi_from_level_counts(
+    expected: Mapping[str, float],
+    actual: Mapping[str, float],
+    expected_total: float,
+    actual_total: float,
+) -> float:
+    """PSI over a shared level set, with everything unseen folded into ``other``."""
+    levels = list(expected)
+    expected_counts = [float(expected.get(level, 0.0)) for level in levels]
+    actual_counts = [float(actual.get(level, 0.0)) for level in levels]
+    expected_counts.append(max(0.0, expected_total - sum(expected_counts)))
+    actual_counts.append(max(0.0, actual_total - sum(actual_counts)))
+    return psi_from_counts(expected_counts, actual_counts)
+
+
+def _quoted_col(name: str) -> Any:
+    """Build a Spark column reference that tolerates dots and spaces in names."""
+    from pyspark.sql import functions as F  # noqa: N812
+
+    escaped = name.replace("`", "")
+    return F.col(f"`{escaped}`")
+
+
+def _root_cause(exc: BaseException) -> str:
+    """Extract a concise root cause from Spark/Py4J exceptions."""
+    java_exc = getattr(exc, "java_exception", None)
+    if java_exc is not None:
+        return str(java_exc).splitlines()[0]
+    cause = getattr(exc, "__cause__", None)
+    if cause is not None:
+        return str(cause).splitlines()[0]
+    return str(exc).splitlines()[0]
+
+
+def _is_spark_dataframe(data: Any) -> bool:
+    """Return whether data looks like a pyspark DataFrame."""
+    module_name = type(data).__module__
+    return (
+        module_name.startswith("pyspark")
+        and hasattr(data, "select")
+        and hasattr(data, "agg")
+    )
 
 
 class PsiSelector:
@@ -32,155 +105,6 @@ class PsiSelector:
 
     def __init__(self: PsiSelector, config: PsiConfig) -> None:
         self.config = config
-
-    def _apply_stratified_sampling_pyspark(
-        self: PsiSelector,
-        df: Any,
-        target_col: str,
-        max_rows: int,
-        seed: int,
-    ) -> Any:
-        """Применяет стратифицированную выборку на основе целевой колонки для PySpark.
-
-        Args:
-            df: Исходный PySpark DataFrame.
-            target_col: Целевая колонка для стратификации.
-            max_rows: Максимальное количество строк после выборки.
-            seed: Сид для репродуцируемости.
-
-        Returns:
-            DataFrame с отсемплированными данными.
-        """
-        import pyspark.sql.functions as F
-
-        # Add helper column for stratification
-        strat_df = df.withColumn("_strat_col", F.col(target_col).cast("string"))
-
-        # Calculate class proportions
-        strat_count = strat_df.groupBy("_strat_col").count().collect()
-        data_len = strat_df.count()
-
-        if data_len <= max_rows:
-            logger.info(
-                f"PSISelector: Data has {data_len:,} rows, below subsample limit {max_rows:,}. "
-                "Skipping stratified sampling."
-            )
-            result = strat_df.drop("_strat_col")
-            return result
-
-        # Calculate fraction to reach max_rows
-        fraction = max_rows / data_len
-
-        # Calculate class-wise counts and proportions
-        strat_count_dict = {row["_strat_col"]: row["count"] for row in strat_count}
-        fractions = {str(key): fraction for key in strat_count_dict.keys()}
-
-        logger.info(
-            f"PSISelector: Stratified sampling: fraction={fraction:.4f} "
-            f"(max_rows={max_rows}, data_len={data_len:,})"
-        )
-        logger.info(f"PSISelector: Stratification stats: {strat_count_dict}")
-
-        # Apply sampleBy for stratified sampling
-        sampled_df = strat_df.sampleBy(
-            "_strat_col", fractions=fractions, seed=seed
-        ).drop("_strat_col")
-
-        data_len_after = sampled_df.count()
-        logger.info(
-            f"PSISelector: Stratified: {data_len:,} -> {data_len_after:,} rows "
-            f"(fraction={data_len_after / data_len:.4f})"
-        )
-
-        return sampled_df
-
-    def _apply_stratified_sampling_pandas(
-        self: PsiSelector,
-        df: Any,
-        target_col: str,
-        max_rows: int,
-        seed: int,
-    ) -> Any:
-        """Применяет стратифицированную выборку на основе целевой колонки для Pandas.
-
-        Args:
-            df: Исходный Pandas DataFrame.
-            target_col: Целевая колонка для стратификации.
-            max_rows: Максимальное количество строк после выборки.
-            seed: Сид для репродуцируемости.
-
-        Returns:
-            DataFrame с отсемплированными данными.
-        """
-        import pandas as pd
-
-        data_len = len(df)
-
-        if data_len <= max_rows:
-            logger.info(
-                f"PSISelector: Data has {data_len:,} rows, below subsample limit {max_rows:,}. "
-                "Skipping stratified sampling."
-            )
-            return df
-
-        # Calculate class proportions
-        strat_values = df[target_col].value_counts()
-        data_len = len(df)
-        strat_count_dict = strat_values.to_dict()
-
-        # Calculate fraction to reach max_rows
-        fraction = max_rows / data_len
-
-        logger.info(
-            f"PSISelector: Stratified sampling (pandas): fraction={fraction:.4f} "
-            f"(max_rows={max_rows}, data_len={data_len:,})"
-        )
-        logger.info(f"PSISelector: Stratification stats: {strat_count_dict}")
-
-        # Sample each class proportionally
-        rng = np.random.RandomState(seed)
-        
-        sampled_dfs = []
-        for class_val, count in strat_count_dict.items():
-            class_df = df[df[target_col] == class_val]
-            sample_size = max(1, int(count * fraction))
-            sample_size = min(sample_size, len(class_df))
-            sampled = class_df.sample(n=sample_size, random_state=rng)
-            sampled_dfs.append(sampled)
-
-        result = pd.concat(sampled_dfs, ignore_index=True)
-        
-        data_len_after = len(result)
-        logger.info(
-            f"PSISelector: Stratified (pandas): {data_len:,} -> {data_len_after:,} rows "
-            f"(fraction={data_len_after / data_len:.4f})"
-        )
-
-        return result
-
-    def _apply_stratified_sampling(
-        self: PsiSelector,
-        df: Any,
-        target_col: str,
-        max_rows: int,
-        seed: int,
-    ) -> Any:
-        """Применяет стратифицированную выборку на основе целевой колонки.
-
-        Args:
-            df: Исходный DataFrame (PySpark или Pandas).
-            target_col: Целевая колонка для стратификации.
-            max_rows: Максимальное количество строк после выборки.
-            seed: Сид для репродуцируемости.
-
-        Returns:
-            DataFrame с отсемплированными данными.
-        """
-        # Check if PySpark DataFrame
-        if hasattr(df, "stat") and hasattr(df, "agg"):
-            return self._apply_stratified_sampling_pyspark(df, target_col, max_rows, seed)
-        else:
-            return self._apply_stratified_sampling_pandas(df, target_col, max_rows, seed)
 
     def select(
         self: PsiSelector,
@@ -205,11 +129,14 @@ class PsiSelector:
 
         threshold = self.config.threshold
         num_bins = self.config.num_bins
-        eps = self.config.eps
+
+        continuous = set(context.schema.continuous)
+        numeric_cols = [name for name in feature_cols if name in continuous]
+        categorical_cols = [name for name in feature_cols if name not in continuous]
 
         train_df, test_df = self._resolve_population_pair(context)
         train_df, test_df = self._apply_subsample_if_needed(context, train_df, test_df)
-        is_pyspark = hasattr(train_df, "stat") and hasattr(train_df, "agg")
+        is_pyspark = _is_spark_dataframe(train_df)
 
         if verbose_enabled(context, self.method_name):
             verbose_emit(
@@ -220,16 +147,33 @@ class PsiSelector:
                 threshold=threshold,
                 num_bins=num_bins,
                 n_features=len(feature_cols),
+                n_numeric=len(numeric_cols),
+                n_categorical=len(categorical_cols),
                 backend="spark" if is_pyspark else "pandas",
                 subsample_rows=self.config.subsample_rows,
                 baseline=context.verbose_log.snapshot_frame(train_df),
                 actual=context.verbose_log.snapshot_frame(test_df),
             )
 
+        psi_scores: Dict[str, float] = {}
         if is_pyspark:
-            psi_scores = self._compute_pyspark_psi(train_df, test_df, feature_cols, num_bins)
+            if numeric_cols:
+                psi_scores.update(
+                    self._compute_pyspark_psi(train_df, test_df, numeric_cols, num_bins),
+                )
+            if categorical_cols:
+                psi_scores.update(
+                    self._compute_pyspark_psi_categorical(train_df, test_df, categorical_cols),
+                )
         else:
-            psi_scores = self._compute_pandas_psi(train_df, test_df, feature_cols, num_bins, eps)
+            if numeric_cols:
+                psi_scores.update(
+                    self._compute_pandas_psi(train_df, test_df, numeric_cols, num_bins),
+                )
+            if categorical_cols:
+                psi_scores.update(
+                    self._compute_pandas_psi_categorical(train_df, test_df, categorical_cols),
+                )
 
         if verbose_enabled(context, self.method_name) and psi_scores:
             values = [float(score) for score in psi_scores.values()]
@@ -252,18 +196,39 @@ class PsiSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Keep/drop remaining features by the current PSI threshold."""
-        del context
+        """Drop remaining features whose PSI exceeds the threshold.
+
+        Only drops are returned, matching every other selector: a ``keep=True``
+        decision per candidate inflates ``context.decisions`` by the full
+        feature count on every PSI step and is filtered out again downstream.
+
+        A candidate with no measured PSI is an error rather than a silent
+        ``0.0``: unscored and stable look identical in the artifact otherwise.
+        """
         values = metrics.get("values", metrics)
         if not isinstance(values, Mapping):
             values = {}
         threshold = self.config.threshold
-        decisions: list[FeatureDecision] = []
-        for col in candidates:
-            score = float(values.get(col, 0.0))
-            keep = score <= threshold
-            decisions.append(self._make_decision(col, keep=keep, score=score, threshold=threshold))
-        return decisions
+        missing = [name for name in candidates if name not in values]
+        if missing:
+            msg = (
+                f"psi: no PSI value for {len(missing)} candidate(s), "
+                f"first: {missing[:5]}. The cached metrics were computed for a "
+                "different candidate set; set statistics.cache.force_recompute."
+            )
+            raise ExecutionError(msg)
+        scored = {name: float(values[name]) for name in candidates}
+        context.scores[self.method_name] = {
+            "threshold": threshold,
+            "mode": self.config.mode,
+            "num_bins": self.config.num_bins,
+            "values": scored,
+        }
+        return [
+            self._make_decision(name, keep=False, score=score, threshold=threshold)
+            for name, score in scored.items()
+            if score > threshold
+        ]
 
     def _resolve_population_pair(self, context: StageContext) -> Tuple[Any, Any]:
         """Return the (baseline, actual) pair selected by ``config.mode``.
@@ -320,7 +285,7 @@ class PsiSelector:
         Raises:
             ExecutionError: If either side of the split is empty.
         """
-        is_spark = hasattr(frame, "stat") and hasattr(frame, "agg")
+        is_spark = _is_spark_dataframe(frame)
         if is_spark:
             import pyspark.sql.functions as F  # noqa: N812
 
@@ -345,44 +310,55 @@ class PsiSelector:
         train_df: Any,
         test_df: Any,
     ) -> Tuple[Any, Any]:
-        """Apply stratified subsampling to train and test DataFrames if configured.
+        """Bound both populations with the shared target-stratified sampler.
+
+        Uses ``utils.local_data.sample_frame_rows`` rather than a private copy:
+        one sampling semantics across the module, and one Spark action per
+        population instead of a groupBy plus two counts taken only for a log line.
 
         Args:
             context: Stage context with schema and seed.
-            train_df: Training DataFrame.
-            test_df: Test/Validation DataFrame.
+            train_df: Baseline population.
+            test_df: Actual population.
 
         Returns:
-            Tuple of (subsampled_train, subsampled_test) DataFrames.
+            Tuple of (bounded baseline, bounded actual).
         """
         subsample_rows = self.config.subsample_rows
-        
         if subsample_rows is None:
             return train_df, test_df
-        
-        # Get target column from schema
+
         target_col = context.schema.target
-        if target_col is None:
+        if not target_col:
             logger.warning(
-                "PSISelector: subsample_rows configured but context.schema.target is None. "
-                "Skipping stratified sampling."
+                "PSISelector: subsample_rows is set but FeatureSchema.target is "
+                "empty; skipping the bounded sample.",
             )
             return train_df, test_df
-        
+
         # Prefer PsiConfig.seed, then the runner-assigned step seed.
-        seed = (
-            self.config.seed
-            if self.config.seed is not None
-            else step_seed(context)
-        )
-        
-        logger.info(f"PSISelector: Applying stratified subsampling to train set (max_rows={subsample_rows})")
-        train_sampled = self._apply_stratified_sampling(train_df, target_col, subsample_rows, seed)
-        
-        logger.info(f"PSISelector: Applying stratified subsampling to test set (max_rows={subsample_rows})")
-        test_sampled = self._apply_stratified_sampling(test_df, target_col, subsample_rows, seed)
-        
-        return train_sampled, test_sampled
+        seed = self.config.seed if self.config.seed is not None else step_seed(context)
+        stratified = context.schema.task_type != "regression"
+
+        bounded = []
+        for name, frame in (("baseline", train_df), ("actual", test_df)):
+            sampled, rows_in, rows_out = sample_frame_rows(
+                frame,
+                target_col=target_col,
+                max_rows=subsample_rows,
+                stratified=stratified,
+                seed=seed,
+                method_name=self.method_name,
+            )
+            logger.info(
+                "PSISelector: %s population %d -> %d rows (max_rows=%d).",
+                name,
+                rows_in,
+                rows_out,
+                subsample_rows,
+            )
+            bounded.append(sampled)
+        return bounded[0], bounded[1]
 
     def _split_by_month(self, context: StageContext, train_df: Any) -> Tuple[Any, Any]:
         """Split train by ``month_column``: latest periods become the actual set.
@@ -405,7 +381,7 @@ class PsiSelector:
         del context
         month_col = self.config.month_column
         test_months = self.config.test_months
-        is_spark = hasattr(train_df, "stat") and hasattr(train_df, "agg")
+        is_spark = _is_spark_dataframe(train_df)
 
         if is_spark:
             import pyspark.sql.functions as F  # noqa: N812
@@ -451,159 +427,258 @@ class PsiSelector:
     def _compute_pyspark_psi(
         self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int
     ) -> Dict[str, float]:
-        """Оптимизированный расчёт PSI на PySpark с пакетированием и безопасным кэшированием."""
+        """Quantile-bin continuous columns and count both populations per batch.
+
+        Columns are projected onto positional aliases first: a raw feature name
+        with a dot or a space breaks both ``F.col`` and the ``{name}__bin_{i}``
+        aggregation aliases.
+        """
         import pyspark.sql.functions as F
 
         relative_error = self.config.relative_error
         batch_size = self.config.batch_size
+        aliases = {name: f"c{index}" for index, name in enumerate(feature_cols)}
+        alias_list = [aliases[name] for name in feature_cols]
 
-        # 1. Защита от двойного вычисления тяжелого lineage (Persist)
-        is_train_cached = getattr(train_df, "is_cached", False)
-        should_unpersist = False
-
-        if not is_train_cached:
-            try:
-                train_df = train_df.persist()
-                should_unpersist = True
-            except Exception as e:
-                logger.debug(f"Не удалось закешировать train_df: {e}")
+        baseline = train_df.select(
+            *[_quoted_col(name).alias(aliases[name]) for name in feature_cols],
+        )
+        actual = test_df.select(
+            *[_quoted_col(name).alias(aliases[name]) for name in feature_cols],
+        )
+        # Both populations are aggregated once per column batch, so both need
+        # the same protection from a repeated scan -- not just the baseline.
+        baseline, drop_baseline = persist_unless_cached(baseline)
+        actual, drop_actual = persist_unless_cached(actual)
 
         try:
             probabilities = [i / num_bins for i in range(1, num_bins)]
-
-            # 2. Быстрое квантование с настраиваемым relative_error (дефолт 0.001)
-            all_quantiles = train_df.stat.approxQuantile(feature_cols, probabilities, relative_error)
+            all_quantiles = baseline.stat.approxQuantile(
+                alias_list,
+                probabilities,
+                relative_error,
+            )
 
             psi_scores: Dict[str, float] = {}
+            for start in range(0, len(feature_cols), batch_size):
+                batch_cols = feature_cols[start : start + batch_size]
+                batch_quantiles = all_quantiles[start : start + batch_size]
 
-            # 3. Батчевание колонок для предотвращения раздувания плана Catalyst и WholeStageCodegen OOM
-            for i in range(0, len(feature_cols), batch_size):
-                batch_cols = feature_cols[i : i + batch_size]
-                batch_quantiles = all_quantiles[i : i + batch_size]
-
-                exp_agg_exprs = []
-                act_agg_exprs = []
+                agg_exprs = []
                 bin_structure_map = {}
-
                 for col_name, quantiles in zip(batch_cols, batch_quantiles):
-                    unique_edges = sorted(list(set([-float("inf")] + quantiles + [float("inf")])))
-                    num_numeric_bins = len(unique_edges) - 1
-                    bin_structure_map[col_name] = num_numeric_bins
+                    alias = aliases[col_name]
+                    edges = sorted({-float("inf"), *quantiles, float("inf")})
+                    n_bins = len(edges) - 1
+                    bin_structure_map[col_name] = n_bins
 
-                    null_cond = F.col(col_name).isNull() | F.isnan(F.col(col_name))
-                    exp_agg_exprs.append(F.count(F.when(null_cond, 1)).alias(f"{col_name}__bin_null"))
-                    act_agg_exprs.append(F.count(F.when(null_cond, 1)).alias(f"{col_name}__bin_null"))
+                    value = F.col(alias)
+                    null_cond = value.isNull() | F.isnan(value.cast("double"))
+                    agg_exprs.append(
+                        F.count(F.when(null_cond, 1)).alias(f"{alias}__bin_null"),
+                    )
+                    for index in range(n_bins):
+                        low = edges[index]
+                        high = edges[index + 1]
+                        valid = ~null_cond
+                        cond = (
+                            valid & (value <= high)
+                            if index == 0
+                            else valid & (value > low) & (value <= high)
+                        )
+                        agg_exprs.append(
+                            F.count(F.when(cond, 1)).alias(f"{alias}__bin_{index}"),
+                        )
 
-                    for b in range(num_numeric_bins):
-                        high = unique_edges[b + 1]
-                        low = unique_edges[b]
-                        valid_cond = ~null_cond
+                exp_results = baseline.agg(*agg_exprs).head().asDict()
+                act_results = actual.agg(*agg_exprs).head().asDict()
 
-                        cond = valid_cond & (F.col(col_name) <= high) if b == 0 else valid_cond & (F.col(col_name) > low) & (F.col(col_name) <= high)
-
-                        alias = f"{col_name}__bin_{b}"
-                        exp_agg_exprs.append(F.count(F.when(cond, 1)).alias(alias))
-                        act_agg_exprs.append(F.count(F.when(cond, 1)).alias(alias))
-
-                exp_results = train_df.agg(*exp_agg_exprs).head().asDict()
-                act_results = test_df.agg(*act_agg_exprs).head().asDict()
-
-                # 4. Расчёт математического PSI для батча
                 for col_name in batch_cols:
+                    alias = aliases[col_name]
                     n_bins = bin_structure_map[col_name]
-
-                    exp_counts = [exp_results.get(f"{col_name}__bin_{b}", 0) for b in range(n_bins)]
-                    exp_counts.append(exp_results.get(f"{col_name}__bin_null", 0))
-
-                    act_counts = [act_results.get(f"{col_name}__bin_{b}", 0) for b in range(n_bins)]
-                    act_counts.append(act_results.get(f"{col_name}__bin_null", 0))
-
-                    total_exp = sum(exp_counts)
-                    total_act = sum(act_counts)
-
-                    if total_exp == 0 or total_act == 0:
-                        psi_scores[col_name] = 0.0
-                        continue
-
-                    eps_exp = 1.0 / (2.0 * total_exp)
-                    eps_act = 1.0 / (2.0 * total_act)
-
-                    psi_val = 0.0
-                    for e_cnt, a_cnt in zip(exp_counts, act_counts):
-                        e_prop = e_cnt / total_exp
-                        a_prop = a_cnt / total_act
-
-                        e_adj = e_prop if e_prop > 0 else eps_exp
-                        a_adj = a_prop if a_prop > 0 else eps_act
-
-                        psi_val += (a_adj - e_adj) * math.log(a_adj / e_adj)
-
-                    psi_scores[col_name] = float(psi_val)
-
+                    keys = [f"{alias}__bin_{index}" for index in range(n_bins)]
+                    keys.append(f"{alias}__bin_null")
+                    psi_scores[col_name] = psi_from_counts(
+                        [float(exp_results.get(key) or 0) for key in keys],
+                        [float(act_results.get(key) or 0) for key in keys],
+                    )
             return psi_scores
-
         finally:
-            if should_unpersist:
-                try:
-                    train_df.unpersist()
-                except Exception:
-                    pass
+            drop_actual()
+            drop_baseline()
+
+    def _compute_pyspark_psi_categorical(
+        self,
+        train_df: Any,
+        test_df: Any,
+        feature_cols: List[str],
+    ) -> Dict[str, float]:
+        """Compare categorical level distributions between the two populations.
+
+        The level set comes from the baseline, capped at ``max_levels`` most
+        frequent values; everything else collapses into one ``other`` bin on
+        both sides, which bounds the driver-side result at
+        ``n_features * max_levels`` rows regardless of column cardinality.
+        Nulls are a level of their own rather than a dropped row.
+        """
+        max_levels = self.config.max_levels
+        batch_size = self.config.batch_size
+        scores: Dict[str, float] = {}
+
+        for start in range(0, len(feature_cols), batch_size):
+            batch_cols = feature_cols[start : start + batch_size]
+            baseline_counts, baseline_total = self._spark_level_counts(
+                train_df,
+                batch_cols,
+                max_levels=max_levels,
+            )
+            keep = {
+                name: set(levels) for name, levels in baseline_counts.items()
+            }
+            actual_counts, actual_total = self._spark_level_counts(
+                test_df,
+                batch_cols,
+                max_levels=None,
+                keep_levels=keep,
+            )
+            for name in batch_cols:
+                scores[name] = _psi_from_level_counts(
+                    baseline_counts.get(name, {}),
+                    actual_counts.get(name, {}),
+                    baseline_total,
+                    actual_total,
+                )
+        return scores
+
+    def _spark_level_counts(
+        self,
+        frame: Any,
+        feature_cols: List[str],
+        *,
+        max_levels: Optional[int],
+        keep_levels: Optional[Dict[str, set]] = None,
+    ) -> Tuple[Dict[str, Dict[str, float]], int]:
+        """Return ``{feature: {level: count}}`` plus the population row count."""
+        import pyspark.sql.functions as F
+        from pyspark.sql import Window
+
+        pieces = []
+        for name in feature_cols:
+            level = F.coalesce(
+                _quoted_col(name).cast("string"),
+                F.lit(_NULL_LEVEL),
+            )
+            pieces.append(
+                frame.select(F.lit(name).alias("feature"), level.alias("level")),
+            )
+        stacked = pieces[0]
+        for piece in pieces[1:]:
+            stacked = stacked.unionByName(piece)
+
+        grouped = stacked.groupBy("feature", "level").agg(F.count("*").alias("n"))
+        if max_levels is not None:
+            window = Window.partitionBy("feature").orderBy(
+                F.col("n").desc(),
+                F.col("level").asc(),
+            )
+            grouped = (
+                grouped.withColumn("__rank__", F.row_number().over(window))
+                .where(F.col("__rank__") <= max_levels)
+                .drop("__rank__")
+            )
+        elif keep_levels is not None:
+            allowed = [
+                (name, level)
+                for name, levels in keep_levels.items()
+                for level in levels
+            ]
+            if allowed:
+                spark = frame.sparkSession
+                allowed_df = F.broadcast(
+                    spark.createDataFrame(allowed, ["feature", "level"]),
+                )
+                grouped = grouped.join(allowed_df, ["feature", "level"], "inner")
+            else:
+                grouped = grouped.where(F.lit(False))
+
+        try:
+            rows = grouped.collect()
+            total = int(frame.count())
+        except Exception as exc:  # noqa: BLE001 - Spark/Py4J exception hierarchy
+            msg = (
+                "psi: Spark aggregation failed while counting categorical "
+                f"levels. Root cause: {_root_cause(exc)}."
+            )
+            raise ExecutionError(msg) from exc
+
+        counts: Dict[str, Dict[str, float]] = {name: {} for name in feature_cols}
+        for row in rows:
+            counts[row["feature"]][row["level"]] = float(row["n"] or 0)
+        return counts, total
 
     def _compute_pandas_psi(
-        self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int, eps: float
+        self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int
     ) -> Dict[str, float]:
-        """Векторный расчёт PSI в Pandas через C-API np.histogram."""
+        """Quantile-bin continuous columns with ``np.histogram``."""
         from joblib import Parallel, delayed
 
         def _calc_single(col: str) -> float:
-            exp_vals = train_df[col].to_numpy() if hasattr(train_df[col], "to_numpy") else np.asarray(train_df[col])
-            act_vals = test_df[col].to_numpy() if hasattr(test_df[col], "to_numpy") else np.asarray(test_df[col])
+            exp_vals = pd.to_numeric(train_df[col], errors="coerce").to_numpy(dtype=float)
+            act_vals = pd.to_numeric(test_df[col], errors="coerce").to_numpy(dtype=float)
 
-            exp_null_cnt = np.isnan(exp_vals).sum()
-            act_null_cnt = np.isnan(act_vals).sum()
-
-            exp_clean = exp_vals[~np.isnan(exp_vals)]
-            act_clean = act_vals[~np.isnan(act_vals)]
+            exp_null = np.isnan(exp_vals)
+            act_null = np.isnan(act_vals)
+            exp_clean = exp_vals[~exp_null]
+            act_clean = act_vals[~act_null]
 
             if len(exp_clean) == 0 or len(act_clean) == 0:
                 return 0.0
 
-            quantiles = np.linspace(0, 100, num_bins + 1)
-            bins = np.percentile(exp_clean, quantiles)
-            bins = np.unique(bins)
-
-            if len(bins) < 2:
-                exp_counts = np.array([len(exp_clean)])
-                act_counts = np.array([len(act_clean)])
+            edges = np.unique(np.percentile(exp_clean, np.linspace(0, 100, num_bins + 1)))
+            if len(edges) < 2:
+                exp_counts = np.array([float(len(exp_clean))])
+                act_counts = np.array([float(len(act_clean))])
             else:
-                bins[0] = -np.inf
-                bins[-1] = np.inf
-                exp_counts, _ = np.histogram(exp_clean, bins=bins)
-                act_counts, _ = np.histogram(act_clean, bins=bins)
+                edges[0] = -np.inf
+                edges[-1] = np.inf
+                exp_counts = np.histogram(exp_clean, bins=edges)[0].astype(float)
+                act_counts = np.histogram(act_clean, bins=edges)[0].astype(float)
 
-            exp_counts = np.append(exp_counts, exp_null_cnt)
-            act_counts = np.append(act_counts, act_null_cnt)
+            exp_counts = np.append(exp_counts, float(exp_null.sum()))
+            act_counts = np.append(act_counts, float(act_null.sum()))
+            return psi_from_counts(exp_counts, act_counts)
 
-            total_exp = len(exp_vals)
-            total_act = len(act_vals)
-
-            if total_exp == 0 or total_act == 0:
-                return 0.0
-
-            exp_pct = exp_counts / total_exp
-            act_pct = act_counts / total_act
-
-            eps_exp = 1.0 / (2.0 * total_exp)
-            eps_act = 1.0 / (2.0 * total_act)
-
-            exp_pct = np.where(exp_pct > 0, exp_pct, eps_exp)
-            act_pct = np.where(act_pct > 0, act_pct, eps_act)
-
-            return float(np.sum((act_pct - exp_pct) * np.log(act_pct / exp_pct)))
-
-        n_jobs = self.config.n_jobs
-        results = Parallel(n_jobs=n_jobs)(delayed(_calc_single)(col) for col in feature_cols)
+        results = Parallel(n_jobs=self.config.n_jobs)(
+            delayed(_calc_single)(col) for col in feature_cols
+        )
         return dict(zip(feature_cols, results))
+
+    def _compute_pandas_psi_categorical(
+        self, train_df: Any, test_df: Any, feature_cols: List[str]
+    ) -> Dict[str, float]:
+        """Compare categorical level distributions on already-local frames."""
+        max_levels = self.config.max_levels
+        scores: Dict[str, float] = {}
+        baseline_total = float(len(train_df))
+        actual_total = float(len(test_df))
+        for name in feature_cols:
+            exp = train_df[name].astype("string").fillna(_NULL_LEVEL)
+            act = test_df[name].astype("string").fillna(_NULL_LEVEL)
+            exp_counts = exp.value_counts()
+            if max_levels is not None and len(exp_counts) > max_levels:
+                exp_counts = exp_counts.iloc[:max_levels]
+            levels = list(exp_counts.index)
+            act_counts = act.value_counts()
+            scores[name] = _psi_from_level_counts(
+                {level: float(exp_counts[level]) for level in levels},
+                {
+                    level: float(act_counts.get(level, 0.0))
+                    for level in levels
+                },
+                baseline_total,
+                actual_total,
+            )
+        return scores
 
     def _make_decision(
         self, feature: str, keep: bool, score: float, threshold: float

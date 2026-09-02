@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import random
 from typing import Any
 
@@ -15,13 +17,17 @@ from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistics.psi import PsiSelector
 
 
-def _make_psi_selector(subsample_rows: int | None = None) -> PsiSelector:
+def _make_psi_selector(
+    subsample_rows: int | None = None,
+    *,
+    threshold: float = 0.25,
+) -> PsiSelector:
     """Create a PSI selector with optional subsampling."""
     config = FeatureSelectionConfig(
         statistics=StatisticsConfig(
             psi=PsiConfig(
                 mode="train_valid",
-                threshold=0.25,
+                threshold=threshold,
                 subsample_rows=subsample_rows,
             ),
         ),
@@ -52,187 +58,221 @@ def _make_context(
     )
 
 
+class _SamplingContext:
+    """Minimal context for the bounded-sample helper."""
+
+    def __init__(self, target: str = "target", seed: int = 42) -> None:
+        self.schema = SimpleNamespace(target=target, task_type="binary_classification")
+        self.seed = seed
+        self.run_seed = seed
+
+
 class TestPsiStratifiedSampling:
-    """Tests for stratified sampling in PSI selector."""
+    """PSI bounds both populations through the shared sampler."""
 
-    def test_pandas_subsample_applied_when_configured(self) -> None:
-        """Test that stratified sampling reduces row count when configured."""
-        # Create a larger dataset with imbalance
-        random.seed(42)
-        n_rows = 200
+    @staticmethod
+    def _imbalanced(n_zero: int, n_one: int, seed: int = 42) -> pd.DataFrame:
+        rng = random.Random(seed)
+        total = n_zero + n_one
+        return pd.DataFrame(
+            {
+                "target": [0] * n_zero + [1] * n_one,
+                "feature1": [rng.gauss(0, 1) for _ in range(total)],
+                "feature2": [rng.gauss(0, 1) for _ in range(total)],
+            },
+        )
 
-        # Create imbalanced target (80% class 0, 20% class 1)
-        data = {
-            "target": [0] * 160 + [1] * 40,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-            "feature2": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        train_df = pd.DataFrame(data)
-
-        # Test df with similar distribution
-        test_data = {
-            "target": [0] * 160 + [1] * 40,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-            "feature2": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        test_df = pd.DataFrame(test_data)
-
-        # Set subsample to 100 rows
+    def test_subsample_bounds_both_populations(self) -> None:
+        train_df = self._imbalanced(160, 40)
+        test_df = self._imbalanced(160, 40, seed=7)
         selector = _make_psi_selector(subsample_rows=100)
 
-        # Apply subsampling directly (pandas)
-        result_train = selector._apply_stratified_sampling_pandas(
-            train_df, "target", 100, seed=42
+        bounded_train, bounded_test = selector._apply_subsample_if_needed(
+            _SamplingContext(), train_df, test_df,
         )
 
-        # Verify row count is reduced
-        assert len(result_train) <= 100
-        assert len(result_train) > 0
+        assert 0 < len(bounded_train) <= 100
+        assert 0 < len(bounded_test) <= 100
 
     def test_no_subsample_when_not_configured(self) -> None:
-        """Test that no subsampling occurs when subsample_rows is None."""
-        train_df = pd.DataFrame({
-            "target": [0, 1, 0, 1, 0],
-            "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        })
-        test_df = pd.DataFrame({
-            "target": [0, 1, 0, 1, 0],
-            "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        })
-
+        train_df = self._imbalanced(3, 2)
+        test_df = self._imbalanced(3, 2, seed=7)
         selector = _make_psi_selector(subsample_rows=None)
 
-        # Mock context
-        class MockContext:
-            schema = type("Obj", (), {"target": "target"})()
-            seed = 42
-            # PsiSelector falls back to step_seed(context) when PsiConfig.seed
-            # is unset, and step_seed reads run_seed.
-            run_seed = 42
-
-        result_train, result_test = selector._apply_subsample_if_needed(
-            MockContext(), train_df, test_df
+        bounded_train, bounded_test = selector._apply_subsample_if_needed(
+            _SamplingContext(), train_df, test_df,
         )
 
-        # No sampling should occur
-        assert len(result_train) == len(train_df)
-        assert len(result_test) == len(test_df)
+        assert bounded_train is train_df
+        assert bounded_test is test_df
 
     def test_no_subsample_when_below_limit(self) -> None:
-        """Test that no subsampling occurs when data is already below limit."""
-        train_df = pd.DataFrame({
-            "target": [0, 1, 0, 1, 0],
-            "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        })
-        test_df = pd.DataFrame({
-            "target": [0, 1, 0, 1, 0],
-            "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
-        })
+        train_df = self._imbalanced(3, 2)
+        test_df = self._imbalanced(3, 2, seed=7)
+        selector = _make_psi_selector(subsample_rows=1000)
 
-        selector = _make_psi_selector(subsample_rows=1000)  # Higher than data size
-
-        # Mock context
-        class MockContext:
-            schema = type("Obj", (), {"target": "target"})()
-            seed = 42
-            # PsiSelector falls back to step_seed(context) when PsiConfig.seed
-            # is unset, and step_seed reads run_seed.
-            run_seed = 42
-
-        result_train, result_test = selector._apply_subsample_if_needed(
-            MockContext(), train_df, test_df
+        bounded_train, bounded_test = selector._apply_subsample_if_needed(
+            _SamplingContext(), train_df, test_df,
         )
 
-        # No sampling should occur (data below limit)
-        assert len(result_train) == len(train_df)
-        assert len(result_test) == len(test_df)
+        assert len(bounded_train) == len(train_df)
+        assert len(bounded_test) == len(test_df)
 
     def test_stratification_preserves_class_distribution(self) -> None:
-        """Test that stratified sampling preserves class distribution."""
-        random.seed(42)
-
-        # Create imbalanced dataset (80/20 split)
-        n_rows = 100
-        data = {
-            "target": [0] * 80 + [1] * 20,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        train_df = pd.DataFrame(data)
-
+        train_df = self._imbalanced(80, 20)
         selector = _make_psi_selector(subsample_rows=50)
 
-        # Apply sampling
-        result = selector._apply_stratified_sampling_pandas(train_df, "target", 50, seed=42)
+        bounded, _ = selector._apply_subsample_if_needed(
+            _SamplingContext(), train_df, train_df,
+        )
 
-        # Check class distribution is roughly preserved
-        result_class_0 = (result["target"] == 0).sum()
-        result_class_1 = (result["target"] == 1).sum()
+        n_zero = int((bounded["target"] == 0).sum())
+        n_one = int((bounded["target"] == 1).sum())
+        assert n_zero + n_one == 50
+        assert n_zero >= 30
+        assert n_one >= 10
 
-        # Should have roughly 80/20 split in sample
-        assert result_class_0 + result_class_1 == 50
-        assert result_class_0 >= 30  # At least ~40% class 0
-        assert result_class_1 >= 10  # At least ~20% class 1
-
-    def test_psi_with_subsample(self) -> None:
-        """Test that PSI selector works correctly with subsampling enabled."""
-        random.seed(42)
-
-        # Create datasets with stable features (low PSI expected)
-        n_rows = 200
-
-        # Similar distributions for train and test
-        train_data = {
-            "target": [0] * 160 + [1] * 40,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-            "feature2": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        train_df = pd.DataFrame(train_data)
-
-        test_data = {
-            "target": [0] * 160 + [1] * 40,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-            "feature2": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        test_df = pd.DataFrame(test_data)
-
+    def test_psi_scores_every_candidate_and_drops_none_when_stable(self) -> None:
+        train_df = self._imbalanced(160, 40)
+        test_df = self._imbalanced(160, 40, seed=7)
         selector = _make_psi_selector(subsample_rows=100)
         context = _make_context(train_df, test_df)
         context.config = selector.config
 
-        # Run feature selection
         decisions = selector.select(context, ["feature1", "feature2"])
 
-        # Should have decisions for both features
-        assert len(decisions) == 2
-        assert all(d.feature in ["feature1", "feature2"] for d in decisions)
+        # Only drops are returned now; every candidate is still scored.
+        assert all(decision.keep is False for decision in decisions)
+        scored = context.scores["psi"]["values"]
+        assert set(scored) == {"feature1", "feature2"}
 
-    def test_psi_with_subsample_very_small(self) -> None:
-        """Test PSI selector with very small subsample size."""
-        random.seed(42)
-
-        n_rows = 100
-
-        train_data = {
-            "target": [0] * 80 + [1] * 20,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        train_df = pd.DataFrame(train_data)
-
-        test_data = {
-            "target": [0] * 80 + [1] * 20,
-            "feature1": [random.gauss(0, 1) for _ in range(n_rows)],
-        }
-        test_df = pd.DataFrame(test_data)
-
+    def test_psi_with_very_small_subsample_still_scores(self) -> None:
+        train_df = self._imbalanced(80, 20)
+        test_df = self._imbalanced(80, 20, seed=7)
         selector = _make_psi_selector(subsample_rows=30)
         context = _make_context(train_df, test_df)
         context.config = selector.config
 
-        decisions = selector.select(context, ["feature1"])
+        selector.select(context, ["feature1"])
 
-        # Should have decision
-        assert len(decisions) == 1
-        assert decisions[0].feature == "feature1"
+        assert set(context.scores["psi"]["values"]) == {"feature1"}
+
+    def test_shifted_feature_is_dropped(self) -> None:
+        rng = random.Random(0)
+        train_df = pd.DataFrame(
+            {
+                "target": [0, 1] * 100,
+                "stable": [rng.gauss(0, 1) for _ in range(200)],
+                "shifted": [rng.gauss(0, 1) for _ in range(200)],
+            },
+        )
+        test_df = pd.DataFrame(
+            {
+                "target": [0, 1] * 100,
+                "stable": [rng.gauss(0, 1) for _ in range(200)],
+                # A five-sigma shift moves every row out of the baseline bins.
+                "shifted": [rng.gauss(5, 1) for _ in range(200)],
+            },
+        )
+        selector = _make_psi_selector(threshold=0.25)
+        context = _make_context(train_df, test_df)
+        context.config = selector.config
+
+        decisions = selector.select(context, ["stable", "shifted"])
+
+        assert [decision.feature for decision in decisions] == ["shifted"]
+
+
+class TestPsiCategorical:
+    """Categorical candidates are compared level by level, not quantile-binned."""
+
+    @staticmethod
+    def _context(train_df: pd.DataFrame, test_df: pd.DataFrame) -> StageContext:
+        schema = FeatureSchema(
+            categorical=("city",),
+            continuous=("amount",),
+            target="target",
+            task_type="binary_classification",
+        )
+        return StageContext(
+            spark=None,
+            datasets={"train": train_df, "valid": test_df},
+            schema=schema,
+            config=FeatureSelectionConfig(),
+            seed=42,
+            candidates=["city", "amount"],
+        )
+
+    def test_string_column_does_not_raise_and_is_scored(self) -> None:
+        train_df = pd.DataFrame(
+            {
+                "city": ["msk"] * 60 + ["spb"] * 30 + ["nsk"] * 10,
+                "amount": [float(index % 17) for index in range(100)],
+                "target": [0, 1] * 50,
+            },
+        )
+        test_df = pd.DataFrame(
+            {
+                "city": ["msk"] * 58 + ["spb"] * 32 + ["nsk"] * 10,
+                "amount": [float(index % 17) for index in range(100)],
+                "target": [0, 1] * 50,
+            },
+        )
+        selector = _make_psi_selector(threshold=0.25)
+        context = self._context(train_df, test_df)
+        context.config = selector.config
+
+        decisions = selector.select(context, ["city", "amount"])
+
+        assert set(context.scores["psi"]["values"]) == {"city", "amount"}
+        assert decisions == []
+
+    def test_level_mix_shift_is_detected(self) -> None:
+        train_df = pd.DataFrame(
+            {
+                "city": ["msk"] * 90 + ["spb"] * 10,
+                "amount": [float(index % 17) for index in range(100)],
+                "target": [0, 1] * 50,
+            },
+        )
+        test_df = pd.DataFrame(
+            {
+                "city": ["msk"] * 10 + ["spb"] * 90,
+                "amount": [float(index % 17) for index in range(100)],
+                "target": [0, 1] * 50,
+            },
+        )
+        selector = _make_psi_selector(threshold=0.25)
+        context = self._context(train_df, test_df)
+        context.config = selector.config
+
+        decisions = selector.select(context, ["city", "amount"])
+
+        assert [decision.feature for decision in decisions] == ["city"]
+        assert context.scores["psi"]["values"]["city"] > 0.25
+
+    def test_unseen_level_lands_in_the_other_bin(self) -> None:
+        train_df = pd.DataFrame(
+            {
+                "city": ["msk"] * 50 + ["spb"] * 50,
+                "amount": [float(index % 17) for index in range(100)],
+                "target": [0, 1] * 50,
+            },
+        )
+        test_df = pd.DataFrame(
+            {
+                "city": ["msk"] * 50 + ["ekb"] * 50,
+                "amount": [float(index % 17) for index in range(100)],
+                "target": [0, 1] * 50,
+            },
+        )
+        selector = _make_psi_selector(threshold=0.25)
+        context = self._context(train_df, test_df)
+        context.config = selector.config
+
+        decisions = selector.select(context, ["city"])
+
+        assert [decision.feature for decision in decisions] == ["city"]
 
 
 def test_spark_psi_runs_on_real_dataframes(spark: Any) -> None:
@@ -260,11 +300,10 @@ def test_spark_psi_runs_on_real_dataframes(spark: Any) -> None:
         seed=42,
         candidates=["feature1"],
     )
-    decisions = selector.select(context, ["feature1"])
-    assert len(decisions) == 1
-    assert decisions[0].feature == "feature1"
-    assert decisions[0].method == "psi"
-    assert decisions[0].value >= 0.0
+    selector.select(context, ["feature1"])
+    scored = context.scores["psi"]["values"]
+    assert set(scored) == {"feature1"}
+    assert scored["feature1"] >= 0.0
 
 
 if __name__ == "__main__":
