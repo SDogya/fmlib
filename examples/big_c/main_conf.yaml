@@ -87,7 +87,6 @@ statistics:
     month_column: month_part
     test_months: 1
     # Pandas PSI: сглаживание вероятностей.
-    eps: 1e-4
     # Spark PSI: относительная ошибка квантилей.
     relative_error: 0.001
     # Сколько колонок в одном Spark-батче.

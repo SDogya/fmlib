@@ -818,12 +818,18 @@ def _cumulative_select(
     threshold: float,
     *,
     empty_total_message: str,
+    min_features: int = 1,
 ) -> tuple[set[str], np.ndarray, np.ndarray]:
     """Normalize one importance vector and keep the cumulative prefix.
 
     Features are ranked by descending share. A feature stays if its
     running sum is ``<= threshold``. The crossing feature is excluded,
     matching the historical LightGBM cutoff.
+
+    ``min_features`` is a floor on the result. Without it a single dominant
+    feature -- one whose own share already exceeds ``threshold`` -- crosses the
+    cutoff on the first row and the prefix comes out empty, so the step drops
+    every candidate exactly when one of them carries all the signal.
     """
     total = float(np.sum(values))
     if not np.isfinite(total) or total <= 0.0:
@@ -841,6 +847,17 @@ def _cumulative_select(
     selected = set(
         ordered.loc[ordered["cumsum"] <= threshold, "feature"],
     )
+    floor = max(1, int(min_features))
+    if len(selected) < floor:
+        top = list(ordered["feature"].head(floor))
+        logger.warning(
+            "LightGbmSelector: cumulative threshold %.3f kept %d feature(s); "
+            "falling back to the top %d by importance.",
+            threshold,
+            len(selected),
+            len(top),
+        )
+        selected = set(top)
     cumsum_by_feature = ordered.set_index("feature")["cumsum"]
     ranked["cumsum"] = ranked["feature"].map(cumsum_by_feature)
     return (

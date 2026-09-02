@@ -4,8 +4,9 @@ from __future__ import annotations
 
 import logging
 import math
+from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Any, Mapping, Sequence
+from typing import Any, Iterator, Mapping, Sequence
 
 import numpy as np
 
@@ -37,6 +38,11 @@ except ImportError:
     optuna = None
 
 try:
+    import shap
+except ImportError:
+    shap = None
+
+try:
     with stdlib_module("statistics"):
         from BorutaShap import BorutaShap
 except Exception as exc:  # noqa: BLE001 - optional package may fail on incompatible numpy
@@ -44,6 +50,41 @@ except Exception as exc:  # noqa: BLE001 - optional package may fail on incompat
     _boruta_import_error: BaseException | None = exc
 else:
     _boruta_import_error = None
+
+
+@contextmanager
+def shap_binary_list_compat() -> Iterator[None]:
+    """Make ``TreeExplainer.shap_values`` return the shape BorutaShap expects.
+
+    Up to shap 0.44 a binary tree classifier returned a list of two
+    ``(n_rows, n_features)`` arrays. From 0.45 it returns one
+    ``(n_rows, n_features, n_classes)`` array, and BorutaShap's own reducer for
+    that case collapses the wrong axes -- it ends up with one importance per
+    *class* instead of per feature, so the very next step indexes past the end
+    of its own array and the run dies with ``IndexError: list index out of
+    range``.
+
+    Splitting the 3-D result back into a per-class list restores the contract
+    BorutaShap was written against, without vendoring its importance code.
+    """
+    if shap is None:
+        yield
+        return
+    explainer = shap.TreeExplainer
+    original = explainer.shap_values
+
+    def shap_values(self: Any, *args: Any, **kwargs: Any) -> Any:
+        values = original(self, *args, **kwargs)
+        array = getattr(values, "values", values)
+        if isinstance(array, np.ndarray) and array.ndim == 3:
+            return [array[:, :, index] for index in range(array.shape[2])]
+        return values
+
+    explainer.shap_values = shap_values
+    try:
+        yield
+    finally:
+        explainer.shap_values = original
 
 
 @dataclass(frozen=True)
@@ -527,13 +568,14 @@ class BorutaShapSelector:
                 importance_measure="shap",
                 classification=True,
             )
-            feature_selector.fit(
-                X=features,
-                y=target,
-                n_trials=options["boruta_trials"],
-                random_state=seed,
-                verbose=False,
-            )
+            with shap_binary_list_compat():
+                feature_selector.fit(
+                    X=features,
+                    y=target,
+                    n_trials=options["boruta_trials"],
+                    random_state=seed,
+                    verbose=False,
+                )
             if options["tentative_fix_method"] == "rough":
                 feature_selector.TentativeRoughFix()
         except Exception as exc:  # noqa: BLE001 - third-party Boruta failures

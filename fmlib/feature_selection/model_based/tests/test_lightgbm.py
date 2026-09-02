@@ -332,13 +332,15 @@ def test_options_prefer_n_jobs_over_legacy_driver_n_jobs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("mode", "expected_driver_calls"),
-    [("global", 1), ("per_fold", 0)],
+    ("mode", "expected_tune_calls"),
+    # Folds execute on the driver, so per-fold tuning calls the same
+    # module-level tune_parameters once per fold; "global" tunes once up front.
+    [("global", 1), ("per_fold", 2)],
 )
 def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
-    expected_driver_calls: int,
+    expected_tune_calls: int,
 ) -> None:
     _require_ml_backends()
     context = _context(
@@ -405,7 +407,7 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         return_importances=True,
     )
 
-    assert len(tune_calls) == expected_driver_calls
+    assert len(tune_calls) == expected_tune_calls
     assert len(captured_folds) == 2
     assert all(fold["optuna_mode"] == mode for fold in captured_folds)
     assert all(fold["n_jobs"] == 1 for fold in captured_folds)

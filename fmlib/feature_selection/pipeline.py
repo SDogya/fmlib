@@ -23,6 +23,7 @@ from fmlib.feature_selection.result import (
 )
 from fmlib.feature_selection.runner import STUB_METHODS, run_order, validate_order_prerequisites
 from fmlib.feature_selection.schema import FeatureSchema, ensure_no_feature_leak
+from fmlib.feature_selection.utils.local_data import is_spark_dataframe
 from fmlib.feature_selection.utils.verbose import (
     VERBOSE_LOG_FILENAME,
     VerboseRecorder,
@@ -51,7 +52,7 @@ class FeatureSelectionPipeline:
 
     def fit_select(
         self: FeatureSelectionPipeline,
-        spark: Any,
+        spark: Any = None,
         *,
         schema: FeatureSchema,
         data: Any = None,
@@ -63,8 +64,13 @@ class FeatureSelectionPipeline:
         Pass either a single ``data`` DataFrame (with ``schema.split``) or a
         ``datasets`` mapping with a required ``train`` key. Inputs are not mutated.
 
+        ``spark`` is only needed for Spark inputs, and even then only as a
+        sanity check: a Spark DataFrame carries its own session and no selector
+        reads this argument. Pandas inputs run without a session, so a local
+        run needs no cluster.
+
         Args:
-            spark: Active Spark session (duck-typed in the skeleton).
+            spark: Active Spark session, or ``None`` for a pandas-only run.
             schema: Feature role description.
             data: Single Spark DataFrame with an optional split column.
             datasets: Mapping of ``train`` / ``valid`` / ``test`` DataFrames.
@@ -79,12 +85,13 @@ class FeatureSelectionPipeline:
             SchemaError: On invalid schema or missing columns.
             BackendError: When ``spark`` / DataFrames are not usable.
         """
-        ensure_spark_session(spark)
         resolved, datasets_mode = self._resolve_datasets(
             data=data,
             datasets=datasets,
             schema=schema,
         )
+        needs_session = any(is_spark_dataframe(frame) for frame in resolved.values())
+        ensure_spark_session(spark, required=needs_session)
         self._validate_inputs(resolved, schema=schema, datasets_mode=datasets_mode)
 
         recorder = VerboseRecorder(self.config.execution.verbose)

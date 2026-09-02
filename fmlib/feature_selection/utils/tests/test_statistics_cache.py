@@ -27,6 +27,11 @@ from fmlib.feature_selection.utils.statistics_cache import (
 )
 
 
+def _stored_methods(cache: StatisticsMetricsCache) -> list[str]:
+    """Method names present in a cache file, in insertion order."""
+    return [entry["method"] for entry in cache._entries]  # noqa: SLF001 - test probe
+
+
 def _schema() -> FeatureSchema:
     return FeatureSchema(
         categorical=("cat",),
@@ -75,7 +80,13 @@ def test_cache_miss_appends_and_hit_reuses(tmp_path: Path) -> None:
     config = FeatureSelectionConfig.from_dict(
         {
             "order": [{"null_rate": {"threshold": 0.5}}],
-            "statistics": {"cache": {"enabled": True, "path": str(path)}},
+            "statistics": {
+                "cache": {
+                    "enabled": True,
+                    "path": str(path),
+                    "dataset_id": "unit-test",
+                },
+            },
         },
     )
     context = _context(config)
@@ -100,7 +111,10 @@ def test_cache_miss_appends_and_hit_reuses(tmp_path: Path) -> None:
         assert remaining2 == first_kept
 
     cache = StatisticsMetricsCache.load(path)
-    assert cache.lookup("null_rate", {}) is not None
+    # The key now carries the dataset it was measured on, so an entry is
+    # no longer reachable by the bare method parameters.
+    assert cache.lookup("null_rate", {}) is None
+    assert _stored_methods(cache) == ["null_rate"]
     assert "drop_null" not in remaining2
     assert "keep" in remaining2
 
@@ -132,7 +146,13 @@ def test_different_scale_method_is_a_second_entry(tmp_path: Path) -> None:
                         },
                     },
                 ],
-                "statistics": {"cache": {"enabled": True, "path": str(path)}},
+                "statistics": {
+                "cache": {
+                    "enabled": True,
+                    "path": str(path),
+                    "dataset_id": "unit-test",
+                },
+            },
             },
         )
         context = StageContext(
@@ -163,6 +183,7 @@ def test_force_recompute_replaces_entry(tmp_path: Path) -> None:
                     "enabled": True,
                     "path": str(path),
                     "force_recompute": True,
+                    "dataset_id": "unit-test",
                 },
             },
         },

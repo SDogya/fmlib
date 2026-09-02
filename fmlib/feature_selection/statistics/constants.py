@@ -349,8 +349,19 @@ class ConstantsSelector:
     ) -> FeatureDecision | None:
         """Return a drop decision for one feature, or ``None`` to keep it."""
         if n_unique == 0:
-            # All-null columns are left to null-rate filtering.
-            return None
+            # An all-null column carries no signal at all. Leaving it to
+            # null_rate only works when null_rate is in order; when it is not,
+            # the column reaches correlation (Imputer cannot fit an all-null
+            # input) or the model stage and fails there instead.
+            return FeatureDecision(
+                feature=feature,
+                stage=self.stage_name,
+                method=self.method_name,
+                reason="all_null",
+                value=0.0,
+                threshold=1.0,
+                keep=False,
+            )
         if n_unique <= 1:
             return FeatureDecision(
                 feature=feature,

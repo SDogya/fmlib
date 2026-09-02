@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any, Optional, Sequence
+import logging
+from typing import Any, Callable, Optional, Sequence
 
 from fmlib.feature_selection.backends.base import BackendCapabilities
 from fmlib.feature_selection.exceptions import BackendError, SchemaError
+
+logger = logging.getLogger(__name__)
 
 SPARK_CAPABILITIES = BackendCapabilities(
     name="spark",
@@ -14,21 +17,29 @@ SPARK_CAPABILITIES = BackendCapabilities(
 )
 
 
-def ensure_spark_session(spark: Any) -> Any:
+def ensure_spark_session(spark: Any, *, required: bool = True) -> Any:
     """Validate that ``spark`` looks like an active SparkSession.
 
-    The skeleton uses duck typing so core imports do not require pyspark.
+    The module uses duck typing so core imports do not require pyspark.
+    No selector reads the session: every stage works off the DataFrames in
+    ``StageContext.datasets``, and a Spark DataFrame already carries its own
+    session. ``required=False`` therefore lets a fully local pandas run
+    proceed without one.
 
     Args:
-        spark: Candidate Spark session.
+        spark: Candidate Spark session, or ``None``.
+        required: When False, ``None`` is accepted and returned unchanged.
 
     Returns:
         The same ``spark`` object.
 
     Raises:
-        BackendError: If the object does not look like a Spark session.
+        BackendError: If the object does not look like a Spark session, or if
+            it is ``None`` while ``required`` is set.
     """
     if spark is None:
+        if not required:
+            return None
         msg = "An active SparkSession is required. Pass spark=spark to fit_select."
         raise BackendError(
             msg,
@@ -66,6 +77,38 @@ def ensure_dataframe(data: Any, *, name: str = "data") -> Any:
             msg,
         )
     return data
+
+
+def persist_unless_cached(frame: Any) -> tuple[Any, Callable[[], None]]:
+    """Persist ``frame`` unless it already is, and return it with a releaser.
+
+    Selectors that aggregate the same frame once per column batch would
+    otherwise recompute its whole lineage on every batch. Persisting is
+    best-effort: a cluster that refuses the storage level should still produce
+    numbers, just more slowly.
+
+    Args:
+        frame: Spark DataFrame (or any object exposing ``persist``).
+
+    Returns:
+        Tuple of the frame to use and a no-argument release callable, safe to
+        call in a ``finally`` block whether or not persisting happened.
+    """
+    if getattr(frame, "is_cached", False):
+        return frame, lambda: None
+    try:
+        persisted = frame.persist()
+    except Exception as exc:  # noqa: BLE001 - persistence is best-effort
+        logger.debug("Could not persist a frame: %s", exc)
+        return frame, lambda: None
+
+    def release() -> None:
+        try:
+            persisted.unpersist()
+        except Exception:  # noqa: BLE001 - release is best-effort
+            logger.debug("Could not unpersist a frame.")
+
+    return persisted, release
 
 
 def get_columns(data: Any) -> list[str]:

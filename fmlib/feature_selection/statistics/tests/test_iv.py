@@ -263,9 +263,14 @@ class TestMathAndHelperFunctions:
         ordered = sorted([1, "a"], key=str)
         assert mapped == {ordered[0]: 0.0, ordered[1]: 1.0}
 
-    def test_binary_mapping_one_label_empty_and_numpy(self) -> None:
-        assert _binary_mapping(["only"], method="iv") == {"only": 1.0}
-        assert _binary_mapping([], method="iv") == {}
+    def test_binary_mapping_needs_both_classes(self) -> None:
+        # One class makes every bin all-good or all-bad, so IV is 0.0 for
+        # every feature and the threshold drops the whole candidate list --
+        # indistinguishable in the artifact from a measured result.
+        with pytest.raises(ExecutionError, match="needs both classes"):
+            _binary_mapping(["only"], method="iv")
+        with pytest.raises(ExecutionError, match="needs both classes"):
+            _binary_mapping([], method="iv")
         assert _binary_mapping(np.array([0, 1]), method="iv") == {0: 0.0, 1: 1.0}
 
     def test_binary_mapping_more_than_two_classes_raises(self) -> None:
@@ -535,11 +540,11 @@ class TestIvSelectorPandas:
                 ["x"],
             )
 
-    def test_single_class_target_yields_zero_iv(self) -> None:
+    def test_single_class_target_is_reported_not_scored_as_zero(self) -> None:
         frame = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "response": [1, 1, 1, 1]})
         context = _context(frame, categorical=(), continuous=("x",))
-        IvSelector(IvConfig(threshold=0.02, num_bins=2)).select(context, ["x"])
-        assert context.scores["iv"]["values"]["x"] == 0.0
+        with pytest.raises(ExecutionError, match="needs both classes"):
+            IvSelector(IvConfig(threshold=0.02, num_bins=2)).select(context, ["x"])
 
     def test_nulls_form_a_separate_bin(self) -> None:
         frame = pd.DataFrame(
@@ -677,27 +682,26 @@ class TestIvSelectorSpark:
         assert calls["persist"] >= 1
         assert calls["unpersist"] >= 1
 
-    def test_already_cached_skips_persist(
-        self,
-        spark: Any,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        from pyspark.sql import DataFrame as SparkDataFrame
+    def test_already_cached_skips_persist(self) -> None:
+        """The shared helper must not re-persist a frame that reports itself cached.
 
-        pandas_frame = pd.DataFrame(
-            {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
-        )
-        train = spark.createDataFrame(pandas_frame)
-        monkeypatch.setattr(SparkDataFrame, "is_cached", True, raising=False)
+        Checked on the helper rather than through the selector: pyspark sets
+        ``is_cached`` per instance in ``DataFrame.__init__``, so patching the
+        class never reaches the frame the selector builds internally.
+        """
+        from fmlib.feature_selection.backends.spark import persist_unless_cached
 
-        def persist(self: Any, *_args: Any, **_kwargs: Any) -> Any:
-            del self
-            pytest.fail("persist must not run when the prepared frame is cached")
+        class CachedFrame:
+            is_cached = True
 
-        monkeypatch.setattr(SparkDataFrame, "persist", persist)
-        context = _context(train, categorical=(), continuous=("num",), spark=spark)
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
-        assert "num" in context.scores["iv"]["values"]
+            def persist(self: CachedFrame) -> None:
+                pytest.fail("persist must not run on an already-cached frame")
+
+        frame = CachedFrame()
+        same, release = persist_unless_cached(frame)
+
+        assert same is frame
+        release()  # must be safe even though nothing was persisted
 
     def test_persist_failure_still_computes(
         self,
@@ -918,7 +922,10 @@ class TestIvSelectorSpark:
         with pytest.raises(ExecutionError, match=r"failed to inspect target.*inspect exploded"):
             IvSelector(IvConfig()).select(context, ["num"])
 
-    def test_spark_binary_target_empty_one_and_three_labels(self, spark: Any) -> None:
+    def test_spark_binary_target_rejects_empty_one_and_three_labels(
+        self,
+        spark: Any,
+    ) -> None:
         from pyspark.sql.types import DoubleType, IntegerType, StructField, StructType
 
         empty_schema = StructType(
@@ -929,15 +936,15 @@ class TestIvSelectorSpark:
         )
         empty = spark.createDataFrame([(1.0, None), (2.0, None)], empty_schema)
         empty_ctx = _context(empty, categorical=(), continuous=("num",), spark=spark)
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(empty_ctx, ["num"])
-        assert "num" in empty_ctx.scores["iv"]["values"]
+        with pytest.raises(ExecutionError, match="needs both classes"):
+            IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(empty_ctx, ["num"])
 
         single = spark.createDataFrame(
             pd.DataFrame({"num": [1.0, 2.0, 3.0, 4.0], "response": [1, 1, 1, 1]}),
         )
         single_ctx = _context(single, categorical=(), continuous=("num",), spark=spark)
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(single_ctx, ["num"])
-        assert single_ctx.scores["iv"]["values"]["num"] == 0.0
+        with pytest.raises(ExecutionError, match="needs both classes"):
+            IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(single_ctx, ["num"])
 
         three = spark.createDataFrame(
             pd.DataFrame({"num": [1.0, 2.0, 3.0], "response": [0, 1, 2]}),

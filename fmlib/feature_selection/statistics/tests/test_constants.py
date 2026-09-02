@@ -104,7 +104,7 @@ def test_keeps_all_when_thresholds_relaxed() -> None:
     assert decisions == []
 
 
-def test_all_null_column_is_left_to_null_rate_selector() -> None:
+def test_all_null_column_is_dropped_with_its_own_reason() -> None:
     frame = _frame()
     frame["all_null"] = None
     config = ConstantsConfig(max_frequency=0.5)
@@ -112,7 +112,9 @@ def test_all_null_column_is_left_to_null_rate_selector() -> None:
 
     decisions = ConstantsSelector(config).select(_context(frame, fs_config), ["all_null"])
 
-    assert decisions == []
+    assert [(item.feature, item.reason, item.keep) for item in decisions] == [
+        ("all_null", "all_null", False),
+    ]
 
 
 def test_spark_rejects_map_type_before_collect(spark: Any) -> None:

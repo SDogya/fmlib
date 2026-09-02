@@ -15,6 +15,7 @@ every feature, because a silent skip reads in the report exactly like
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -78,9 +79,19 @@ def _decide(
     *,
     split: str | None = None,
 ) -> Any:
-    """Run PSI over ``datasets`` and return the single feature's decision."""
+    """Run PSI over ``datasets`` and report the single feature's outcome.
+
+    ``select`` returns drops only, so the measured value comes from the scores
+    the selector records for every candidate; ``keep`` is the absence of a drop.
+    """
     selector = PsiSelector(PsiConfig(mode=mode, threshold=0.1))
-    return selector.select(_context(datasets, split=split), [_FEATURE])[0]
+    context = _context(datasets, split=split)
+    decisions = selector.select(context, [_FEATURE])
+    dropped = {decision.feature for decision in decisions}
+    return SimpleNamespace(
+        value=context.scores["psi"]["values"][_FEATURE],
+        keep=_FEATURE not in dropped,
+    )
 
 
 @pytest.mark.parametrize("mode", ["train_valid", "month_over_month"])

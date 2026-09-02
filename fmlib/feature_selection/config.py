@@ -612,12 +612,19 @@ class PsiConfig:
     - all earlier months go to train
 
     Args:
+    Continuous candidates are quantile-binned; categorical candidates are
+    compared level by level. Nulls form a bin of their own on both paths.
+
+    Args:
         mode: 'train_valid' or 'month_over_month' comparison mode.
         threshold: PSI value threshold for feature exclusion.
-        num_bins: Number of quantile bins for PSI calculation.
+        num_bins: Number of quantile bins for continuous features.
         month_column: Column name containing month identifier (for train_valid mode).
         test_months: Number of latest months to use as test set.
-        eps: Small constant for probability adjustment in Pandas PSI calculation.
+        max_levels: Keep at most this many baseline levels per categorical
+            feature (most frequent); the rest collapse into one ``other`` bin.
+            This also bounds what the Spark path collects to the driver.
+            ``null`` keeps every level and is unsafe on ID-like columns.
         relative_error: Relative error for approximate quantiles in PySpark PSI.
         batch_size: Column batch size for PySpark PSI computation.
         n_jobs: Number of parallel jobs for Pandas PSI calculation.
@@ -631,7 +638,7 @@ class PsiConfig:
     num_bins: int = 10
     month_column: str = "month_part"
     test_months: int = 1
-    eps: float = 1e-4
+    max_levels: Optional[int] = 50
     relative_error: float = 0.001
     batch_size: int = 100
     n_jobs: int = -1
@@ -690,12 +697,26 @@ class StatisticsCacheConfig:
 
     ``path`` is a file, not a directory. It is **not** placed inside the
     collision-safe ``output_dir`` so later runs can reuse it. ``null`` means
-    ``statistics_metrics.json`` in the process working directory.
+    ``statistics_metrics.json`` in the process working directory -- which is
+    shared by every run started from that directory, so set ``path`` per
+    experiment unless the data is identical.
+
+    Every entry is keyed by the dataset it was measured on -- ``dataset_id``
+    plus the candidate list, the target, and the shape of each split -- in
+    addition to the method's compute parameters.
+
+    ``dataset_id`` is **required** when the cache is enabled. Shape and column
+    names alone cannot tell two tables apart (a rebuilt table with the same
+    columns and row count is a different population), and a metric silently
+    reused across datasets drops the wrong features while the artifact reads
+    like a measurement. Naming the data is the one thing the caller knows and
+    the library cannot infer; change the id whenever the contents change.
     """
 
     enabled: bool = False
     path: Optional[str] = None
     force_recompute: bool = False
+    dataset_id: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -1517,6 +1538,21 @@ def _validate_statistics_cache(config: StatisticsCacheConfig) -> None:
     ):
         msg = "statistics.cache.path must be a string or null."
         raise ConfigError(msg)
+    if config.dataset_id is not None and (
+        isinstance(config.dataset_id, bool) or not isinstance(config.dataset_id, str)
+    ):
+        msg = "statistics.cache.dataset_id must be a string or null."
+        raise ConfigError(msg)
+    if config.enabled and not (config.dataset_id or "").strip():
+        msg = (
+            "statistics.cache.dataset_id is required when statistics.cache.enabled "
+            "is true. Column names, row counts and method parameters cannot tell "
+            "two tables apart, so without an explicit id the cache can serve "
+            "metrics measured on other data and drop the wrong features. Use a "
+            "name that changes whenever the contents change, for example "
+            "'sa_response_sms@2026-08'."
+        )
+        raise ConfigError(msg)
 
 
 def _require_readable_feature_drop(path: Optional[str], section: str) -> None:
@@ -1559,12 +1595,12 @@ def _validate_psi_config(config: PsiConfig, section: str = "statistics.psi") -> 
     ):
         msg = f"{section}.test_months must be a positive integer."
         raise ConfigError(msg)
-    if (
-        isinstance(config.eps, bool)
-        or not isinstance(config.eps, (int, float))
-        or not 0.0 < float(config.eps) <= 1.0
+    if config.max_levels is not None and (
+        isinstance(config.max_levels, bool)
+        or not isinstance(config.max_levels, int)
+        or config.max_levels < 2
     ):
-        msg = f"{section}.eps must be in (0, 1]."
+        msg = f"{section}.max_levels must be an integer >= 2 or null."
         raise ConfigError(msg)
     if (
         isinstance(config.relative_error, bool)

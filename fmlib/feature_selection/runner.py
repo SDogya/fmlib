@@ -51,6 +51,7 @@ from fmlib.feature_selection.utils.statistics_cache import (
     CACHEABLE_METHODS,
     StatisticsMetricsCache,
     compute_fingerprint,
+    dataset_fingerprint,
     resolve_cache_path,
 )
 from fmlib.feature_selection.utils.steps import (
@@ -61,6 +62,27 @@ from fmlib.feature_selection.utils.steps import (
 from fmlib.feature_selection.utils.verbose import run_selector_logged
 
 STUB_METHODS = frozenset({"lasso", "random_forest", "stability_classifier"})
+
+_STUB_REFUSAL = (
+    "{method!r} is not implemented: it drops a random subset of candidates "
+    "instead of measuring anything, so its output is indistinguishable from a "
+    "real selection. Remove it from order. Implemented alternatives: "
+    "lightgbm / catboost_rfe for the model stage, boruta_shap for the precise "
+    "stage, and null_rate / constants / low_variance / correlation / psi / iv "
+    "for statistics."
+)
+
+
+def refuse_stub_method(method: str) -> None:
+    """Raise when an order step names a placeholder selector.
+
+    A stub that returns a plausible-looking feature list is worse than a
+    missing method: the artifact records ``stub_random_drop`` decisions that
+    read exactly like measured ones, and the only warning lands in
+    ``SelectionResult.warnings``, which callers rarely inspect.
+    """
+    if method in STUB_METHODS:
+        raise ConfigError(_STUB_REFUSAL.format(method=method))
 
 _PREPROCESSING_METHODS = frozenset(
     {"feature_drop", "random_feature_drop", "row_sample"},
@@ -111,6 +133,7 @@ def validate_order_prerequisites(context: StageContext) -> None:
     """
     for index, step in enumerate(context.config.order):
         section = f"order[{index}].{step.method}"
+        refuse_stub_method(step.method)
         if step.method == "psi":
             settings = _build_section(PsiConfig, step.params, section)
             _validate_psi(context, settings)
@@ -150,6 +173,7 @@ def _run_step(
     cache: StatisticsMetricsCache | None = None,
 ) -> list[str]:
     """Build and execute one order step."""
+    refuse_stub_method(step.method)
     context.run_seed = resolve_step_seed(step.params, context)
     bind_process_rng(context.run_seed)
     if step.method in _PREPROCESSING_METHODS:
@@ -349,10 +373,16 @@ def _open_stats_cache(context: StageContext) -> StatisticsMetricsCache | None:
     if not settings.enabled:
         return None
     path = resolve_cache_path(settings.path)
-    return StatisticsMetricsCache.load(
+    cache = StatisticsMetricsCache.load(
         path,
         force_recompute=settings.force_recompute,
     )
+    cache.data_fingerprint = dataset_fingerprint(
+        context.datasets,
+        context.schema,
+        dataset_id=settings.dataset_id,
+    )
+    return cache
 
 
 def _run_cached_statistics(
@@ -369,6 +399,7 @@ def _run_cached_statistics(
         max_local_rows=context.config.execution.max_local_rows,
         seed=step_seed(context),
         task_type=context.schema.task_type,
+        data=getattr(cache, "data_fingerprint", None),
     )
     force = bool(context.config.statistics.cache.force_recompute)
     metrics = None if force else cache.lookup(method, fingerprint)
