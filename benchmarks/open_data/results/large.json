@@ -1,0 +1,565 @@
+[
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 207,
+    "seconds": 0.0,
+    "peak_rss_gb": 0.74,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 207,
+      "auc_valid": 0.77137,
+      "auc_test": 0.7893,
+      "best_iteration": 33,
+      "fit_seconds": 1.45
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 55,
+    "seconds": 2.13,
+    "peak_rss_gb": 0.74,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 130
+      },
+      {
+        "step": "statistics.constants",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 7
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 13
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 55,
+      "auc_valid": 0.75887,
+      "auc_test": 0.76746,
+      "best_iteration": 15,
+      "fit_seconds": 0.63
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 55,
+    "seconds": 19.63,
+    "peak_rss_gb": 0.74,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 130
+      },
+      {
+        "step": "statistics.constants",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 7
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 13
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 55,
+      "auc_valid": 0.75887,
+      "auc_test": 0.76746,
+      "best_iteration": 15,
+      "fit_seconds": 0.63
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 86,
+    "seconds": 79.6,
+    "peak_rss_gb": 0.84,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 121
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 86,
+      "auc_valid": 0.7738,
+      "auc_test": 0.78243,
+      "best_iteration": 36,
+      "fit_seconds": 0.86
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 50,
+    "seconds": 34.85,
+    "peak_rss_gb": 0.84,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 130
+      },
+      {
+        "step": "statistics.constants",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 7
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 13
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 5
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 50,
+      "auc_valid": 0.7843,
+      "auc_test": 0.78959,
+      "best_iteration": 106,
+      "fit_seconds": 1.18
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "kdd09_appetency",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 207,
+    "n_features_out": 30,
+    "seconds": 203.7,
+    "peak_rss_gb": 0.84,
+    "steps": [
+      {
+        "step": "statistics.null_rate",
+        "dropped": 130
+      },
+      {
+        "step": "statistics.constants",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 7
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 13
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 6
+      },
+      {
+        "step": "precise.boruta_shap",
+        "dropped": 19
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 30,
+      "auc_valid": 0.78113,
+      "auc_test": 0.80302,
+      "best_iteration": 22,
+      "fit_seconds": 0.44
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "santander",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 201,
+    "n_features_out": 201,
+    "seconds": 0.0,
+    "peak_rss_gb": 2.0,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 201,
+      "auc_valid": 0.88189,
+      "auc_test": 0.88895,
+      "best_iteration": 400,
+      "fit_seconds": 16.02
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "santander",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 201,
+    "n_features_out": 57,
+    "seconds": 32.88,
+    "peak_rss_gb": 2.13,
+    "steps": [
+      {
+        "step": "statistics.iv",
+        "dropped": 144
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 57,
+      "auc_valid": 0.84643,
+      "auc_test": 0.84998,
+      "best_iteration": 318,
+      "fit_seconds": 5.04
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "santander",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 201,
+    "n_features_out": 57,
+    "seconds": 107.17,
+    "peak_rss_gb": 2.15,
+    "steps": [
+      {
+        "step": "statistics.iv",
+        "dropped": 144
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 57,
+      "auc_valid": 0.84643,
+      "auc_test": 0.84998,
+      "best_iteration": 318,
+      "fit_seconds": 4.98
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "santander",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 201,
+    "n_features_out": 139,
+    "seconds": 103.78,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 62
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 139,
+      "auc_valid": 0.88076,
+      "auc_test": 0.88852,
+      "best_iteration": 400,
+      "fit_seconds": 11.59
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "santander",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 201,
+    "n_features_out": 48,
+    "seconds": 115.35,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "statistics.iv",
+        "dropped": 144
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 9
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 48,
+      "auc_valid": 0.83069,
+      "auc_test": 0.8355,
+      "best_iteration": 269,
+      "fit_seconds": 3.87
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "santander",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 201,
+    "n_features_out": 48,
+    "seconds": 609.03,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "statistics.iv",
+        "dropped": 144
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 9
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 48,
+      "auc_valid": 0.83041,
+      "auc_test": 0.83597,
+      "best_iteration": 219,
+      "fit_seconds": 3.72
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "porto_seguro",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 57,
+    "n_features_out": 57,
+    "seconds": 0.0,
+    "peak_rss_gb": 2.21,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 57,
+      "auc_valid": 0.62884,
+      "auc_test": 0.63522,
+      "best_iteration": 110,
+      "fit_seconds": 3.73
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "porto_seguro",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 57,
+    "n_features_out": 17,
+    "seconds": 12.54,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 37
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 17,
+      "auc_valid": 0.62008,
+      "auc_test": 0.62379,
+      "best_iteration": 31,
+      "fit_seconds": 1.46
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "porto_seguro",
+    "pipeline": "cheap_psi",
+    "status": "ok",
+    "n_features_in": 57,
+    "n_features_out": 17,
+    "seconds": 25.02,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 37
+      }
+    ],
+    "evaluation": {
+      "label": "cheap_psi",
+      "n_features": 17,
+      "auc_valid": 0.62008,
+      "auc_test": 0.62379,
+      "best_iteration": 31,
+      "fit_seconds": 1.45
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "porto_seguro",
+    "pipeline": "lightgbm",
+    "status": "ok",
+    "n_features_in": 57,
+    "n_features_out": 52,
+    "seconds": 62.21,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "model.lightgbm",
+        "dropped": 5
+      }
+    ],
+    "evaluation": {
+      "label": "lightgbm",
+      "n_features": 52,
+      "auc_valid": 0.62851,
+      "auc_test": 0.63135,
+      "best_iteration": 132,
+      "fit_seconds": 3.52
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "porto_seguro",
+    "pipeline": "full",
+    "status": "ok",
+    "n_features_in": 57,
+    "n_features_out": 16,
+    "seconds": 42.11,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 37
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 1
+      }
+    ],
+    "evaluation": {
+      "label": "full",
+      "n_features": 16,
+      "auc_valid": 0.61997,
+      "auc_test": 0.62562,
+      "best_iteration": 45,
+      "fit_seconds": 1.56
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "porto_seguro",
+    "pipeline": "full_boruta",
+    "status": "ok",
+    "n_features_in": 57,
+    "n_features_out": 13,
+    "seconds": 248.5,
+    "peak_rss_gb": 2.21,
+    "steps": [
+      {
+        "step": "statistics.constants",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.low_variance",
+        "dropped": 1
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 37
+      },
+      {
+        "step": "model.lightgbm",
+        "dropped": 2
+      },
+      {
+        "step": "precise.boruta_shap",
+        "dropped": 2
+      }
+    ],
+    "evaluation": {
+      "label": "full_boruta",
+      "n_features": 13,
+      "auc_valid": 0.61949,
+      "auc_test": 0.62527,
+      "best_iteration": 40,
+      "fit_seconds": 1.49
+    },
+    "ground_truth": {},
+    "error": ""
+  }
+]

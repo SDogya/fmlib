@@ -213,7 +213,12 @@ def prepare_mixed_frame(
         raise ExecutionError(msg)
 
     for column in categorical:
-        local[column] = local[column].fillna("None").astype(str)
+        # Go through object first: filling a pandas Categorical with a label
+        # that is not already one of its categories raises, and a column read
+        # back from parquet or produced by `astype("category")` arrives as one.
+        local[column] = (
+            local[column].astype("object").where(local[column].notna(), "None").astype(str)
+        )
 
     if numeric:
         converted = local.loc[:, numeric].apply(pd.to_numeric, errors="coerce")
