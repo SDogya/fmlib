@@ -96,7 +96,7 @@ def apply_memory_cap(limit_gb: int = MEMORY_LIMIT_GB) -> None:
     exceeding it has to be an error rather than a slow swap.
     """
     limit = limit_gb * 1024**3
-    soft, hard = resource.getrlimit(resource.RLIMIT_AS)
+    _soft, hard = resource.getrlimit(resource.RLIMIT_AS)
     if hard != resource.RLIM_INFINITY:
         limit = min(limit, hard)
     resource.setrlimit(resource.RLIMIT_AS, (limit, hard))
@@ -357,7 +357,7 @@ def _flat_table(records: list[RunRecord]) -> pd.DataFrame:
         )
     frame = pd.DataFrame(rows)
     if "auc_test" in frame and not frame.empty:
-        for dataset, part in frame.groupby("dataset"):
+        for _dataset, part in frame.groupby("dataset"):
             baseline = part.loc[part["pipeline"] == "baseline", "auc_test"]
             if not baseline.empty and pd.notna(baseline.iloc[0]):
                 frame.loc[part.index, "auc_delta"] = (

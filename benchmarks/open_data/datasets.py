@@ -173,7 +173,7 @@ def prepare(name: str, *, seed: int = DEFAULT_SEED) -> dict[str, Any]:
         "target": TARGET_COLUMN,
         "time": MONTH_COLUMN,
         "task_type": "binary_classification",
-        "n_rows": {split: int(len(part)) for split, part in splits.items()},
+        "n_rows": {split: len(part) for split, part in splits.items()},
         "n_features": len(categorical) + len(continuous),
         "positive_rate": {
             split: round(float(part[TARGET_COLUMN].mean()), 6)

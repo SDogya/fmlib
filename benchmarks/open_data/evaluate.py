@@ -14,7 +14,6 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any, Optional, Sequence
 
-import numpy as np
 import pandas as pd
 
 logger = logging.getLogger(__name__)
