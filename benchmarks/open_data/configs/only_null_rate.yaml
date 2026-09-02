@@ -1,0 +1,9 @@
+# One step from `cheap`, in isolation: how much does this filter alone remove,
+# and what does that cost downstream? Parameters match cheap.yaml exactly.
+order:
+  - null_rate:
+      threshold: 0.95
+
+execution:
+  seed: 42
+  max_local_rows: 500000

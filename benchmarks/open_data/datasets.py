@@ -102,32 +102,42 @@ REGISTRY: dict[str, DatasetSpec] = {
 }
 
 
-def prepared_dir(name: str) -> Path:
-    """Directory holding the prepared parquet splits for ``name``."""
-    return data_root() / name
+def prepared_dir(name: str, seed: int = DEFAULT_SEED) -> Path:
+    """Directory holding the prepared parquet splits for ``name`` at ``seed``.
+
+    The seed picks the split -- and, for the synthetic set, the data itself --
+    so each seed needs its own cache. The default seed keeps the unsuffixed
+    path the first sweep wrote, so those artifacts stay valid.
+    """
+    suffix = "" if seed == DEFAULT_SEED else f"__s{seed}"
+    return data_root() / f"{name}{suffix}"
 
 
-def is_prepared(name: str) -> bool:
-    """Whether every artifact for ``name`` is already on disk."""
-    directory = prepared_dir(name)
+def is_prepared(name: str, seed: int = DEFAULT_SEED) -> bool:
+    """Whether every artifact for ``name`` at ``seed`` is already on disk."""
+    directory = prepared_dir(name, seed)
     return (directory / "meta.json").exists() and all(
         (directory / f"{split}.parquet").exists()
         for split in ("train", "valid", "test")
     )
 
 
-def load(name: str) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
+def load(
+    name: str,
+    seed: int = DEFAULT_SEED,
+) -> tuple[dict[str, pd.DataFrame], dict[str, Any]]:
     """Load prepared splits and metadata, preparing them first if needed.
 
     Args:
         name: Registry key.
+        seed: Which prepared variant to load; see :func:`prepare`.
 
     Returns:
         Tuple of ``{"train"/"valid"/"test": frame}`` and the metadata mapping.
     """
-    if not is_prepared(name):
-        prepare(name)
-    directory = prepared_dir(name)
+    if not is_prepared(name, seed):
+        prepare(name, seed=seed)
+    directory = prepared_dir(name, seed)
     meta = json.loads((directory / "meta.json").read_text(encoding="utf-8"))
     frames = {
         split: pd.read_parquet(directory / f"{split}.parquet")
@@ -147,7 +157,7 @@ def prepare(name: str, *, seed: int = DEFAULT_SEED) -> dict[str, Any]:
         The metadata mapping written next to the parquet files.
     """
     spec = REGISTRY[name]
-    directory = prepared_dir(name)
+    directory = prepared_dir(name, seed)
     directory.mkdir(parents=True, exist_ok=True)
 
     if spec.source == "synthetic":
@@ -405,16 +415,29 @@ def main() -> None:
     parser.add_argument("names", nargs="*", help="dataset names; empty with --all")
     parser.add_argument("--all", action="store_true", help="prepare every dataset")
     parser.add_argument("--force", action="store_true", help="re-prepare if cached")
+    parser.add_argument(
+        "--seeds",
+        nargs="+",
+        type=int,
+        default=[DEFAULT_SEED],
+        help="prepare one split per seed",
+    )
     args = parser.parse_args()
 
     names = list(REGISTRY) if args.all else args.names
     if not names:
         parser.error("pass dataset names or --all")
     for name in names:
-        if not args.force and is_prepared(name):
-            logger.info("%s already prepared at %s", name, prepared_dir(name))
-            continue
-        prepare(name)
+        for seed in args.seeds:
+            if not args.force and is_prepared(name, seed):
+                logger.info(
+                    "%s (seed %d) already prepared at %s",
+                    name,
+                    seed,
+                    prepared_dir(name, seed),
+                )
+                continue
+            prepare(name, seed=seed)
 
 
 if __name__ == "__main__":

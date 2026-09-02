@@ -1,0 +1,11 @@
+# One step from `cheap`, in isolation. Parameters match cheap.yaml exactly.
+order:
+  - correlation:
+      method: pearson
+      threshold: 0.95
+      tie_break: null_rate
+      max_rows: 100000
+
+execution:
+  seed: 42
+  max_local_rows: 500000

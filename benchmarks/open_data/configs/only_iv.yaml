@@ -1,0 +1,11 @@
+# One step from `cheap`, in isolation. Parameters match cheap.yaml exactly.
+order:
+  - iv:
+      threshold: 0.02
+      max_threshold: 3.0     # an IV this high is usually leakage, not signal
+      num_bins: 10
+      max_levels: 50
+
+execution:
+  seed: 42
+  max_local_rows: 500000

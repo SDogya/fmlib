@@ -1,0 +1,9 @@
+# One step from `cheap`, in isolation. Parameters match cheap.yaml exactly.
+order:
+  - low_variance:
+      min_variance: 0.01
+      scale_method: robust
+
+execution:
+  seed: 42
+  max_local_rows: 500000

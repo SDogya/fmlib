@@ -1,0 +1,9 @@
+# One step from `cheap`, in isolation. Parameters match cheap.yaml exactly.
+order:
+  - constants:
+      max_frequency: 0.999
+      chunk_size: 500
+
+execution:
+  seed: 42
+  max_local_rows: 500000
