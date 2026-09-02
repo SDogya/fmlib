@@ -159,7 +159,7 @@ def run_one(
         return record
 
     run_dir = output_dir / dataset / pipeline
-    run_dir.mkdir(parents=True, exist_ok=True)
+    _clear_run_dir(run_dir)
 
     started = time.perf_counter()
     try:
@@ -202,6 +202,20 @@ def run_one(
             record.status = "eval_failed"
             record.error = f"{type(exc).__name__}: {exc}"
     return record
+
+
+def _clear_run_dir(run_dir: Path) -> None:
+    """Empty a run directory so a re-run's artifacts are the only ones in it.
+
+    ``SelectionResult.save`` never overwrites -- it appends ``_1``, ``_2`` --
+    which is right for a production run and wrong here: after a second sweep
+    the directory holds two generations side by side and reading
+    ``final_results.json`` silently gives the older one.
+    """
+    if run_dir.exists():
+        for path in sorted(run_dir.glob("*.json")):
+            path.unlink()
+    run_dir.mkdir(parents=True, exist_ok=True)
 
 
 def _step_summary(result: Any) -> list[dict[str, Any]]:

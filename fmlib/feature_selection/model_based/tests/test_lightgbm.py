@@ -80,7 +80,12 @@ def _frame(n_rows: int = 20) -> pd.DataFrame:
     )
 
 
-def _mock_details() -> dict[str, Any]:
+def _mock_details(features: list[str] | None = None) -> dict[str, Any]:
+    features = features or ["first", "second"]
+    base_lgbm = [0.6, 0.4]
+    base_shap = [0.7, 0.3]
+    weights = (base_lgbm + [0.0] * len(features))[: len(features)]
+    shap_weights = (base_shap + [0.0] * len(features))[: len(features)]
     return {
         "selected_features": ["first"],
         "global_best_params": {"n_estimators": 120},
@@ -90,11 +95,11 @@ def _mock_details() -> dict[str, Any]:
         },
         "importances_df": pd.DataFrame(
             {
-                "feature": ["first", "second"],
-                "lgbm_norm": [0.6, 0.4],
-                "shap_norm": [0.7, 0.3],
-                "lgbm_cumsum": [0.6, 1.0],
-                "shap_cumsum": [0.7, 1.0],
+                "feature": features,
+                "lgbm_norm": weights,
+                "shap_norm": shap_weights,
+                "lgbm_cumsum": list(pd.Series(weights).cumsum()),
+                "shap_cumsum": list(pd.Series(shap_weights).cumsum()),
             },
         ),
     }
@@ -141,9 +146,14 @@ def test_selector_is_lightgbm() -> None:
     assert selector.method_name == "lightgbm"
 
 
-def test_select_scopes_training_to_continuous_candidates_and_passes_category(
+def test_select_evaluates_categorical_candidates_too(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Categorical candidates reach the model instead of passing it untouched.
+
+    While they were skipped, the model stage could never drop one, and the
+    importances of the continuous features were measured without them.
+    """
     context = _context(_frame())
     selector = LightGbmSelector(context.config.model)
     captured: dict[str, Any] = {}
@@ -151,7 +161,7 @@ def test_select_scopes_training_to_continuous_candidates_and_passes_category(
 
     def fake_select(**kwargs: Any) -> dict[str, Any]:
         captured.update(kwargs)
-        return _mock_details()
+        return _mock_details(["first", "second", "category"])
 
     monkeypatch.setattr(selector, "_select_robust_features", fake_select)
 
@@ -160,9 +170,15 @@ def test_select_scopes_training_to_continuous_candidates_and_passes_category(
         ["category", "first", "second"],
     )
 
-    assert captured["feature_cols"] == ["first", "second"]
+    assert captured["feature_cols"] == ["category", "first", "second"]
+    assert captured["categorical_cols"] == ["category"]
     assert captured["seed"] == 17
-    assert [decision.feature for decision in decisions] == ["first", "second"]
+    assert {decision.feature for decision in decisions} == {
+        "category",
+        "first",
+        "second",
+    }
+    decisions = [item for item in decisions if item.feature != "category"]
     assert decisions[0].keep is True
     assert decisions[0].reason == "passed_lgbm_shap_selection"
     assert decisions[0].stage == "model"
@@ -183,15 +199,15 @@ def test_select_stores_flat_json_compatible_scores(
     monkeypatch.setattr(
         selector,
         "_select_robust_features",
-        lambda **_kwargs: _mock_details(),
+        lambda **_kwargs: _mock_details(["first", "second", "category"]),
     )
 
     selector.select(context, context.candidates)
 
     scores = context.scores["lightgbm"]
     assert "lightgbm" not in scores
-    assert scores["importances"] == {"first": 0.6, "second": 0.4}
-    assert scores["shap_importances"] == {"first": 0.7, "second": 0.3}
+    assert scores["importances"] == {"first": 0.6, "second": 0.4, "category": 0.0}
+    assert scores["shap_importances"] == {"first": 0.7, "second": 0.3, "category": 0.0}
     assert scores["lgbm_threshold"] == 0.85
     assert scores["shap_threshold"] == 0.85
     assert scores["selection_mode"] == "aggregated"
@@ -202,11 +218,18 @@ def test_select_stores_flat_json_compatible_scores(
     assert set(scores["fold_best_params"]) == {"1", "2"}
 
 
-def test_only_categorical_candidates_pass_through_without_dependencies() -> None:
+def test_categorical_only_candidates_are_evaluated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A schema with no continuous columns still gets a model stage.
+
+    Previously such a run silently kept every candidate, because the selector
+    filtered its work down to `FeatureSchema.continuous` and found nothing.
+    """
     frame = pd.DataFrame(
         {
-            "category": ["a", "b"],
-            "response": [0, 1],
+            "category": ["a", "b"] * 10,
+            "response": [0, 1] * 10,
         },
     )
     context = _context(
@@ -214,13 +237,21 @@ def test_only_categorical_candidates_pass_through_without_dependencies() -> None
         categorical=("category",),
         continuous=(),
     )
+    selector = LightGbmSelector(context.config.model)
+    captured: dict[str, object] = {}
+    _mock_backends(selector, monkeypatch)
 
-    decisions = LightGbmSelector(context.config.model).select(
-        context,
-        ["category"],
-    )
+    def fake_select(**kwargs: object) -> dict[str, object]:
+        captured.update(kwargs)
+        return _mock_details(["category"])
 
-    assert decisions == []
+    monkeypatch.setattr(selector, "_select_robust_features", fake_select)
+
+    decisions = selector.select(context, ["category"])
+
+    assert captured["feature_cols"] == ["category"]
+    assert captured["categorical_cols"] == ["category"]
+    assert [decision.feature for decision in decisions] == ["category"]
 
 
 def test_empty_candidates_and_missing_train_are_handled_before_dependencies() -> None:
@@ -765,7 +796,9 @@ def test_pandas_end_to_end_with_ml_backends() -> None:
     target = np.tile([0, 1], 50)
     frame = pd.DataFrame(
         {
-            "category": np.where(target == 1, "positive", "negative"),
+            # Uninformative on purpose: a categorical copy of the target would
+            # now dominate the cut, since the model stage evaluates these too.
+            "category": rng.choice(["a", "b", "c"], len(target)),
             "signal": target + rng.normal(0.0, 0.05, len(target)),
             "noise": rng.normal(0.0, 1.0, len(target)),
             "response": target,
@@ -790,15 +823,18 @@ def test_pandas_end_to_end_with_ml_backends() -> None:
         context.candidates,
     )
 
-    assert [decision.feature for decision in decisions] == [
+    assert {decision.feature for decision in decisions} == {
+        "category",
         "signal",
         "noise",
-    ]
-    assert "category" not in {
-        decision.feature for decision in decisions
     }
+    # The informative column survives; the model still has to reach a verdict
+    # on the categorical one rather than waving it through.
+    kept = {decision.feature for decision in decisions if decision.keep}
+    assert "signal" in kept
     assert context.scores["lightgbm"]["fold_execution"] == "driver"
     assert set(context.scores["lightgbm"]["importances"]) == {
+        "category",
         "signal",
         "noise",
     }
@@ -1279,6 +1315,9 @@ def test_fold_without_global_params_reports_missing_tuning() -> None:
 
 
 _VOTE_CONTINUOUS = ("driver_a", "driver_b", "noise_0", "noise_1", "noise_2")
+# The model stage evaluates categorical candidates too, so every assertion
+# about "which features got a decision" has to include them.
+_VOTE_EVALUATED = ("category", *_VOTE_CONTINUOUS)
 
 
 def _vote_frame(n_rows: int = 240) -> pd.DataFrame:
@@ -1344,8 +1383,8 @@ def test_both_selection_modes_run_and_record_their_mode() -> None:
 
         assert scores["selection_mode"] == mode
         # Categorical candidates are skipped, continuous ones all get a decision.
-        assert [decision.feature for decision in decisions] == list(_VOTE_CONTINUOUS)
-        assert set(kept) <= set(_VOTE_CONTINUOUS)
+        assert set(decision.feature for decision in decisions) == set(_VOTE_EVALUATED)
+        assert set(kept) <= set(_VOTE_EVALUATED)
 
 
 def test_vote_mode_reports_one_set_per_fold_and_channel() -> None:
@@ -1358,7 +1397,7 @@ def test_vote_mode_reports_one_set_per_fold_and_channel() -> None:
     assert set(scores["fold_sets"]) == {"1", "2", "3"}
     for fold in scores["fold_sets"].values():
         assert set(fold) == {"lgbm", "shap"}
-    assert set(scores["set_presence"]) == set(_VOTE_CONTINUOUS)
+    assert set(scores["set_presence"]) == set(_VOTE_EVALUATED)
     assert all(0.0 <= share <= 1.0 for share in scores["set_presence"].values())
 
 
