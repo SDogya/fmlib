@@ -1,0 +1,3 @@
+dataset,pipeline,status,features_in,features_out,kept_%,select_s,peak_rss_gb,auc_test,auc_valid,fit_s,error,auc_delta
+madelon,baseline,ok,500,500,100.0,0.0,0.41,0.88222,0.87305,0.45,,0.0
+madelon,cheap,ok,500,281,56.2,3.3,0.43,0.84413,0.85467,0.24,,-0.03809

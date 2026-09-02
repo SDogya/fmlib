@@ -1,0 +1,55 @@
+[
+  {
+    "dataset": "madelon",
+    "pipeline": "baseline",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 500,
+    "seconds": 0.0,
+    "peak_rss_gb": 0.41,
+    "steps": [],
+    "evaluation": {
+      "label": "baseline",
+      "n_features": 500,
+      "auc_valid": 0.87305,
+      "auc_test": 0.88222,
+      "best_iteration": 37,
+      "fit_seconds": 0.45
+    },
+    "ground_truth": {},
+    "error": ""
+  },
+  {
+    "dataset": "madelon",
+    "pipeline": "cheap",
+    "status": "ok",
+    "n_features_in": 500,
+    "n_features_out": 281,
+    "seconds": 3.3,
+    "peak_rss_gb": 0.43,
+    "steps": [
+      {
+        "step": "statistics.low_variance",
+        "dropped": 2
+      },
+      {
+        "step": "statistics.correlation",
+        "dropped": 10
+      },
+      {
+        "step": "statistics.iv",
+        "dropped": 207
+      }
+    ],
+    "evaluation": {
+      "label": "cheap",
+      "n_features": 281,
+      "auc_valid": 0.85467,
+      "auc_test": 0.84413,
+      "best_iteration": 25,
+      "fit_seconds": 0.24
+    },
+    "ground_truth": {},
+    "error": ""
+  }
+]
