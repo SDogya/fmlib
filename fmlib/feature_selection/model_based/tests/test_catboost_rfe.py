@@ -477,7 +477,9 @@ def test_scalar_parameters_fall_back_to_the_default_grid() -> None:
     assert options["optuna_enabled"] is True
     assert options["fixed_params"] == _PARAMETERS
     assert "depth" not in options["search_space"]
-    assert options["search_space"]["learning_rate"] == CATBOOST_RFE_SEARCH_SPACE["learning_rate"]
+    assert options["search_space"]["l2_leaf_reg"] == CATBOOST_RFE_SEARCH_SPACE["l2_leaf_reg"]
+    assert "learning_rate" not in options["search_space"]
+    assert "iterations" not in options["search_space"]
 
 
 def test_a_yaml_mapping_replaces_the_default_grid() -> None:
@@ -496,6 +498,33 @@ def test_a_yaml_mapping_replaces_the_default_grid() -> None:
     assert options["search_space"] == {"depth": {"type": "int", "min": 4, "max": 6}}
     assert "learning_rate" not in options["search_space"]
     assert options["fixed_params"] == {"iterations": 10}
+
+
+def test_table_learning_rate_overrides_yaml_scalar() -> None:
+    _require_catboost()
+    details = run_catboost_rfe(
+        _frame(),
+        feature_cols=["cat_a", "num_a", "num_b"],
+        categorical_cols=["cat_a"],
+        target_col="target",
+        time_col="month_part",
+        eval_months=1,
+        parameters={**_PARAMETERS, "learning_rate": 0.1},
+        optuna_params={"enabled": False},
+        feature_selection_params={
+            "algorithm": "RecursiveByPredictionValuesChange",
+            "steps": 2,
+        },
+        num_features_to_select=1,
+        seed=0,
+    )
+
+    assert details["fit_rows"] == 40
+    assert details["best_params"]["learning_rate"] == 0.02
+    assert details["best_params"]["early_stopping_rounds"] == 100
+    assert details["best_params"]["iterations"] == 20
+    assert details["best_params"]["use_best_model"] is True
+    assert details["best_params"]["depth"] == 4
 
 
 def test_optuna_disabled_clears_the_search_space() -> None:

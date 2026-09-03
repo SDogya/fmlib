@@ -85,11 +85,10 @@ catboost_rfe:
   # Мапа   -> вся сетка Optuna; дефолтный файл не подмешивается.
   # Нет мап и optuna_params.enabled: true -> CATBOOST_RFE_SEARCH_SPACE.
   # optuna_params.enabled: false -> сразу RFE на скалярах.
+  # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
   parameters:
-    iterations: 3000
     loss_function: Logloss
     eval_metric: AUC
-    early_stopping_rounds: 100
     use_best_model: true
     max_ctr_complexity: 1
     boosting_type: Plain
@@ -97,26 +96,17 @@ catboost_rfe:
     task_type: CPU         # модельная стадия идёт на драйвере Spark-сессии
     depth:
       type: int
-      min: 4
-      max: 8
-    min_data_in_leaf:
-      type: int
-      min: 16
-      max: 64
-    learning_rate:
-      type: float
-      min: 0.01
-      max: 0.3
-      log: true
+      min: 3
+      max: 7
     l2_leaf_reg:
       type: float
-      min: 0.5
-      max: 30
+      min: 1.0e-8
+      max: 10.0
       log: true
-    random_strength:
-      type: float
-      min: 0.05
-      max: 0.2
+    min_data_in_leaf:
+      type: int
+      min: 1
+      max: 20
 
   optuna_params:
     enabled: true
@@ -156,10 +146,23 @@ catboost_rfe:
 #   boruta_trials: 50
 #   tentative_fix_method: rough
 #   parameters:
-#     learning_rate:
+#     # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+#     num_leaves:
+#       type: int
+#       min: 16
+#       max: 255
+#     colsample_bytree:
 #       type: float
-#       min: 0.01
-#       max: 0.1
+#       min: 0.5
+#       max: 1.0
+#     subsample:
+#       type: float
+#       min: 0.5
+#       max: 1.0
+#     min_child_weight:
+#       type: float
+#       min: 1.0e-3
+#       max: 10.0
 #       log: true
 #   optuna_params:
 #     enabled: true

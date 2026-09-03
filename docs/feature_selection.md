@@ -291,6 +291,17 @@ values             без type      → то же, сокращение
 Любая мапа полностью заменяет fallback: незаданные ключи из Python не
 добираются.
 
+Это касается **тюнингуемых** ключей (`depth`, `num_leaves`, …).
+`learning_rate` и `early_stopping_rounds` Optuna не ищет: после
+`resolve_tuning_space` селектор всегда подставляет значения из эвристики
+LightAutoML по числу строк локального train
+([`lama_boost_defaults.py`](../fmlib/feature_selection/utils/lama_boost_defaults.py)).
+Мапа или скаляр на lr / patience в YAML вырезается, таблица побеждает.
+Одна чужая мапа не отключает эту подстановку. Потолок деревьев
+(`iterations` / `n_estimators`) в дефолтную сетку не входит: скаляр в YAML
+остаётся cap, иначе берётся таблица. Реальное число деревьев даёт early
+stopping на `eval_set`.
+
 ### Что происходит за один трайл
 
 ```

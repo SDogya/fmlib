@@ -76,32 +76,27 @@ model:
     # Мапа → вся сетка Optuna (дефолтный файл не подмешивается).
     # Скаляр → уходит в CatBoost как есть.
     # Нет мап и enabled: true → CATBOOST_RFE_SEARCH_SPACE.
+    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
     parameters:
-      iterations: 2000
       loss_function: Logloss
       eval_metric: AUC
-      early_stopping_rounds: 100
       use_best_model: true
       max_ctr_complexity: 1  # отключает комбинации категориальных; иначе комбинаторный рост
       task_type: CPU
       boosting_type: Plain   # Ordered точнее на малых выборках, но заметно медленнее
       depth:
         type: int
-        min: 4
-        max: 7               # верхняя граница сильно влияет на время трайла
-      learning_rate:
-        type: float
-        min: 0.03            # ниже 0.03 early stopping не срабатывает и трайл идёт до конца
-        max: 0.15
-        log: true
+        min: 3
+        max: 7
       l2_leaf_reg:
         type: float
-        min: 1.0
+        min: 1.0e-8
         max: 10.0
+        log: true
       min_data_in_leaf:
         type: int
-        min: 20
-        max: 200
+        min: 1
+        max: 20
 
     optuna_params:
       enabled: true
@@ -136,18 +131,27 @@ precise:
     tentative_fix_method: rough   # rough | null
 
     # boruta_shap оценивает только continuous — категориальные до него не доходят.
+    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
     parameters:
       boosting_type: gbdt    # скаляр: фиксируем. Без этого в переборе есть dart,
                              # который не поддерживает раннюю остановку и растягивает трайл
-      learning_rate:
-        type: float
-        min: 0.01
-        max: 0.1
-        log: true
       num_leaves:
         type: int
         min: 16
-        max: 64
+        max: 255
+      colsample_bytree:
+        type: float
+        min: 0.5
+        max: 1.0
+      subsample:
+        type: float
+        min: 0.5
+        max: 1.0
+      min_child_weight:
+        type: float
+        min: 1.0e-3
+        max: 10.0
+        log: true
 
     optuna_params:
       enabled: true

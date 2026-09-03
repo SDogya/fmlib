@@ -73,17 +73,25 @@ lightgbm:
   # Блок необязателен: без мап берутся встроенные диапазоны целиком.
   # Любая мапа в YAML — это вся сетка; остальные дефолтные ключи не
   # подмешиваются. Скаляр уходит в модель как есть.
+  # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
   parameters:
     num_leaves:
       type: int
       min: 16
-      max: 128
-    learning_rate:
+      max: 255
+    colsample_bytree:
       type: float
-      min: 0.005
-      max: 0.3
+      min: 0.5
+      max: 1.0
+    subsample:
+      type: float
+      min: 0.5
+      max: 1.0
+    min_child_weight:
+      type: float
+      min: 1.0e-3
+      max: 10.0
       log: true
-    min_child_samples: 20    # скаляр: фиксируется и убирается из перебора
 
   optuna_params:
     enabled: true
@@ -113,10 +121,23 @@ boruta_shap:
 
   parameters:
     boosting_type: gbdt      # фиксируем: dart в переборе растягивает трайлы
-    learning_rate:
+    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+    num_leaves:
+      type: int
+      min: 16
+      max: 255
+    colsample_bytree:
       type: float
-      min: 0.01
-      max: 0.1
+      min: 0.5
+      max: 1.0
+    subsample:
+      type: float
+      min: 0.5
+      max: 1.0
+    min_child_weight:
+      type: float
+      min: 1.0e-3
+      max: 10.0
       log: true
 
   optuna_params:

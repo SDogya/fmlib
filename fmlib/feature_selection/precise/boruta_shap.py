@@ -20,6 +20,11 @@ from fmlib.feature_selection.utils.default_model_param_spaces import (
     BORUTA_LGBM_SEARCH_SPACE,
     BORUTA_RF_SEARCH_SPACE,
 )
+from fmlib.feature_selection.utils.lama_boost_defaults import (
+    apply_boost_heuristics,
+    fit_lgbm_with_early_stopping,
+    split_lgbm_early_stopping,
+)
 from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
 from fmlib.feature_selection.utils.stdlib_import import stdlib_module
 from fmlib.feature_selection.utils.optuna_space import (
@@ -416,8 +421,17 @@ class BorutaShapSelector:
             )
             raise ExecutionError(msg)
 
-        fixed_params = options["fixed_params"]
-        search_space = options["search_space"]
+        fixed_params = dict(options["fixed_params"])
+        search_space = {
+            name: dict(spec) for name, spec in options["search_space"].items()
+        }
+        if options["model_type"] == "lgbm":
+            fixed_params, search_space = apply_boost_heuristics(
+                fixed_params,
+                search_space,
+                n_rows=len(target),
+                library="lightgbm",
+            )
         if search_space:
             test_rows = math.ceil(len(target) * 0.2)
             train_rows = len(target) - test_rows
@@ -463,19 +477,31 @@ class BorutaShapSelector:
                     )
                     for name, specification in search_space.items()
                 }
-                model = self._build_model(
-                    backends.model_class,
-                    options["model_type"],
-                    {**fixed_params, **suggested},
-                    seed,
-                )
+                trial_params = {**fixed_params, **suggested}
                 if options["model_type"] == "lgbm":
-                    model.fit(
+                    ctor_params, stopping_rounds = split_lgbm_early_stopping(
+                        trial_params,
+                    )
+                    model = self._build_model(
+                        backends.model_class,
+                        options["model_type"],
+                        ctor_params,
+                        seed,
+                    )
+                    fit_lgbm_with_early_stopping(
+                        model,
                         train_features,
                         train_target,
                         eval_set=[(valid_features, valid_target)],
+                        early_stopping_rounds=stopping_rounds,
                     )
                 else:
+                    model = self._build_model(
+                        backends.model_class,
+                        options["model_type"],
+                        trial_params,
+                        seed,
+                    )
                     model.fit(train_features, train_target)
                 predictions = model.predict_proba(valid_features)[:, 1]
                 return float(
@@ -622,6 +648,7 @@ class BorutaShapSelector:
             "random_state": seed,
         }
         if model_type == "lgbm":
+            common, _stopping_rounds = split_lgbm_early_stopping(common)
             common.update(
                 {
                     "objective": "binary",

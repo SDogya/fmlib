@@ -25,11 +25,10 @@ model:
 
     # Скаляр - используется как есть, мапа - вся сетка пользователя.
     # Чтобы пропустить тюнинг, поставьте optuna_params.enabled: false.
+    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
     parameters:
-      iterations: 3000
       loss_function: Logloss
       eval_metric: AUC
-      early_stopping_rounds: 100
       use_best_model: true
       max_ctr_complexity: 1
       boosting_type: Plain
@@ -37,26 +36,17 @@ model:
       task_type: CPU
       depth:
         type: int
-        min: 4
-        max: 8
-      min_data_in_leaf:
-        type: int
-        min: 16
-        max: 64
-      learning_rate:
-        type: float
-        min: 0.01
-        max: 0.3
-        log: true
+        min: 3
+        max: 7
       l2_leaf_reg:
         type: float
-        min: 0.5
-        max: 30
+        min: 1.0e-8
+        max: 10.0
         log: true
-      random_strength:
-        type: float
-        min: 0.05
-        max: 0.2
+      min_data_in_leaf:
+        type: int
+        min: 1
+        max: 20
 
     optuna_params:
       enabled: true

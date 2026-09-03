@@ -18,6 +18,7 @@ from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.utils.default_model_param_spaces import (
     CATBOOST_RFE_SEARCH_SPACE,
 )
+from fmlib.feature_selection.utils.lama_boost_defaults import apply_boost_heuristics
 from fmlib.feature_selection.utils.local_data import prepare_mixed_frame, root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
@@ -85,7 +86,9 @@ class CatBoostRfeSelector:
     (``{"type": "int", "min": 4, "max": 8}``), those mappings are the entire
     grid. If it contains only scalars, the fallback in
     ``CATBOOST_RFE_SEARCH_SPACE`` is used. ``enabled: false`` skips Optuna and
-    passes scalars to CatBoost unchanged. Both categorical and continuous
+    passes scalars to CatBoost unchanged. ``learning_rate`` and
+    ``early_stopping_rounds`` are always taken from the LightAutoML row-count
+    table after the out-of-time fit part is known; Optuna does not sample them. Both categorical and continuous
     candidates are evaluated — categorical ones are handed to CatBoost as
     ``cat_features``.
 
@@ -575,6 +578,12 @@ def run_catboost_rfe(
         defaults=CATBOOST_RFE_SEARCH_SPACE,
         enabled=settings["enabled"],
         method_name=method_name,
+    )
+    fixed, search_space = apply_boost_heuristics(
+        fixed,
+        search_space,
+        n_rows=len(fit_frame),
+        library="catboost",
     )
     if search_space:
         backends = _load_backends(require_optuna=True)

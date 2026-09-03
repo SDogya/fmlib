@@ -1074,6 +1074,9 @@ def test_configured_search_space_reaches_tuning_and_folds(
     assert seen["tune_space"]["num_leaves"]["max"] == 16
     assert seen["fold_space"]["num_leaves"]["max"] == 16
     assert seen["tune_fixed"]["n_estimators"] == 8
+    assert seen["tune_fixed"]["learning_rate"] == 0.01
+    assert seen["tune_fixed"]["early_stopping_rounds"] == 200
+    assert "learning_rate" not in seen["tune_space"]
 
 
 def test_trial_parameters_preserve_search_space_and_execution_limits() -> None:
@@ -1159,6 +1162,9 @@ def test_folds_run_in_order_and_importances_are_averaged(
 
     assert call_order == [1, 2]
     assert set(details["fold_best_params"]) == {"1", "2"}
+    assert details["global_best_params"]["learning_rate"] == 0.01
+    assert details["global_best_params"]["early_stopping_rounds"] == 200
+    assert details["global_best_params"]["n_estimators"] == 8
     importances = details["importances_df"].set_index("feature")
     assert importances["lgbm_norm"].sum() == pytest.approx(1.0)
     assert importances["shap_norm"].sum() == pytest.approx(1.0)

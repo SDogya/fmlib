@@ -22,6 +22,11 @@ from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.utils.default_model_param_spaces import (
     LIGHTGBM_SEARCH_SPACE,
 )
+from fmlib.feature_selection.utils.lama_boost_defaults import (
+    apply_boost_heuristics,
+    fit_lgbm_with_early_stopping,
+    split_lgbm_early_stopping,
+)
 from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
@@ -74,7 +79,10 @@ class LightGbmSelector:
     ``params.parameters`` has no mapping entries. Any mapping in that block
     fully replaces the fallback: unspecified default keys are not mixed in.
     A scalar is passed to LightGBM unchanged instead of being tuned.
-    ``params.optuna_params.enabled: false`` skips Optuna entirely.
+    ``learning_rate`` and ``early_stopping_rounds`` are always taken from the
+    LightAutoML row-count table after the local sample is materialized; Optuna
+    does not sample them. ``params.optuna_params.enabled: false`` skips Optuna
+    entirely.
 
     Args:
         config: Model-stage settings. Method-specific ``params`` override the
@@ -464,7 +472,12 @@ class LightGbmSelector:
             raise ExecutionError(msg)
 
         global_best_params: dict[str, Any] | None = None
-        effective_space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
+        fixed_params, effective_space = apply_boost_heuristics(
+            fixed_params or {},
+            DEFAULT_SEARCH_SPACE if search_space is None else search_space,
+            n_rows=len(target),
+            library="lightgbm",
+        )
         if optuna_mode == "global":
             if effective_space:
                 global_best_params = tune_parameters(
@@ -517,7 +530,7 @@ class LightGbmSelector:
                 n_jobs=n_jobs,
                 shap_max_rows=shap_max_rows,
                 global_params=global_best_params,
-                search_space=search_space,
+                search_space=effective_space,
                 fixed_params=fixed_params,
             )
             fold_lgbm.append(lgbm_values)
@@ -624,6 +637,7 @@ class LightGbmSelector:
         train_matrix = feature_matrix[train_indices]
         train_target = target[train_indices]
         valid_matrix = feature_matrix[valid_indices]
+        valid_target = target[valid_indices]
 
         if optuna_mode == "per_fold":
             fold_space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
@@ -660,8 +674,15 @@ class LightGbmSelector:
             raise ExecutionError(msg)
 
         try:
-            model = lgb.LGBMClassifier(**best_params)
-            model.fit(train_matrix, train_target)
+            ctor_params, stopping_rounds = split_lgbm_early_stopping(best_params)
+            model = lgb.LGBMClassifier(**ctor_params)
+            fit_lgbm_with_early_stopping(
+                model,
+                train_matrix,
+                train_target,
+                eval_set=[(valid_matrix, valid_target)],
+                early_stopping_rounds=stopping_rounds,
+            )
             lgbm_importances = np.asarray(
                 model.booster_.feature_importance(importance_type="split"),
                 dtype=float,
@@ -942,11 +963,14 @@ def tune_parameters(
             search_space=space,
             fixed_params=fixed_params,
         )
-        model = lgb.LGBMClassifier(**trial_params)
-        model.fit(
+        ctor_params, stopping_rounds = split_lgbm_early_stopping(trial_params)
+        model = lgb.LGBMClassifier(**ctor_params)
+        fit_lgbm_with_early_stopping(
+            model,
             train_matrix,
             train_target,
             eval_set=[(valid_matrix, valid_target)],
+            early_stopping_rounds=stopping_rounds,
         )
         predictions = model.predict_proba(valid_matrix)[:, 1]
         return float(roc_auc_score(valid_target, predictions))
