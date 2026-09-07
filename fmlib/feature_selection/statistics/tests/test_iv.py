@@ -321,11 +321,24 @@ class TestIvSelectorValidationAndDecisions:
             IvSelector(IvConfig()).select(context, ["strong"])
 
     def test_non_binary_task_raises_config_error(self) -> None:
-        with pytest.raises(ConfigError, match="binary_classification"):
-            IvSelector(IvConfig()).select(
-                _context(_frame(), task_type="regression"),
-                ["strong"],
+        frame = _frame()
+        for task_type in ("regression", "classification"):
+            schema = FeatureSchema(
+                categorical=("cat_signal", "null_flag"),
+                continuous=("strong", "weak", "leak"),
+                target="response",
+                task_type=task_type,
             )
+            context = StageContext(
+                spark=None,
+                datasets={"train": frame},
+                schema=schema,
+                config=FeatureSelectionConfig(),
+                seed=0,
+                candidates=schema.candidate_features(),
+            )
+            with pytest.raises(ConfigError, match="binary_classification"):
+                IvSelector(IvConfig()).select(context, ["strong"])
 
     def test_unsupported_train_type_raises_execution_error(self) -> None:
         context = _context(_frame())

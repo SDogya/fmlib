@@ -26,6 +26,7 @@ def test_defaults_validate() -> None:
     assert config.statistics.cache.enabled is False
     assert config.statistics.cache.path is None
     assert config.precise.method == "none"
+    assert config.execution.task_type == "binary_classification"
 
 
 def test_from_dict_and_unknown_field() -> None:

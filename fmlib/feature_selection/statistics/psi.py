@@ -182,6 +182,48 @@ class PsiSelector:
         else:
             return self._apply_stratified_sampling_pandas(df, target_col, max_rows, seed)
 
+    def _apply_random_sampling_pyspark(
+        self: PsiSelector,
+        df: Any,
+        max_rows: int,
+        seed: int,
+    ) -> Any:
+        """Take a uniform random Spark subsample."""
+        import pyspark.sql.functions as F  # noqa: N812
+
+        data_len = df.count()
+        if data_len <= max_rows:
+            return df
+        return df.orderBy(F.rand(seed)).limit(max_rows)
+
+    def _apply_random_sampling_pandas(
+        self: PsiSelector,
+        df: Any,
+        max_rows: int,
+        seed: int,
+    ) -> Any:
+        """Take a uniform random pandas subsample."""
+        data_len = len(df)
+        if data_len <= max_rows:
+            return df
+        return df.sample(n=max_rows, random_state=seed).reset_index(drop=True)
+
+    def _apply_sampling(
+        self: PsiSelector,
+        df: Any,
+        target_col: str,
+        max_rows: int,
+        seed: int,
+        *,
+        stratified: bool,
+    ) -> Any:
+        """Subsample ``df``, stratifying by the target unless ``stratified`` is false."""
+        if not stratified:
+            if hasattr(df, "stat") and hasattr(df, "agg"):
+                return self._apply_random_sampling_pyspark(df, max_rows, seed)
+            return self._apply_random_sampling_pandas(df, max_rows, seed)
+        return self._apply_stratified_sampling(df, target_col, max_rows, seed)
+
     def select(
         self: PsiSelector,
         context: StageContext,
@@ -376,11 +418,27 @@ class PsiSelector:
             else step_seed(context)
         )
         
-        logger.info(f"PSISelector: Applying stratified subsampling to train set (max_rows={subsample_rows})")
-        train_sampled = self._apply_stratified_sampling(train_df, target_col, subsample_rows, seed)
-        
-        logger.info(f"PSISelector: Applying stratified subsampling to test set (max_rows={subsample_rows})")
-        test_sampled = self._apply_stratified_sampling(test_df, target_col, subsample_rows, seed)
+        logger.info(
+            f"PSISelector: Applying subsampling to train set (max_rows={subsample_rows})"
+        )
+        train_sampled = self._apply_sampling(
+            train_df,
+            target_col,
+            subsample_rows,
+            seed,
+            stratified=context.schema.task_type != "regression",
+        )
+
+        logger.info(
+            f"PSISelector: Applying subsampling to test set (max_rows={subsample_rows})"
+        )
+        test_sampled = self._apply_sampling(
+            test_df,
+            target_col,
+            subsample_rows,
+            seed,
+            stratified=context.schema.task_type != "regression",
+        )
         
         return train_sampled, test_sampled
 

@@ -117,3 +117,30 @@ def test_prepare_keeps_numeric_nulls() -> None:
 
     assert int(prepared["a"].isna().sum()) == 1
     assert not prepared["b"].isna().any()
+
+
+def test_prepare_does_not_stratify_regression() -> None:
+    frame = pd.DataFrame(
+        {
+            "a": list(range(20)),
+            "b": list(range(20, 40)),
+            "y": [float(index) for index in range(20)],
+        },
+    )
+    context = SimpleNamespace(
+        local_numeric_sample=None,
+        schema=SimpleNamespace(task_type="regression"),
+    )
+    prepared = prepare_numeric_frame(
+        frame,
+        target_col="y",
+        feature_cols=["a", "b"],
+        max_rows=6,
+        sample_fraction=None,
+        seed=7,
+        method_name="lightgbm",
+        context=context,
+    )
+    assert len(prepared) == 6
+    # Random sample, not one-row-per-distinct-target.
+    assert prepared["y"].nunique() == 6

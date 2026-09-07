@@ -92,6 +92,7 @@ precise:
 
 execution:
   seed: 42
+  task_type: binary_classification  # classification | regression; совпадает со schema.task_type
   max_local_rows: 1000000
   local_sample:
     strategy: stratified

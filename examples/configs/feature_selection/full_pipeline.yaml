@@ -172,6 +172,7 @@ catboost_rfe:
 
 execution:
   seed: 42                   # доходит до сэмплирования, Optuna и random_seed модели
+  task_type: binary_classification  # должно совпасть со schema.task_type
   max_local_rows: 1000000    # общий потолок, срезает params.max_rows сверху
   # ВНИМАНИЕ: local_memory_limit и allow_local_fallback объявлены в схеме
   # конфига, но нигде не используются — защиты от OOM на драйвере нет.

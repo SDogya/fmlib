@@ -1,9 +1,12 @@
 """LightAutoML-style learning rate, tree cap and early stopping.
 
-Copied from LightAutoML ``boost_lgbm.py`` / ``boost_cb.py`` binary tables.
+Copied from LightAutoML ``boost_lgbm.py`` / ``boost_cb.py``.
 Optuna does not sample these keys: selectors fill missing ones after ``n_rows``
 of the materialized train is known. A YAML scalar is kept. Real tree count
 comes from early stopping; ``n_estimators`` / ``iterations`` is only a ceiling.
+
+LightGBM uses one row-count table for every task (as in LightAutoML). CatBoost
+uses the binary table, a multiclass table, or a regression table.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ def boost_fixed_params(
     n_rows: int,
     *,
     library: BoostLibrary,
+    task_type: str = "binary_classification",
 ) -> dict[str, Any]:
     """Return table ``learning_rate``, tree cap and early-stopping patience.
 
@@ -48,6 +52,9 @@ def boost_fixed_params(
         n_rows: Row count of the materialized train actually used for fit
             (CatBoost RFE out-of-time fit part; LightGBM/Boruta local sample).
         library: ``lightgbm`` or ``catboost``.
+        task_type: ``binary_classification``, ``classification`` or
+            ``regression``. LightGBM ignores this (one table). CatBoost picks
+            the matching LightAutoML row table.
 
     Returns:
         Parameter dict to merge into the selector's fixed block.
@@ -59,7 +66,7 @@ def boost_fixed_params(
     if library == "lightgbm":
         return _lightgbm_table(rows)
     if library == "catboost":
-        return _catboost_table(rows)
+        return _catboost_table(rows, task_type=task_type)
     msg = f"unsupported boost library {library!r}"
     raise ValueError(msg)
 
@@ -70,6 +77,7 @@ def apply_boost_heuristics(
     *,
     n_rows: int,
     library: BoostLibrary,
+    task_type: str = "binary_classification",
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
     """Fill missing lr/patience/cap from the table; keep YAML scalars.
 
@@ -85,11 +93,12 @@ def apply_boost_heuristics(
         search_space: Optuna specs from ``resolve_tuning_space``.
         n_rows: Materialized train size for the table lookup.
         library: ``lightgbm`` or ``catboost``.
+        task_type: Modelling task; only CatBoost tables differ by task.
 
     Returns:
         Tuple of ``(fixed, search_space)`` after the LightAutoML overlay.
     """
-    table = boost_fixed_params(n_rows, library=library)
+    table = boost_fixed_params(n_rows, library=library, task_type=task_type)
     new_space = {
         str(name): dict(spec)
         for name, spec in dict(search_space or {}).items()
@@ -187,7 +196,7 @@ def fit_lgbm_with_early_stopping(
 
 
 def _lightgbm_table(n_rows: int) -> dict[str, Any]:
-    """Binary (non-regression) LightAutoML ``init_params_on_input``."""
+    """LightAutoML ``init_params_on_input`` row table (all tasks)."""
     if n_rows <= 10_000:
         lr, trees, patience = 0.01, 3000, 200
     elif n_rows <= 20_000:
@@ -205,27 +214,37 @@ def _lightgbm_table(n_rows: int) -> dict[str, Any]:
     }
 
 
-def _catboost_table(n_rows: int) -> dict[str, Any]:
-    """Binary LightAutoML CatBoost ``num_trees`` / ``learning_rate`` table."""
-    if n_rows <= 6_000:
-        lr, trees = 0.02, 500
+def _catboost_table(
+    n_rows: int,
+    *,
+    task_type: str = "binary_classification",
+) -> dict[str, Any]:
+    """LightAutoML CatBoost ``num_trees`` / ``learning_rate`` table."""
+    if task_type == "classification":
+        lr = 0.03
+        trees = 3000 if n_rows <= 100_000 else 4000
+        patience = 100
+    elif task_type == "regression":
+        lr, trees, patience = 0.05, 2000, 300
+    elif n_rows <= 6_000:
+        lr, trees, patience = 0.02, 500, 100
     elif n_rows <= 20_000:
-        lr, trees = 0.035, 5000
+        lr, trees, patience = 0.035, 5000, 100
     elif n_rows <= 50_000:
-        lr, trees = 0.03, 5000
+        lr, trees, patience = 0.03, 5000, 100
     elif n_rows <= 60_000:
-        lr, trees = 0.05, 2000
+        lr, trees, patience = 0.05, 2000, 100
     elif n_rows <= 100_000:
-        lr, trees = 0.045, 1500
+        lr, trees, patience = 0.045, 1500, 100
     elif n_rows <= 150_000:
-        lr, trees = 0.045, 3000
+        lr, trees, patience = 0.045, 3000, 100
     elif n_rows <= 300_000:
-        lr, trees = 0.045, 2000
+        lr, trees, patience = 0.045, 2000, 100
     else:
-        lr, trees = 0.05, 3000
+        lr, trees, patience = 0.05, 3000, 100
     return {
         "learning_rate": lr,
         "iterations": trees,
-        "early_stopping_rounds": 100,
+        "early_stopping_rounds": patience,
         "use_best_model": True,
     }

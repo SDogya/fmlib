@@ -33,6 +33,17 @@ from fmlib.feature_selection.utils.optuna_space import (
     resolve_tuning_space,
     suggest_parameter,
 )
+from fmlib.feature_selection.utils.task_runtime import (
+    TaskRuntime,
+    binary_task,
+    lgbm_estimator_class,
+    lgbm_objective_params,
+    optuna_direction,
+    require_min_class_count,
+    resolve_task,
+    rf_estimator_class,
+    score_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +69,6 @@ class _Backends:
     boruta_class: Any
     model_class: Any
     optuna_module: Any
-    roc_auc_score: Any
     train_test_split: Any
 
 
@@ -88,12 +98,6 @@ class BorutaShapSelector:
         """Evaluate current continuous candidates with BorutaSHAP."""
         if not candidates:
             return []
-        if context.schema.task_type != "binary_classification":
-            msg = (
-                "boruta_shap: only task_type='binary_classification' is "
-                f"supported; got {context.schema.task_type!r}."
-            )
-            raise ExecutionError(msg)
 
         target_col = context.schema.target
         if not target_col:
@@ -115,6 +119,7 @@ class BorutaShapSelector:
         backends = self._load_backends(
             options["model_type"],
             require_optuna=bool(options["search_space"]),
+            task_type=context.schema.task_type,
         )
         try:
             details = self._run_boruta_selection(
@@ -314,6 +319,7 @@ class BorutaShapSelector:
         model_type: str,
         *,
         require_optuna: bool = True,
+        task_type: str = "binary_classification",
     ) -> _Backends:
         """Load optional BorutaSHAP, Optuna, sklearn, and model dependencies."""
         if BorutaShap is None:
@@ -324,7 +330,6 @@ class BorutaShapSelector:
             if _boruta_import_error is not None:
                 msg = f"{msg} Root cause: {root_cause(_boruta_import_error)}."
             raise BackendError(msg)
-        roc_auc_score: Any = None
         train_test_split: Any = None
         if require_optuna:
             if optuna is None:
@@ -334,7 +339,6 @@ class BorutaShapSelector:
                 )
                 raise BackendError(msg)
             try:
-                from sklearn.metrics import roc_auc_score
                 from sklearn.model_selection import train_test_split
             except ImportError as exc:
                 msg = (
@@ -344,30 +348,14 @@ class BorutaShapSelector:
                 raise BackendError(msg) from exc
 
         if model_type == "lgbm":
-            try:
-                from lightgbm import LGBMClassifier
-            except ImportError as exc:
-                msg = (
-                    "boruta_shap: LightGBM is required for model_type='lgbm'."
-                )
-                raise BackendError(msg) from exc
-            model_class = LGBMClassifier
+            model_class = lgbm_estimator_class(task_type)
         else:
-            try:
-                from sklearn.ensemble import RandomForestClassifier
-            except ImportError as exc:
-                msg = (
-                    "boruta_shap: scikit-learn RandomForest is required for "
-                    "model_type='rf'."
-                )
-                raise BackendError(msg) from exc
-            model_class = RandomForestClassifier
+            model_class = rf_estimator_class(task_type)
 
         return _Backends(
             boruta_class=BorutaShap,
             model_class=model_class,
             optuna_module=optuna,
-            roc_auc_score=roc_auc_score,
             train_test_split=train_test_split,
         )
 
@@ -406,20 +394,27 @@ class BorutaShapSelector:
             raise ExecutionError(msg)
 
         features = local.loc[:, feature_cols]
-        target = local[target_col]
-        classes, class_counts = np.unique(target, return_counts=True)
-        if len(classes) != 2:
-            msg = (
-                "boruta_shap: binary classification requires exactly two "
-                f"target classes; got {classes.tolist()}."
+        raw_target = local[target_col].to_numpy()
+        task_type = (
+            context.schema.task_type
+            if context is not None
+            else "binary_classification"
+        )
+        task = resolve_task(task_type, raw_target, method_name=self.method_name)
+        target = task.encoded_target
+        if task.is_regression:
+            if len(target) < 4:
+                msg = (
+                    "boruta_shap: regression sample is too small for an 80/20 "
+                    f"hold-out; got {len(target)} rows."
+                )
+                raise ExecutionError(msg)
+        else:
+            require_min_class_count(
+                task,
+                min_count=2,
+                method_name=self.method_name,
             )
-            raise ExecutionError(msg)
-        if int(class_counts.min()) < 2:
-            msg = (
-                "boruta_shap: each target class must contain at least two rows "
-                f"after sampling; class counts are {class_counts.tolist()}."
-            )
-            raise ExecutionError(msg)
 
         fixed_params = dict(options["fixed_params"])
         search_space = {
@@ -431,17 +426,32 @@ class BorutaShapSelector:
                 search_space,
                 n_rows=len(target),
                 library="lightgbm",
+                task_type=task.task_type,
             )
         if search_space:
             test_rows = math.ceil(len(target) * 0.2)
             train_rows = len(target) - test_rows
-            if test_rows < len(classes) or train_rows < len(classes):
+            if task.stratify:
+                n_classes = int(task.n_classes or 0)
+                if test_rows < n_classes or train_rows < n_classes:
+                    msg = (
+                        "boruta_shap: the bounded sample is too small for a stratified "
+                        f"80/20 hold-out; got {len(target)} rows."
+                    )
+                    raise ExecutionError(msg)
+            elif test_rows < 1 or train_rows < 1:
                 msg = (
-                    "boruta_shap: the bounded sample is too small for a stratified "
-                    f"80/20 hold-out; got {len(target)} rows."
+                    "boruta_shap: the bounded sample is too small for an 80/20 "
+                    f"hold-out; got {len(target)} rows."
                 )
                 raise ExecutionError(msg)
 
+            split_kwargs: dict[str, Any] = {
+                "test_size": 0.2,
+                "random_state": seed,
+            }
+            if task.stratify:
+                split_kwargs["stratify"] = target
             (
                 train_features,
                 valid_features,
@@ -450,9 +460,7 @@ class BorutaShapSelector:
             ) = backends.train_test_split(
                 features,
                 target,
-                test_size=0.2,
-                stratify=target,
-                random_state=seed,
+                **split_kwargs,
             )
             sampler = build_sampler(
                 backends.optuna_module,
@@ -463,7 +471,7 @@ class BorutaShapSelector:
                 method_name=self.method_name,
             )
             study = backends.optuna_module.create_study(
-                direction="maximize",
+                direction=optuna_direction(task),
                 sampler=sampler,
             )
 
@@ -487,6 +495,7 @@ class BorutaShapSelector:
                         options["model_type"],
                         ctor_params,
                         seed,
+                        task=task,
                     )
                     fit_lgbm_with_early_stopping(
                         model,
@@ -501,12 +510,10 @@ class BorutaShapSelector:
                         options["model_type"],
                         trial_params,
                         seed,
+                        task=task,
                     )
                     model.fit(train_features, train_target)
-                predictions = model.predict_proba(valid_features)[:, 1]
-                return float(
-                    backends.roc_auc_score(valid_target, predictions),
-                )
+                return score_model(task, model, valid_features, valid_target)
 
             try:
                 study.optimize(
@@ -520,7 +527,7 @@ class BorutaShapSelector:
                 best_auc = float(study.best_value)
                 if not math.isfinite(best_auc):
                     msg = (
-                        "boruta_shap: Optuna did not produce a finite best AUC."
+                        "boruta_shap: Optuna did not produce a finite best metric."
                     )
                     raise ExecutionError(msg)
                 final_model = self._build_model(
@@ -528,6 +535,7 @@ class BorutaShapSelector:
                     options["model_type"],
                     best_params,
                     seed,
+                    task=task,
                 )
             except ExecutionError:
                 raise
@@ -545,13 +553,14 @@ class BorutaShapSelector:
                 options["model_type"],
                 best_params,
                 seed,
+                task=task,
             )
 
         try:
             feature_selector = backends.boruta_class(
                 model=final_model,
                 importance_measure="shap",
-                classification=True,
+                classification=not task.is_regression,
             )
             feature_selector.fit(
                 X=features,
@@ -640,8 +649,10 @@ class BorutaShapSelector:
         model_type: str,
         parameters: Mapping[str, Any],
         seed: int,
+        task: TaskRuntime | None = None,
     ) -> Any:
         """Build the same model shape for Optuna and final Boruta fitting."""
+        resolved = task if task is not None else binary_task()
         common = {
             **dict(parameters),
             "n_jobs": -1,
@@ -651,8 +662,7 @@ class BorutaShapSelector:
             common, _stopping_rounds = split_lgbm_early_stopping(common)
             common.update(
                 {
-                    "objective": "binary",
-                    "metric": "auc",
+                    **lgbm_objective_params(resolved),
                     "verbosity": -1,
                     "bagging_seed": seed,
                     "feature_fraction_seed": seed,

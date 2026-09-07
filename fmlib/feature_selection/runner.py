@@ -68,7 +68,6 @@ _PREPROCESSING_METHODS = frozenset(
 _MODEL_METHODS = frozenset(
     {"lasso", "random_forest", "catboost_rfe", "lightgbm"},
 )
-_BINARY_MODEL_METHODS = frozenset({"lightgbm", "catboost_rfe", "boruta_shap"})
 
 
 def run_order(
@@ -109,6 +108,7 @@ def validate_order_prerequisites(context: StageContext) -> None:
     Walks the whole ``order`` so a missing target or SHAP extra surfaces at
     ``fit_select`` start instead of after hours of statistics.
     """
+    _require_matching_task_type(context)
     for index, step in enumerate(context.config.order):
         section = f"order[{index}].{step.method}"
         if step.method == "psi":
@@ -122,8 +122,6 @@ def validate_order_prerequisites(context: StageContext) -> None:
             if context.schema.target is None:
                 msg = "model stage requires FeatureSchema.target."
                 raise ConfigError(msg)
-            if step.method in _BINARY_MODEL_METHODS:
-                _require_binary_task(step.method, context)
             if step.method == "catboost_rfe" and not context.schema.time:
                 msg = (
                     "catboost_rfe: FeatureSchema.time is required for the "
@@ -137,7 +135,6 @@ def validate_order_prerequisites(context: StageContext) -> None:
             if not context.schema.target:
                 msg = "boruta_shap requires FeatureSchema.target."
                 raise ConfigError(msg)
-            _require_binary_task(step.method, context)
             _require_method_extras(step.method, step.params)
             _revalidate_model_parameters(step.method, step.params)
 
@@ -404,13 +401,15 @@ class _CachedStatisticsSelector:
         )
 
 
-def _require_binary_task(method: str, context: StageContext) -> None:
-    """Require binary classification for model / precise selectors that need it."""
-    if context.schema.task_type == "binary_classification":
+def _require_matching_task_type(context: StageContext) -> None:
+    """Require YAML ``execution.task_type`` to match ``FeatureSchema.task_type``."""
+    yaml_task = context.config.execution.task_type
+    schema_task = context.schema.task_type
+    if yaml_task == schema_task:
         return
     msg = (
-        f"{method}: only task_type='binary_classification' is supported; "
-        f"got {context.schema.task_type!r}."
+        "execution.task_type must match FeatureSchema.task_type "
+        f"({yaml_task!r} vs {schema_task!r})."
     )
     raise ConfigError(msg)
 

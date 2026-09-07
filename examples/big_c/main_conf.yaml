@@ -9,7 +9,9 @@
 # model.enabled / precise.enabled.
 #
 # Schema (FeatureSchema) в YAML не живёт — передаётся в fit_select().
-# Для lightgbm / boruta_shap / iv нужен task_type='binary_classification' и target.
+# execution.task_type должен совпасть со schema.task_type.
+# lightgbm / boruta_shap / catboost_rfe работают с binary_classification,
+# classification и regression. iv — только binary_classification + target.
 # output_dir — аргумент fit_select(), не поле этого файла.
 #
 # Optuna только из params.optuna_params (n_trials, n_startup_trials, sampler, timeout).
@@ -154,7 +156,7 @@ model:
 precise:
   enabled: false
   # none — стадию пропустить.
-  # boruta_shap — финальный отбор continuous (binary_classification).
+  # boruta_shap — финальный отбор continuous.
   method: none
   params:
     # lgbm | rf
@@ -190,6 +192,8 @@ precise:
 execution:
   # Корень сидов: сэмплы, Optuna, CV, модели, SHAP, Boruta.
   seed: 42
+  # Задача для модельных шагов. Должна совпасть со schema.task_type.
+  task_type: binary_classification
   # Жёсткий потолок pandas-материализации (correlation, lightgbm, boruta).
   max_local_rows: 250_000
   # false — тихо; true — все методы.

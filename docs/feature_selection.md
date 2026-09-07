@@ -38,6 +38,7 @@ config = FeatureSelectionConfig.from_yaml(
 
 schema = FeatureSchema(
     target="target",
+    task_type="binary_classification",  # classification | regression
     time="month_part",          # нужна для out-of-time сплита и PSI
     categorical=[...],
     continuous=[...],
@@ -95,11 +96,16 @@ lightgbm:
 
 execution:
   seed: 42              # дефолт на весь пайплайн
+  task_type: binary_classification  # classification | regression; должно совпасть со schema.task_type
 ```
 
 `params.seed` у шага читается так же, как `params.n_jobs`: ключ рядом с остальными
 параметрами метода (в том числе во вложенных `model.params` / `precise.params`).
 Нет ключа — берётся `execution.seed`. В `optuna_params` сид не кладут.
+`execution.task_type` — глобальная задача для `lightgbm` / `catboost_rfe` /
+`boruta_shap` (`binary_classification`, `classification`, `regression`). Она
+должна совпасть с `FeatureSchema.task_type`. Это не CatBoost
+`parameters.task_type` (CPU/GPU). IV по-прежнему только binary.
 `study.optimize` всегда идёт с `n_jobs=1`. Бит-в-бит не обещаем при
 `n_jobs != 1` у модели и на GPU CatBoost.
 

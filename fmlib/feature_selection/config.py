@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
 from fmlib.feature_selection.exceptions import ConfigError
+from fmlib.feature_selection.schema import TASK_TYPES
 from fmlib.feature_selection.utils.model_param_validate import (
     validate_model_parameters,
 )
@@ -902,9 +903,15 @@ def parse_verbose(raw: Any) -> VerboseConfig:
 
 @dataclass(frozen=True)
 class ExecutionConfig:
-    """Execution, reproducibility and capacity settings."""
+    """Execution, reproducibility and capacity settings.
+
+    ``task_type`` is the global modelling task for LightGBM, CatBoost RFE and
+    BorutaSHAP. It must match ``FeatureSchema.task_type``. This is not CatBoost
+    ``parameters.task_type`` (CPU/GPU).
+    """
 
     seed: int = 42
+    task_type: str = "binary_classification"
     allow_local_fallback: bool = True
     max_local_rows: int = 1_000_000
     local_memory_limit: float = 4.0
@@ -1072,6 +1079,12 @@ class FeatureSelectionConfig:
             raise ConfigError(
                 msg,
             )
+        if self.execution.task_type not in TASK_TYPES:
+            msg = (
+                f"Unsupported execution.task_type={self.execution.task_type!r}. "
+                f"Expected one of: {sorted(TASK_TYPES)}."
+            )
+            raise ConfigError(msg)
         if self.execution.max_local_rows <= 0:
             msg = "execution.max_local_rows must be positive."
             raise ConfigError(msg)
@@ -1245,6 +1258,7 @@ class FeatureSelectionConfig:
         local_sample_raw = execution_raw.get("local_sample", {})
         execution = ExecutionConfig(
             seed=execution_raw.get("seed", ExecutionConfig.seed),
+            task_type=execution_raw.get("task_type", ExecutionConfig.task_type),
             allow_local_fallback=execution_raw.get(
                 "allow_local_fallback",
                 ExecutionConfig.allow_local_fallback,

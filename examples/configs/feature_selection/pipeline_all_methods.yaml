@@ -51,7 +51,10 @@
 #
 # ── Требования к данным ──────────────────────────────────────────────────
 #
-#   iv, boruta_shap, catboost_rfe → task_type='binary_classification' + target
+#   iv → task_type='binary_classification' + target
+#   lightgbm / boruta_shap / catboost_rfe → тот же task_type, что и schema
+#     (binary_classification | classification | regression) + target
+#   psi (month_over_month), catboost_rfe → FeatureSchema.time
 #   psi (month_over_month), catboost_rfe → FeatureSchema.time
 #   psi (train_valid) → datasets['valid'] или FeatureSchema.split
 #
@@ -248,6 +251,9 @@ execution:
   # Доходит до сэмплирования, фолдов, сэмплера Optuna и random_seed модели.
   # Любой шаг может переопределить его своим params.seed.
   seed: 42
+  # Задача для lightgbm / catboost_rfe / boruta_shap. Должна совпасть со schema.task_type.
+  # Не путать с CatBoost parameters.task_type (CPU/GPU).
+  task_type: binary_classification
   # Общий потолок строк на драйвере, срезает params.max_rows сверху.
   max_local_rows: 1000000
   # ВНИМАНИЕ: local_memory_limit и allow_local_fallback объявлены в схеме

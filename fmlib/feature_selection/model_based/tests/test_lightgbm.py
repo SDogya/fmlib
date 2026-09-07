@@ -48,6 +48,7 @@ def _context(
             "execution": {
                 "seed": seed,
                 "max_local_rows": max_local_rows,
+                "task_type": task_type,
             },
         },
     )
@@ -234,18 +235,66 @@ def test_empty_candidates_and_missing_train_are_handled_before_dependencies() ->
         selector.select(context, context.candidates)
 
 
-def test_rejects_non_binary_task_before_loading_dependencies() -> None:
-    context = _context(_frame(), task_type="regression")
-    selector = LightGbmSelector(context.config.model)
+def test_regression_and_classification_run_on_pandas() -> None:
+    _require_ml_backends()
+    selector_params = {
+        "parameters": {**_TINY_FIXED_PARAMS, "early_stopping_rounds": 0},
+        "optuna_params": {"enabled": False},
+        "n_folds": 2,
+        "n_jobs": 1,
+        "shap_max_rows": 32,
+    }
 
-    with pytest.raises(
-        ExecutionError,
-        match="only task_type='binary_classification'",
-    ):
-        selector.select(
-            context,
-            context.candidates,
+    def pandas_context(frame: pd.DataFrame, task_type: str) -> StageContext:
+        config = FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "method": "lightgbm",
+                    "params": {"n_trials": 1, "n_folds": 2, **selector_params},
+                },
+                "execution": {"seed": 17, "task_type": task_type, "max_local_rows": 1_000},
+            },
         )
+        schema = FeatureSchema(
+            categorical=("category",),
+            continuous=("first", "second"),
+            target="response",
+            task_type=task_type,
+        )
+        return StageContext(
+            spark=None,
+            datasets={"train": frame},
+            schema=schema,
+            config=config,
+            seed=17,
+            candidates=schema.candidate_features(),
+        )
+
+    class_frame = _frame(30)
+    class_frame["response"] = [0, 1, 2] * 10
+    class_context = pandas_context(class_frame, "classification")
+    class_decisions = LightGbmSelector(class_context.config.model).select(
+        class_context,
+        class_context.candidates,
+    )
+    assert {item.feature for item in class_decisions} == {"first", "second"}
+
+    reg_frame = _frame(30)
+    reg_frame["response"] = np.arange(30, dtype=float)
+    reg_context = pandas_context(reg_frame, "regression")
+    reg_decisions = LightGbmSelector(reg_context.config.model).select(
+        reg_context,
+        reg_context.candidates,
+    )
+    assert {item.feature for item in reg_decisions} == {"first", "second"}
+    assert (
+        class_context.scores["lightgbm"]["global_best_params"]["objective"]
+        == "multiclass"
+    )
+    assert (
+        reg_context.scores["lightgbm"]["global_best_params"]["objective"]
+        == "regression"
+    )
 
 
 def test_options_use_typed_fallbacks_and_execution_row_cap() -> None:

@@ -34,6 +34,19 @@ from fmlib.feature_selection.utils.optuna_space import (
     resolve_tuning_space,
     suggest_parameter,
 )
+from fmlib.feature_selection.utils.task_runtime import (
+    TaskRuntime,
+    binary_task,
+    lgbm_estimator_class,
+    lgbm_objective_params,
+    make_folds,
+    normalize_binary_shap_values as normalize_binary_shap_values,
+    optuna_direction,
+    require_min_class_count,
+    resolve_task,
+    score_model,
+    shap_mean_abs,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +71,8 @@ DEFAULT_SEARCH_SPACE: dict[str, dict[str, Any]] = LIGHTGBM_SEARCH_SPACE
 class LightGbmSelector:
     """Select continuous features using LightGBM and SHAP importances.
 
-    The model algorithm follows ``shap_lgbm_spark.py``: tune a binary
-    ``LGBMClassifier`` on a stratified hold-out split, execute outer folds
+    The model algorithm follows ``shap_lgbm_spark.py``: tune LightGBM on a
+    hold-out split (stratified unless the task is regression), execute outer folds
     sequentially on the driver, then either average split and SHAP
     importances and keep their cumulative-threshold intersection
     (``selection_mode="aggregated"``) or cut each fold's split and SHAP
@@ -118,12 +131,6 @@ class LightGbmSelector:
         """
         if not candidates:
             return []
-        if context.schema.task_type != "binary_classification":
-            msg = (
-                "lightgbm: only task_type='binary_classification' is supported "
-                f"by the current LGBM/SHAP algorithm; got {context.schema.task_type!r}."
-            )
-            raise ExecutionError(msg)
 
         target_col = context.schema.target
         if not target_col:
@@ -440,15 +447,6 @@ class LightGbmSelector:
         context: Any | None = None,
     ) -> list[str] | dict[str, Any]:
         """Tune parameters and execute every outer fold on the driver."""
-        try:
-            from sklearn.model_selection import StratifiedKFold
-        except ImportError as exc:
-            msg = (
-                "lightgbm: scikit-learn is required. Install the sklearn "
-                "optional dependency."
-            )
-            raise BackendError(msg) from exc
-
         feature_matrix, target, evaluated = self._extract_and_prep_data(
             df,
             target_col,
@@ -458,19 +456,26 @@ class LightGbmSelector:
             seed,
             context,
         )
-        classes, class_counts = np.unique(target, return_counts=True)
-        if len(classes) != 2:
-            msg = (
-                "lightgbm: binary classification requires exactly two target "
-                f"classes; got {classes.tolist()}."
+        task_type = (
+            context.schema.task_type
+            if context is not None
+            else "binary_classification"
+        )
+        task = resolve_task(task_type, target, method_name="lightgbm")
+        target = task.encoded_target
+        if task.is_regression:
+            if len(target) < n_folds:
+                msg = (
+                    "lightgbm: regression sample is smaller than n_folds "
+                    f"({len(target)} < {n_folds})."
+                )
+                raise ExecutionError(msg)
+        else:
+            require_min_class_count(
+                task,
+                min_count=n_folds,
+                method_name="lightgbm",
             )
-            raise ExecutionError(msg)
-        if int(class_counts.min()) < n_folds:
-            msg = (
-                "lightgbm: each target class must contain at least n_folds rows "
-                f"after sampling; class counts are {class_counts.tolist()}."
-            )
-            raise ExecutionError(msg)
 
         global_best_params: dict[str, Any] | None = None
         fixed_params, effective_space = apply_boost_heuristics(
@@ -478,6 +483,7 @@ class LightGbmSelector:
             DEFAULT_SEARCH_SPACE if search_space is None else search_space,
             n_rows=len(target),
             library="lightgbm",
+            task_type=task.task_type,
         )
         if optuna_mode == "global":
             if effective_space:
@@ -492,18 +498,16 @@ class LightGbmSelector:
                     n_startup_trials=n_startup_trials,
                     sampler=sampler,
                     timeout=timeout,
+                    task=task,
                 )
             else:
                 global_best_params = _finalize_parameters(
                     fixed_params or {},
                     seed=seed,
                     n_jobs=n_jobs,
+                    task=task,
                 )
-        folds = StratifiedKFold(
-            n_splits=n_folds,
-            shuffle=True,
-            random_state=seed,
-        )
+        folds = make_folds(task, n_folds=n_folds, seed=seed)
         logger.info(
             "LightGbmSelector: running %d folds on driver, optuna_mode=%s",
             n_folds,
@@ -533,6 +537,7 @@ class LightGbmSelector:
                 global_params=global_best_params,
                 search_space=effective_space,
                 fixed_params=fixed_params,
+                task=task,
             )
             fold_lgbm.append(lgbm_values)
             fold_shap.append(shap_values)
@@ -597,6 +602,7 @@ class LightGbmSelector:
         global_params: dict[str, Any] | None = None,
         search_space: dict[str, dict[str, Any]] | None = None,
         fixed_params: dict[str, Any] | None = None,
+        task: TaskRuntime | None = None,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
         """Tune if requested, train one fold, and compute LGBM/SHAP importances.
 
@@ -622,7 +628,6 @@ class LightGbmSelector:
             ExecutionError: When tuning, training or SHAP fails for this fold.
         """
         try:
-            import lightgbm as lgb
             import shap
         except ImportError as exc:
             msg = (
@@ -631,6 +636,11 @@ class LightGbmSelector:
             )
             raise BackendError(msg) from exc
 
+        resolved = (
+            task
+            if task is not None
+            else resolve_task("binary_classification", target, method_name="lightgbm")
+        )
         row_count = len(target)
         train_mask = np.ones(row_count, dtype=bool)
         train_mask[valid_indices] = False
@@ -654,18 +664,21 @@ class LightGbmSelector:
                     n_startup_trials=n_startup_trials,
                     sampler=sampler,
                     timeout=timeout,
+                    task=resolved,
                 )
             else:
                 best_params = _finalize_parameters(
                     fixed_params or {},
                     seed=seed,
                     n_jobs=n_jobs,
+                    task=resolved,
                 )
         elif global_params is not None:
             best_params = _finalize_parameters(
                 global_params,
                 seed=seed,
                 n_jobs=n_jobs,
+                task=resolved,
             )
         else:
             msg = (
@@ -676,7 +689,7 @@ class LightGbmSelector:
 
         try:
             ctor_params, stopping_rounds = split_lgbm_early_stopping(best_params)
-            model = lgb.LGBMClassifier(**ctor_params)
+            model = lgbm_estimator_class(resolved)(**ctor_params)
             fit_lgbm_with_early_stopping(
                 model,
                 train_matrix,
@@ -701,8 +714,7 @@ class LightGbmSelector:
                 )
                 shap_sample = valid_matrix[sample_indices]
             shap_values = shap.TreeExplainer(model).shap_values(shap_sample)
-            normalized_shap = normalize_binary_shap_values(shap_values)
-            shap_importances = np.abs(normalized_shap).mean(axis=0)
+            shap_importances = shap_mean_abs(resolved, shap_values)
         except Exception as exc:  # noqa: BLE001 - model/SHAP failures
             msg = f"lightgbm: fold {fold_index} failed: {exc}"
             raise ExecutionError(msg) from exc
@@ -879,20 +891,9 @@ def build_trial_parameters(
     n_jobs: int,
     search_space: Mapping[str, Mapping[str, Any]] | None = None,
     fixed_params: Mapping[str, Any] | None = None,
+    task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Build LightGBM parameters for one Optuna trial.
-
-    Args:
-        trial: Active Optuna trial.
-        seed: Deterministic seed forced onto the model.
-        n_jobs: Thread count forced onto the model.
-        search_space: Parameter specifications to tune. Defaults to
-            ``DEFAULT_SEARCH_SPACE``, preserving the established behaviour.
-        fixed_params: Scalar parameters passed through unchanged.
-
-    Returns:
-        Parameter dictionary for ``lgb.LGBMClassifier``.
-    """
+    """Build LightGBM parameters for one Optuna trial."""
     space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
     suggested = {
         name: suggest_parameter(trial, name, specification, method_name="lightgbm")
@@ -902,6 +903,7 @@ def build_trial_parameters(
         {**dict(fixed_params or {}), **suggested},
         seed=seed,
         n_jobs=n_jobs,
+        task=task,
     )
 
 
@@ -917,17 +919,11 @@ def tune_parameters(
     n_startup_trials: int = 10,
     sampler: str = "TPE",
     timeout: int | None = None,
+    task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Tune one LightGBM parameter set on a stratified 80/20 hold-out.
-
-    ``search_space`` and ``fixed_params`` come from ``model.params.parameters``;
-    when omitted, ``DEFAULT_SEARCH_SPACE`` is used. The sampler settings come
-    from ``model.params.optuna_params``.
-    """
+    """Tune one LightGBM parameter set on an 80/20 hold-out."""
     try:
-        import lightgbm as lgb
         import optuna
-        from sklearn.metrics import roc_auc_score
         from sklearn.model_selection import train_test_split
     except ImportError as exc:
         msg = (
@@ -936,16 +932,22 @@ def tune_parameters(
         )
         raise BackendError(msg) from exc
 
+    resolved = (
+        task
+        if task is not None
+        else resolve_task("binary_classification", target, method_name="lightgbm")
+    )
+    split_kwargs: dict[str, Any] = {"test_size": 0.2, "random_state": seed}
+    if resolved.stratify:
+        split_kwargs["stratify"] = target
     train_matrix, valid_matrix, train_target, valid_target = train_test_split(
         feature_matrix,
         target,
-        test_size=0.2,
-        stratify=target,
-        random_state=seed,
+        **split_kwargs,
     )
     space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
     study = optuna.create_study(
-        direction="maximize",
+        direction=optuna_direction(resolved),
         sampler=build_sampler(
             optuna,
             sampler_name=sampler,
@@ -963,9 +965,10 @@ def tune_parameters(
             n_jobs=n_jobs,
             search_space=space,
             fixed_params=fixed_params,
+            task=resolved,
         )
         ctor_params, stopping_rounds = split_lgbm_early_stopping(trial_params)
-        model = lgb.LGBMClassifier(**ctor_params)
+        model = lgbm_estimator_class(resolved)(**ctor_params)
         fit_lgbm_with_early_stopping(
             model,
             train_matrix,
@@ -973,8 +976,7 @@ def tune_parameters(
             eval_set=[(valid_matrix, valid_target)],
             early_stopping_rounds=stopping_rounds,
         )
-        predictions = model.predict_proba(valid_matrix)[:, 1]
-        return float(roc_auc_score(valid_target, predictions))
+        return score_model(resolved, model, valid_matrix, valid_target)
 
     try:
         study.optimize(objective, n_trials=n_trials, timeout=timeout, n_jobs=1)
@@ -993,28 +995,8 @@ def tune_parameters(
         {**dict(fixed_params or {}), **study.best_params},
         seed=seed,
         n_jobs=n_jobs,
+        task=resolved,
     )
-
-
-def normalize_binary_shap_values(shap_values: Any) -> np.ndarray:
-    """Normalize SHAP outputs from supported versions for positive class."""
-    if isinstance(shap_values, list):
-        values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
-    else:
-        values = shap_values
-    if hasattr(values, "values"):
-        values = values.values
-
-    normalized = np.asarray(values)
-    if normalized.ndim == 3:
-        normalized = normalized[:, :, 1]
-    if normalized.ndim != 2:
-        msg = (
-            "lightgbm: unsupported SHAP output shape "
-            f"{normalized.shape!r}; expected a 2D feature matrix."
-        )
-        raise ExecutionError(msg)
-    return normalized
 
 
 def _lightgbm_library_seeds(seed: int) -> dict[str, Any]:
@@ -1035,12 +1017,13 @@ def _finalize_parameters(
     *,
     seed: int,
     n_jobs: int,
+    task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Attach fixed binary-classification and execution parameters."""
+    """Attach task-specific objective/metric and execution parameters."""
+    resolved = task if task is not None else binary_task()
     finalized = {
         **dict(parameters),
-        "objective": "binary",
-        "metric": "auc",
+        **lgbm_objective_params(resolved),
         "verbosity": -1,
         "n_jobs": n_jobs,
         **_lightgbm_library_seeds(seed),

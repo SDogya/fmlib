@@ -162,4 +162,5 @@ precise:
 
 execution:
   seed: 42                   # доходит до сэмплирования, Optuna и random_seed моделей
+  task_type: binary_classification  # должно совпасть со schema.task_type
   max_local_rows: 1000000    # общий потолок, срезает params.max_rows сверху

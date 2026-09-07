@@ -76,6 +76,7 @@ def _context(
                 "params": params if params is not None else {"parameters": _PARAMETERS},
                 "selection": {"max_features": max_features},
             },
+            "execution": {"seed": 42, "task_type": schema.task_type},
         },
     )
     return StageContext(
@@ -89,6 +90,22 @@ def _context(
 
 
 # --- out-of-time split -----------------------------------------------------
+
+
+def test_split_out_of_time_allows_unique_regression_target() -> None:
+    frame = _frame()
+    frame["target"] = 1.0
+    fit, evaluation, periods = split_out_of_time(
+        frame,
+        time_col="month_part",
+        target_col="target",
+        eval_months=1,
+        method_name="catboost_rfe",
+        task_type="regression",
+    )
+    assert periods == ["2024-03"]
+    assert not fit.empty
+    assert not evaluation.empty
 
 
 def test_split_out_of_time_reserves_latest_periods() -> None:
@@ -184,18 +201,69 @@ def test_select_requires_time_column() -> None:
         selector.select(context, ["cat_a", "num_a", "num_b"])
 
 
-def test_select_requires_binary_classification() -> None:
-    schema = FeatureSchema(
+def test_select_runs_classification_and_regression() -> None:
+    _require_catboost()
+    params = {
+        "parameters": _PARAMETERS,
+        "optuna_params": {"enabled": False},
+    }
+
+    def pandas_context(frame: pd.DataFrame, schema: FeatureSchema) -> StageContext:
+        config = FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "method": "catboost_rfe",
+                    "params": params,
+                    "selection": {"max_features": 1},
+                },
+                "execution": {"seed": 42, "task_type": schema.task_type},
+            },
+        )
+        return StageContext(
+            spark=None,
+            datasets={"train": frame},
+            schema=schema,
+            config=config,
+            seed=42,
+            candidates=["cat_a", "num_a", "num_b"],
+        )
+
+    class_frame = _frame()
+    # month_part is index % 3; cycle the label on a different axis so every
+    # out-of-time part still has all three classes.
+    class_frame["target"] = [(index // 3) % 3 for index in range(len(class_frame))]
+    class_schema = FeatureSchema(
         categorical=("cat_a",),
-        continuous=("num_a",),
+        continuous=("num_a", "num_b"),
+        target="target",
+        task_type="classification",
+        time="month_part",
+    )
+    class_context = pandas_context(class_frame, class_schema)
+    class_decisions = CatBoostRfeSelector(class_context.config.model).select(
+        class_context,
+        ["cat_a", "num_a", "num_b"],
+    )
+    assert {item.feature for item in class_decisions} == {"cat_a", "num_a", "num_b"}
+    assert sum(item.keep for item in class_decisions) == 1
+
+    reg_frame = _frame()
+    reg_frame["target"] = [float(index) for index in range(len(reg_frame))]
+    reg_schema = FeatureSchema(
+        categorical=("cat_a",),
+        continuous=("num_a", "num_b"),
         target="target",
         task_type="regression",
         time="month_part",
     )
-    context = _context(_frame(), schema=schema)
-    selector = CatBoostRfeSelector(context.config.model)
-    with pytest.raises(ExecutionError, match="binary_classification"):
-        selector.select(context, ["cat_a", "num_a"])
+    reg_context = pandas_context(reg_frame, reg_schema)
+    reg_decisions = CatBoostRfeSelector(reg_context.config.model).select(
+        reg_context,
+        ["cat_a", "num_a", "num_b"],
+    )
+    assert {item.feature for item in reg_decisions} == {"cat_a", "num_a", "num_b"}
+    assert class_context.scores["catboost_rfe"]["best_params"]["loss_function"] == "MultiClass"
+    assert reg_context.scores["catboost_rfe"]["best_params"]["loss_function"] == "RMSE"
 
 
 def test_select_requires_parameters() -> None:

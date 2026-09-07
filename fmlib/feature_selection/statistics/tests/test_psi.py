@@ -267,5 +267,37 @@ def test_spark_psi_runs_on_real_dataframes(spark: Any) -> None:
     assert decisions[0].value >= 0.0
 
 
+def test_regression_subsample_is_not_stratified() -> None:
+    selector = _make_psi_selector(subsample_rows=6)
+    train = pd.DataFrame(
+        {
+            "target": [float(index) for index in range(20)],
+            "feature1": list(range(20)),
+        },
+    )
+    schema = FeatureSchema(
+        categorical=(),
+        continuous=("feature1",),
+        target="target",
+        task_type="regression",
+    )
+    context = StageContext(
+        spark=None,
+        datasets={"train": train, "valid": train.copy()},
+        schema=schema,
+        config=FeatureSelectionConfig(),
+        seed=7,
+        candidates=["feature1"],
+    )
+    sampled_train, sampled_valid = selector._apply_subsample_if_needed(
+        context,
+        train,
+        train.copy(),
+    )
+    assert len(sampled_train) == 6
+    assert len(sampled_valid) == 6
+    assert sampled_train["target"].nunique() == 6
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

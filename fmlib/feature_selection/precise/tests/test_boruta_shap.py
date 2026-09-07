@@ -54,6 +54,7 @@ def _context(
             "execution": {
                 "seed": seed,
                 "max_local_rows": max_local_rows,
+                "task_type": task_type,
             },
         },
     )
@@ -224,19 +225,131 @@ def test_empty_and_categorical_only_candidates_need_no_dependencies() -> None:
     assert selector.select(context, ["category"]) == []
 
 
-def test_missing_train_and_non_binary_task_fail_before_dependencies() -> None:
-    context = _context(_frame())
+def test_missing_train_fails_before_dependencies() -> None:
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "precise": {"method": "boruta_shap", "params": {}},
+            "execution": {"seed": 17, "task_type": "binary_classification"},
+        },
+    )
+    schema = FeatureSchema(
+        categorical=("category",),
+        continuous=("first", "second"),
+        target="response",
+        task_type="binary_classification",
+    )
+    context = StageContext(
+        spark=None,
+        datasets={},
+        schema=schema,
+        config=config,
+        seed=17,
+        candidates=list(schema.candidate_features()),
+    )
     selector = BorutaShapSelector(context.config.precise)
-    context.datasets = {}
     with pytest.raises(ExecutionError, match="'train' split"):
         selector.select(context, context.candidates)
 
-    regression = _context(_frame(), task_type="regression")
-    with pytest.raises(ExecutionError, match="binary_classification"):
-        BorutaShapSelector(regression.config.precise).select(
-            regression,
-            regression.candidates,
+
+def test_classification_and_regression_run_with_fake_boruta() -> None:
+    class FakeModel:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+    class FakeSelector:
+        def __init__(self, **kwargs: Any) -> None:
+            self.accepted = ["first"]
+            self.rejected = ["second"]
+            self.tentative: list[str] = []
+            self.classification = kwargs.get("classification")
+
+        def fit(self, **kwargs: Any) -> None:
+            return None
+
+        def TentativeRoughFix(self) -> None:
+            return None
+
+    def pandas_context(frame: pd.DataFrame, task_type: str) -> StageContext:
+        config = FeatureSelectionConfig.from_dict(
+            {
+                "precise": {
+                    "method": "boruta_shap",
+                    "params": {"optuna_params": {"enabled": False}},
+                },
+                "execution": {"seed": 17, "task_type": task_type},
+            },
         )
+        schema = FeatureSchema(
+            categorical=("category",),
+            continuous=("first", "second"),
+            target="response",
+            task_type=task_type,
+        )
+        return StageContext(
+            spark=None,
+            datasets={"train": frame},
+            schema=schema,
+            config=config,
+            seed=17,
+            candidates=schema.candidate_features(),
+        )
+
+    class_captured: dict[str, Any] = {}
+
+    class ClassRecordingSelector(FakeSelector):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            class_captured["classification"] = kwargs.get("classification")
+
+    backends = _Backends(
+        boruta_class=ClassRecordingSelector,
+        model_class=FakeModel,
+        optuna_module=None,
+        train_test_split=None,
+    )
+    class_frame = _frame(30)
+    class_frame["response"] = [0, 1, 2] * 10
+    class_context = pandas_context(class_frame, "classification")
+    selector = BorutaShapSelector(class_context.config.precise)
+    details = selector._run_boruta_selection(
+        train=class_frame,
+        target_col="response",
+        feature_cols=["first", "second"],
+        options=selector._resolve_options(class_context),
+        seed=17,
+        backends=backends,
+        context=class_context,
+    )
+    assert details["accepted"] == ["first"]
+    assert class_captured["classification"] is True
+
+    captured: dict[str, Any] = {}
+
+    class RecordingSelector(FakeSelector):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__(**kwargs)
+            captured["classification"] = kwargs.get("classification")
+
+    reg_frame = _frame(30)
+    reg_frame["response"] = np.arange(30, dtype=float)
+    reg_context = pandas_context(reg_frame, "regression")
+    backends = _Backends(
+        boruta_class=RecordingSelector,
+        model_class=FakeModel,
+        optuna_module=None,
+        train_test_split=None,
+    )
+    selector = BorutaShapSelector(reg_context.config.precise)
+    selector._run_boruta_selection(
+        train=reg_frame,
+        target_col="response",
+        feature_cols=["first", "second"],
+        options=selector._resolve_options(reg_context),
+        seed=17,
+        backends=backends,
+        context=reg_context,
+    )
+    assert captured["classification"] is False
 
 
 @pytest.mark.parametrize("model_type", ["lgbm", "rf"])
@@ -395,7 +508,6 @@ def test_core_runs_boruta_for_both_models(
             boruta_class=spy_boruta,
             model_class=backends.model_class,
             optuna_module=backends.optuna_module,
-            roc_auc_score=backends.roc_auc_score,
             train_test_split=backends.train_test_split,
         ),
     )
@@ -447,7 +559,6 @@ def test_tentative_rough_fix_can_be_disabled(
             boruta_class=spy_boruta,
             model_class=backends.model_class,
             optuna_module=backends.optuna_module,
-            roc_auc_score=backends.roc_auc_score,
             train_test_split=backends.train_test_split,
         ),
     )
@@ -645,7 +756,6 @@ def test_core_keeps_partial_nans() -> None:
         boruta_class=FakeSelector,
         model_class=FakeModel,
         optuna_module=None,
-        roc_auc_score=None,
         train_test_split=None,
     )
     all_null = frame.assign(first=np.nan)

@@ -58,6 +58,16 @@ def _canonical_row_order(frame: pd.DataFrame) -> pd.DataFrame:
     return frame.iloc[np.argsort(keys, kind="stable")].reset_index(drop=True)
 
 
+def _stratified_from_context(context: Any | None) -> bool:
+    """Stratify local samples unless the schema task is regression."""
+    if context is None:
+        return True
+    schema = getattr(context, "schema", None)
+    if schema is None:
+        return True
+    return getattr(schema, "task_type", None) != "regression"
+
+
 def prepare_numeric_frame(
     data: Any,
     *,
@@ -69,12 +79,13 @@ def prepare_numeric_frame(
     method_name: str,
     context: Any | None = None,
 ) -> pd.DataFrame:
-    """Build a bounded, stratified local numeric frame.
+    """Build a bounded local numeric frame.
 
     Numeric missing values stay as NaN so LightGBM and BorutaSHAP can use
-    native missing-value splits. When ``context`` is given, a compatible
-    sample prepared by an earlier driver method (same seed / max_rows /
-    target) is reused instead of a second Spark ``toPandas``.
+    native missing-value splits. Sampling is stratified by the target unless
+    ``context.schema.task_type`` is ``regression``. When ``context`` is given,
+    a compatible sample prepared by an earlier driver method (same seed /
+    max_rows / target) is reused instead of a second Spark ``toPandas``.
     """
     reused = _reuse_local_numeric_sample(
         context,
@@ -86,6 +97,7 @@ def prepare_numeric_frame(
     )
     if reused is not None:
         return reused
+    stratified = _stratified_from_context(context)
     if is_spark_dataframe(data):
         local = _prepare_spark_frame(
             data,
@@ -95,6 +107,7 @@ def prepare_numeric_frame(
             sample_fraction=sample_fraction,
             seed=seed,
             method_name=method_name,
+            stratified=stratified,
         )
     elif isinstance(data, pd.DataFrame):
         local = _prepare_pandas_frame(
@@ -105,6 +118,7 @@ def prepare_numeric_frame(
             sample_fraction=sample_fraction,
             seed=seed,
             method_name=method_name,
+            stratified=stratified,
         )
     else:
         msg = (
@@ -161,12 +175,14 @@ def prepare_mixed_frame(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    context: Any | None = None,
 ) -> pd.DataFrame:
-    """Build a bounded, stratified local frame that preserves categorical features.
+    """Build a bounded local frame that preserves categorical features.
 
     Categorical candidates stay as strings; numeric missing values stay as
     NaN. Gradient boosting libraries with native categorical and NaN support
-    handle both themselves.
+    handle both themselves. Sampling is stratified by the target unless
+    ``context.schema.task_type`` is ``regression``.
     """
     categorical_set = set(categorical_cols)
     categorical = [column for column in feature_cols if column in categorical_set]
@@ -177,6 +193,7 @@ def prepare_mixed_frame(
         if column not in feature_cols and column != target_col
     ]
     columns = [*feature_cols, *extras, target_col]
+    stratified = _stratified_from_context(context)
 
     if is_spark_dataframe(data):
         local = _materialize_spark(
@@ -187,6 +204,7 @@ def prepare_mixed_frame(
             sample_fraction=sample_fraction,
             seed=seed,
             method_name=method_name,
+            stratified=stratified,
         )
     elif isinstance(data, pd.DataFrame):
         local = _materialize_pandas(
@@ -197,6 +215,7 @@ def prepare_mixed_frame(
             sample_fraction=sample_fraction,
             seed=seed,
             method_name=method_name,
+            stratified=stratified,
         )
     else:
         msg = (
@@ -244,6 +263,7 @@ def _materialize_spark(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    stratified: bool = True,
 ) -> pd.DataFrame:
     """Project, sample, and materialize a Spark input without type coercion."""
     fields = {field.name: field.dataType for field in frame.schema.fields}
@@ -262,6 +282,7 @@ def _materialize_spark(
         sample_fraction=sample_fraction,
         seed=seed,
         method_name=method_name,
+        stratified=stratified,
     )
     try:
         return sampled.toPandas()
@@ -282,6 +303,7 @@ def _materialize_pandas(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    stratified: bool = True,
 ) -> pd.DataFrame:
     """Project and sample an already-local pandas input without type coercion."""
     missing = [column for column in columns if column not in frame.columns]
@@ -296,6 +318,7 @@ def _materialize_pandas(
         sample_fraction=sample_fraction,
         seed=seed,
         method_name=method_name,
+        stratified=stratified,
     )
     return sampled.reset_index(drop=True)
 
@@ -471,6 +494,7 @@ def _prepare_spark_frame(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    stratified: bool = True,
 ) -> pd.DataFrame:
     """Project, validate, sample, and materialize a Spark input."""
     fields = {field.name: field.dataType for field in frame.schema.fields}
@@ -493,6 +517,7 @@ def _prepare_spark_frame(
         sample_fraction=sample_fraction,
         seed=seed,
         method_name=method_name,
+        stratified=stratified,
     )
     try:
         return sampled.toPandas()
@@ -513,8 +538,9 @@ def _prepare_pandas_frame(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    stratified: bool = True,
 ) -> pd.DataFrame:
-    """Validate and stratify an already-local pandas input."""
+    """Validate and sample an already-local pandas input."""
     missing = [
         column
         for column in [*feature_cols, target_col]
@@ -531,6 +557,7 @@ def _prepare_pandas_frame(
         sample_fraction=sample_fraction,
         seed=seed,
         method_name=method_name,
+        stratified=stratified,
     )
 
 
@@ -542,8 +569,9 @@ def _sample_spark(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    stratified: bool = True,
 ) -> Any:
-    """Apply target-stratified Spark sampling."""
+    """Apply bounded Spark sampling, stratified by the target when requested."""
     try:
         from pyspark.sql import functions
     except ImportError as exc:
@@ -553,13 +581,20 @@ def _sample_spark(
         )
         raise BackendError(msg) from exc
 
+    if not stratified:
+        total_rows = int(frame.count())
+        target_rows = sample_size(total_rows, max_rows, sample_fraction)
+        if target_rows >= total_rows:
+            return frame
+        return frame.orderBy(functions.rand(seed)).limit(target_rows)
+
     escaped_target = target_col.replace("`", "")
-    stratified = frame.withColumn(
+    with_stratum = frame.withColumn(
         "__fmlib_stratum__",
         functions.col(f"`{escaped_target}`").cast("string"),
     )
     try:
-        counts = stratified.groupBy("__fmlib_stratum__").count().collect()
+        counts = with_stratum.groupBy("__fmlib_stratum__").count().collect()
         if any(row["__fmlib_stratum__"] is None for row in counts):
             msg = f"{method_name}: target column contains missing values."
             raise ExecutionError(msg)
@@ -572,11 +607,11 @@ def _sample_spark(
             )
             raise ExecutionError(msg)
         if target_rows >= total_rows:
-            return stratified.drop("__fmlib_stratum__")
+            return with_stratum.drop("__fmlib_stratum__")
 
         fraction = target_rows / total_rows
         fractions = {row["__fmlib_stratum__"]: fraction for row in counts}
-        sampled = stratified.sampleBy(
+        sampled = with_stratum.sampleBy(
             "__fmlib_stratum__",
             fractions=fractions,
             seed=seed,
@@ -600,8 +635,9 @@ def _sample_pandas(
     sample_fraction: float | None,
     seed: int,
     method_name: str,
+    stratified: bool = True,
 ) -> pd.DataFrame:
-    """Apply bounded proportional target sampling to a pandas input."""
+    """Apply bounded sampling to a pandas input."""
     if frame[target_col].isna().any():
         msg = f"{method_name}: target column contains missing values."
         raise ExecutionError(msg)
@@ -609,6 +645,8 @@ def _sample_pandas(
     target_rows = sample_size(len(frame), max_rows, sample_fraction)
     if target_rows >= len(frame):
         return frame.copy()
+    if not stratified:
+        return frame.sample(n=target_rows, random_state=seed).reset_index(drop=True)
 
     counts = frame[target_col].value_counts(sort=False)
     if target_rows < len(counts):

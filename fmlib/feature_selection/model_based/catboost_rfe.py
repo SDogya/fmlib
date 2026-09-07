@@ -26,6 +26,15 @@ from fmlib.feature_selection.utils.optuna_space import (
     resolve_tuning_space,
     suggest_parameter,
 )
+from fmlib.feature_selection.utils.task_runtime import (
+    TaskRuntime,
+    binary_task,
+    catboost_estimator_class,
+    catboost_loss_params,
+    optuna_direction,
+    resolve_task,
+    score_model,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -126,13 +135,6 @@ class CatBoostRfeSelector:
         if not features:
             return []
 
-        if context.schema.task_type != "binary_classification":
-            msg = (
-                "catboost_rfe: only task_type='binary_classification' is supported; "
-                f"got {context.schema.task_type!r}."
-            )
-            raise ExecutionError(msg)
-
         target_col = context.schema.target
         if not target_col:
             msg = "catboost_rfe: FeatureSchema.target is required."
@@ -181,6 +183,7 @@ class CatBoostRfeSelector:
                 sample_fraction=options["sample_fraction"],
                 seed=options["seed"],
                 method_name=self.method_name,
+                context=context,
             )
             details = run_catboost_rfe(
                 local,
@@ -195,6 +198,7 @@ class CatBoostRfeSelector:
                 num_features_to_select=target_count,
                 seed=options["seed"],
                 method_name=self.method_name,
+                task_type=context.schema.task_type,
             )
         except (BackendError, ExecutionError):
             raise
@@ -343,6 +347,7 @@ def split_out_of_time(
     target_col: str,
     eval_months: int,
     method_name: str,
+    task_type: str = "binary_classification",
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
     """Split a frame into fit and eval parts by the latest periods of the time column.
 
@@ -392,26 +397,31 @@ def split_out_of_time(
         if part.empty:
             msg = f"{method_name}: the {name} part of the out-of-time split is empty."
             raise ExecutionError(msg)
-        classes = part[target_col].unique()
-        if len(classes) < 2:
-            msg = (
-                f"{method_name}: the {name} part of the out-of-time split contains a single target class. "
-                "Adjust eval_months or the sampling bounds."
-            )
-            raise ExecutionError(msg)
+        if task_type != "regression":
+            classes = part[target_col].unique()
+            if len(classes) < 2:
+                msg = (
+                    f"{method_name}: the {name} part of the out-of-time split contains a single target class. "
+                    "Adjust eval_months or the sampling bounds."
+                )
+                raise ExecutionError(msg)
 
     return fit_frame, eval_frame, [str(period) for period in eval_periods]
 
 
-def _load_backends(*, require_optuna: bool = True) -> tuple[Any, Any, Any]:
+def _load_backends(
+    *,
+    require_optuna: bool = True,
+    task_type: str = "binary_classification",
+) -> tuple[Any, Any, Any]:
     """Import CatBoost, Optuna and scikit-learn metrics lazily."""
     try:
-        from catboost import CatBoostClassifier, Pool
+        from catboost import Pool
     except ImportError as exc:
         msg = "catboost_rfe: CatBoost is required. Install the catboost optional dependency."
         raise BackendError(msg) from exc
+    estimator_class = catboost_estimator_class(task_type)
     optuna_module: Any = None
-    roc_auc_score: Any = None
     if require_optuna:
         try:
             import optuna as optuna_module
@@ -419,17 +429,23 @@ def _load_backends(*, require_optuna: bool = True) -> tuple[Any, Any, Any]:
             msg = "catboost_rfe: Optuna is required. Install the optuna optional dependency."
             raise BackendError(msg) from exc
         try:
-            from sklearn.metrics import roc_auc_score
+            import sklearn.metrics  # noqa: F401
         except ImportError as exc:
             msg = "catboost_rfe: scikit-learn is required. Install the scikit-learn optional dependency."
             raise BackendError(msg) from exc
-    return (CatBoostClassifier, Pool), optuna_module, roc_auc_score
+    return (estimator_class, Pool), optuna_module, None
 
 
-def _finalize_parameters(parameters: Mapping[str, Any], *, seed: int) -> dict[str, Any]:
-    """Apply library defaults and force the reproducibility seed."""
+def _finalize_parameters(
+    parameters: Mapping[str, Any],
+    *,
+    seed: int,
+    task: TaskRuntime | None = None,
+) -> dict[str, Any]:
+    """Apply library defaults, task loss, and the reproducibility seed."""
     finalized = dict(_DEFAULT_PARAMETERS)
     finalized.update(parameters)
+    finalized.update(catboost_loss_params(task if task is not None else binary_task()))
     finalized["random_seed"] = seed
     return finalized
 
@@ -445,6 +461,7 @@ def tune_parameters(
     seed: int,
     method_name: str,
     backends: tuple[Any, Any, Any],
+    task: TaskRuntime,
 ) -> tuple[dict[str, Any], float, int]:
     """Tune CatBoost parameters with Optuna on the out-of-time eval part.
 
@@ -465,7 +482,7 @@ def tune_parameters(
     Raises:
         ExecutionError: When tuning fails or produces no usable trial.
     """
-    (catboost_classifier, _pool), optuna, roc_auc_score = backends
+    (estimator_class, _pool), optuna, _unused_metric = backends
 
     settings = resolve_optuna_settings(optuna_params, method_name=method_name)
     sampler = build_sampler(
@@ -476,18 +493,17 @@ def tune_parameters(
         n_startup_trials=settings["n_startup_trials"],
         method_name=method_name,
     )
-    study = optuna.create_study(direction="maximize", sampler=sampler)
+    study = optuna.create_study(direction=optuna_direction(task), sampler=sampler)
 
     def objective(trial: Any) -> float:
         suggested = {
             name: suggest_parameter(trial, name, specification, method_name=method_name)
             for name, specification in search_space.items()
         }
-        parameters = _finalize_parameters({**fixed, **suggested}, seed=seed)
-        model = catboost_classifier(**parameters)
+        parameters = _finalize_parameters({**fixed, **suggested}, seed=seed, task=task)
+        model = estimator_class(**parameters)
         model.fit(fit_pool, eval_set=eval_pool)
-        predictions = model.predict_proba(eval_pool)[:, 1]
-        return float(roc_auc_score(eval_labels, predictions))
+        return score_model(task, model, eval_pool, eval_labels)
 
     try:
         study.optimize(
@@ -507,7 +523,11 @@ def tune_parameters(
         msg = "catboost_rfe: Optuna finished without a completed trial. Increase n_trials or the timeout."
         raise ExecutionError(msg)
 
-    best_params = _finalize_parameters({**fixed, **study.best_params}, seed=seed)
+    best_params = _finalize_parameters(
+        {**fixed, **study.best_params},
+        seed=seed,
+        task=task,
+    )
     return best_params, float(study.best_value), len(completed)
 
 
@@ -525,6 +545,7 @@ def run_catboost_rfe(
     num_features_to_select: int,
     seed: int,
     method_name: str = "catboost_rfe",
+    task_type: str = "binary_classification",
 ) -> dict[str, Any]:
     """Tune parameters when requested, then run CatBoost recursive elimination.
 
@@ -549,8 +570,14 @@ def run_catboost_rfe(
         BackendError: When CatBoost, Optuna or scikit-learn is unavailable.
         ExecutionError: When the split, tuning or elimination fails.
     """
-    backends = _load_backends(require_optuna=False)
-    (catboost_classifier, pool_class), _optuna, _roc_auc_score = backends
+    backends = _load_backends(require_optuna=False, task_type=task_type)
+    (estimator_class, pool_class), _optuna, _metric = backends
+    task = resolve_task(
+        task_type,
+        frame[target_col].to_numpy(),
+        method_name=method_name,
+        encode_labels=False,
+    )
 
     fit_frame, eval_frame, eval_periods = split_out_of_time(
         frame,
@@ -558,6 +585,7 @@ def run_catboost_rfe(
         target_col=target_col,
         eval_months=eval_months,
         method_name=method_name,
+        task_type=task.task_type,
     )
 
     features = list(feature_cols)
@@ -585,9 +613,10 @@ def run_catboost_rfe(
         search_space,
         n_rows=len(fit_frame),
         library="catboost",
+        task_type=task.task_type,
     )
     if search_space:
-        backends = _load_backends(require_optuna=True)
+        backends = _load_backends(require_optuna=True, task_type=task.task_type)
         best_params, best_metric, completed_trials = tune_parameters(
             fit_pool=fit_pool,
             eval_pool=eval_pool,
@@ -598,15 +627,16 @@ def run_catboost_rfe(
             seed=seed,
             method_name=method_name,
             backends=backends,
+            task=task,
         )
         logger.info(
-            "%s: Optuna finished %d trials, best eval ROC-AUC %.5f",
+            "%s: Optuna finished %d trials, best eval metric %.5f",
             method_name,
             completed_trials,
             best_metric,
         )
     else:
-        best_params = _finalize_parameters(fixed, seed=seed)
+        best_params = _finalize_parameters(fixed, seed=seed, task=task)
         best_metric = None
         completed_trials = 0
         logger.info("%s: Optuna disabled or search space empty, skipping tuning", method_name)
@@ -622,7 +652,7 @@ def run_catboost_rfe(
 
     if mode == "feature_drop_per_step":
         selected, eliminated, loss_graph, n_rounds = _eliminate_constant_drop(
-            catboost_classifier=catboost_classifier,
+            estimator_class=estimator_class,
             pool_class=pool_class,
             fit_frame=fit_frame,
             eval_frame=eval_frame,
@@ -638,7 +668,7 @@ def run_catboost_rfe(
         )
         payload_steps = n_rounds
     else:
-        model = catboost_classifier(**best_params)
+        model = estimator_class(**best_params)
         try:
             summary = model.select_features(
                 fit_pool,
@@ -732,7 +762,7 @@ def _names_from_summary(
 
 def _eliminate_constant_drop(
     *,
-    catboost_classifier: Any,
+    estimator_class: Any,
     pool_class: Any,
     fit_frame: pd.DataFrame,
     eval_frame: pd.DataFrame,
@@ -770,7 +800,7 @@ def _eliminate_constant_drop(
             eval_frame[target_col],
             cat_features=cats,
         )
-        model = catboost_classifier(**best_params)
+        model = estimator_class(**best_params)
         try:
             summary = model.select_features(
                 fit_pool,

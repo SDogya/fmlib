@@ -35,6 +35,33 @@ def test_catboost_table_matches_binary_lama_buckets() -> None:
     assert params["use_best_model"] is True
 
 
+def test_catboost_table_matches_multiclass_and_regression_lama() -> None:
+    multi = boost_fixed_params(
+        10_000,
+        library="catboost",
+        task_type="classification",
+    )
+    assert multi["learning_rate"] == 0.03
+    assert multi["iterations"] == 3000
+    assert multi["early_stopping_rounds"] == 100
+
+    multi_large = boost_fixed_params(
+        200_000,
+        library="catboost",
+        task_type="classification",
+    )
+    assert multi_large["iterations"] == 4000
+
+    regression = boost_fixed_params(
+        10_000,
+        library="catboost",
+        task_type="regression",
+    )
+    assert regression["learning_rate"] == 0.05
+    assert regression["iterations"] == 2000
+    assert regression["early_stopping_rounds"] == 300
+
+
 def test_one_mapping_still_gets_table_lr_and_patience() -> None:
     _fixed, search_space = resolve_tuning_space(
         {"depth": {"type": "int", "min": 3, "max": 7}},
