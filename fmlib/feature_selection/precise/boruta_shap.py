@@ -393,15 +393,15 @@ class BorutaShapSelector:
             method_name=self.method_name,
             context=context,
         )
-        if local.loc[:, feature_cols].isna().any().any():
-            all_null = [
-                feature
-                for feature in feature_cols
-                if local[feature].isna().all()
-            ]
+        all_null = [
+            feature
+            for feature in feature_cols
+            if local[feature].isna().all()
+        ]
+        if all_null:
             msg = (
-                "boruta_shap: median imputation left missing values; "
-                f"all-null features after sampling: {all_null}."
+                "boruta_shap: all-null features after sampling: "
+                f"{all_null}."
             )
             raise ExecutionError(msg)
 

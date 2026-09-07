@@ -99,3 +99,21 @@ def test_prepare_does_not_reuse_when_max_rows_differ(
     )
 
     assert calls["n"] == 2
+
+
+def test_prepare_keeps_numeric_nulls() -> None:
+    frame = _numeric_frame()
+    frame.loc[0, "a"] = float("nan")
+
+    prepared = prepare_numeric_frame(
+        frame,
+        target_col="y",
+        feature_cols=["a", "b"],
+        max_rows=10,
+        sample_fraction=None,
+        seed=7,
+        method_name="lightgbm",
+    )
+
+    assert int(prepared["a"].isna().sum()) == 1
+    assert not prepared["b"].isna().any()

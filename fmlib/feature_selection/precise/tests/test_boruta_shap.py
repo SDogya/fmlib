@@ -596,6 +596,83 @@ def test_core_rejects_single_class_and_all_null_features() -> None:
         )
 
 
+def test_core_keeps_partial_nans() -> None:
+    frame = _frame()
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "precise": {
+                "method": "boruta_shap",
+                "params": _tiny_boruta_params(),
+            },
+            "execution": {"seed": 17, "max_local_rows": 1_000},
+        },
+    )
+    schema = FeatureSchema(
+        categorical=("category",),
+        continuous=("first", "second"),
+        target="response",
+        task_type="binary_classification",
+    )
+    selector = BorutaShapSelector(config.precise)
+    options = selector._resolve_options(
+        StageContext(
+            spark=None,
+            datasets={"train": frame},
+            schema=schema,
+            config=config,
+            seed=17,
+            candidates=schema.candidate_features(),
+        ),
+    )
+
+    class FakeModel:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+    class FakeSelector:
+        def __init__(self, **kwargs: Any) -> None:
+            self.accepted = ["first"]
+            self.rejected = ["second"]
+            self.tentative: list[str] = []
+
+        def fit(self, **kwargs: Any) -> None:
+            return None
+
+        def TentativeRoughFix(self) -> None:
+            return None
+
+    backends = _Backends(
+        boruta_class=FakeSelector,
+        model_class=FakeModel,
+        optuna_module=None,
+        roc_auc_score=None,
+        train_test_split=None,
+    )
+    all_null = frame.assign(first=np.nan)
+    with pytest.raises(ExecutionError, match="all-null"):
+        selector._run_boruta_selection(
+            train=all_null,
+            target_col="response",
+            feature_cols=["first", "second"],
+            options=options,
+            seed=17,
+            backends=backends,
+        )
+
+    partial_null = frame.copy()
+    partial_null.loc[0, "first"] = np.nan
+    details = selector._run_boruta_selection(
+        train=partial_null,
+        target_col="response",
+        feature_cols=["first", "second"],
+        options=options,
+        seed=17,
+        backends=backends,
+    )
+    assert details["accepted"] == ["first"]
+    assert details["rejected"] == ["second"]
+
+
 def test_spark_core_uses_shared_materialization_and_supports_dots(spark: Any) -> None:
     _require_boruta_stack()
     frame = spark.createDataFrame(

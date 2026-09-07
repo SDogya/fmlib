@@ -479,10 +479,20 @@ def test_pandas_preparation_is_stratified_bounded_and_deterministic() -> None:
     assert int(counts.min()) >= 1
 
 
-def test_pandas_preparation_fills_numeric_nulls_with_median() -> None:
+def test_pandas_preparation_keeps_numeric_nulls() -> None:
     frame = _frame()
     frame.loc[0, "first"] = np.nan
-    selector = LightGbmSelector(_context(frame).config.model)
+    selector = LightGbmSelector(
+        FeatureSelectionConfig.from_dict(
+            {
+                "model": {
+                    "method": "lightgbm",
+                    "params": {"n_trials": 1, "n_folds": 2},
+                },
+                "execution": {"seed": 17, "max_local_rows": 1_000},
+            },
+        ).model,
+    )
 
     matrix, _, _ = selector._extract_and_prep_data(
         frame,
@@ -493,7 +503,7 @@ def test_pandas_preparation_fills_numeric_nulls_with_median() -> None:
         seed=17,
     )
 
-    assert not np.isnan(matrix).any()
+    assert int(np.isnan(matrix).sum()) == 1
 
 
 def test_pandas_preparation_accepts_decimal_numeric_objects() -> None:

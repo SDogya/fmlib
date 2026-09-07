@@ -69,11 +69,12 @@ def prepare_numeric_frame(
     method_name: str,
     context: Any | None = None,
 ) -> pd.DataFrame:
-    """Build a bounded, stratified, median-imputed local numeric frame.
+    """Build a bounded, stratified local numeric frame.
 
-    When ``context`` is given, a compatible sample prepared by an earlier
-    driver method (same seed / max_rows / target) is reused instead of a
-    second Spark ``toPandas``.
+    Numeric missing values stay as NaN so LightGBM and BorutaSHAP can use
+    native missing-value splits. When ``context`` is given, a compatible
+    sample prepared by an earlier driver method (same seed / max_rows /
+    target) is reused instead of a second Spark ``toPandas``.
     """
     reused = _reuse_local_numeric_sample(
         context,
@@ -134,7 +135,6 @@ def prepare_numeric_frame(
             f"converted to a numeric matrix: {conversion_failures}."
         )
         raise ExecutionError(msg)
-    prepared = prepared.fillna(prepared.median())
 
     result = prepared.copy()
     result[target_col] = local[target_col].to_numpy()
@@ -164,9 +164,9 @@ def prepare_mixed_frame(
 ) -> pd.DataFrame:
     """Build a bounded, stratified local frame that preserves categorical features.
 
-    Unlike :func:`prepare_numeric_frame`, categorical candidates stay as strings
-    and numeric missing values are **not** imputed: gradient boosting libraries
-    with native categorical and NaN support handle both themselves.
+    Categorical candidates stay as strings; numeric missing values stay as
+    NaN. Gradient boosting libraries with native categorical and NaN support
+    handle both themselves.
     """
     categorical_set = set(categorical_cols)
     categorical = [column for column in feature_cols if column in categorical_set]
