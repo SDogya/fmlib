@@ -154,7 +154,7 @@ boruta_shap:
 
   parameters:
     boosting_type: gbdt      # фиксируем: dart в переборе втрое растягивает трайлы
-    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
     num_leaves:
       type: int
       min: 16
@@ -189,8 +189,8 @@ catboost_rfe:
   sample_fraction: 0.1
 
   parameters:
-    # lr и early_stopping_rounds всегда из таблицы по n_rows (LightAutoML);
-    # Optuna их не трогает. Потолок деревьев тоже из таблицы, если нет скаляра.
+    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows (LightAutoML).
+    # Optuna их не ищет. Потолок деревьев тоже из таблицы, если нет скаляра.
     loss_function: Logloss
     eval_metric: AUC
     use_best_model: true

@@ -1,9 +1,9 @@
 """LightAutoML-style learning rate, tree cap and early stopping.
 
 Copied from LightAutoML ``boost_lgbm.py`` / ``boost_cb.py`` binary tables.
-Optuna does not sample these keys: selectors inject them after ``n_rows`` of
-the materialized train is known. Real tree count comes from early stopping;
-``n_estimators`` / ``iterations`` is only a ceiling.
+Optuna does not sample these keys: selectors fill missing ones after ``n_rows``
+of the materialized train is known. A YAML scalar is kept. Real tree count
+comes from early stopping; ``n_estimators`` / ``iterations`` is only a ceiling.
 """
 
 from __future__ import annotations
@@ -30,6 +30,11 @@ _CB_TREE_CAP_KEYS = (
     "num_trees",
     "num_boost_round",
 )
+
+
+def _has_any_key(mapping: Mapping[str, Any], keys: frozenset[str] | tuple[str, ...]) -> bool:
+    """Return whether ``mapping`` already pins any name from ``keys``."""
+    return any(key in mapping for key in keys)
 
 
 def boost_fixed_params(
@@ -66,11 +71,14 @@ def apply_boost_heuristics(
     n_rows: int,
     library: BoostLibrary,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Force table lr/patience into ``fixed`` and strip them from Optuna.
+    """Fill missing lr/patience/cap from the table; keep YAML scalars.
 
-    Tree cap is injected only when YAML did not already pin
-    ``iterations`` / ``n_estimators`` / ``num_trees`` (or an alias) as a scalar.
-    A mapping of the tree cap stays legal and is left in ``search_space``.
+    Optuna never samples ``learning_rate`` / ``eta`` / ``early_stopping_rounds``
+    / ``od_wait``: those mappings are stripped from ``search_space``. A scalar
+    already in ``fixed`` (including aliases) is left alone. Missing keys are
+    taken from the LightAutoML row-count table. Tree cap and CatBoost
+    ``use_best_model`` follow the same fill-if-missing rule. A mapping of the
+    tree cap stays legal and is left in ``search_space``.
 
     Args:
         fixed: Scalar parameters from ``resolve_tuning_space``.
@@ -88,18 +96,19 @@ def apply_boost_heuristics(
         if str(name) not in _STRIP_FROM_SPACE
     }
     new_fixed = dict(fixed or {})
-    for key in _STRIP_FROM_SPACE:
-        new_fixed.pop(key, None)
-    new_fixed["learning_rate"] = table["learning_rate"]
-    new_fixed["early_stopping_rounds"] = table["early_stopping_rounds"]
+    if not _has_any_key(new_fixed, _LR_KEYS):
+        new_fixed["learning_rate"] = table["learning_rate"]
+    if not _has_any_key(new_fixed, _ES_KEYS):
+        new_fixed["early_stopping_rounds"] = table["early_stopping_rounds"]
     if library == "catboost":
-        new_fixed["use_best_model"] = True
+        if "use_best_model" not in new_fixed:
+            new_fixed["use_best_model"] = table["use_best_model"]
         cap_keys = _CB_TREE_CAP_KEYS
         cap_name = "iterations"
     else:
         cap_keys = _LGBM_TREE_CAP_KEYS
         cap_name = "n_estimators"
-    if not any(key in new_fixed for key in cap_keys):
+    if not _has_any_key(new_fixed, cap_keys):
         new_fixed[cap_name] = table[cap_name]
     return new_fixed, new_space
 
@@ -107,13 +116,20 @@ def apply_boost_heuristics(
 def split_lgbm_early_stopping(
     parameters: Mapping[str, Any],
 ) -> tuple[dict[str, Any], int | None]:
-    """Drop patience keys that do not belong on the LightGBM constructor."""
+    """Drop patience keys that do not belong on the LightGBM constructor.
+
+    ``early_stopping_rounds <= 0`` means train to the tree cap with no
+    patience callback.
+    """
     params = dict(parameters)
     raw = params.pop("early_stopping_rounds", None)
     params.pop("od_wait", None)
     if raw is None:
         return params, None
-    return params, int(raw)
+    rounds = int(raw)
+    if rounds <= 0:
+        return params, None
+    return params, rounds
 
 
 def fit_lgbm_with_early_stopping(
@@ -134,12 +150,17 @@ def fit_lgbm_with_early_stopping(
         features: Train feature matrix.
         target: Train labels.
         eval_set: LightGBM ``eval_set`` argument, or ``None``.
-        early_stopping_rounds: Table patience, or ``None`` to train to the cap.
+        early_stopping_rounds: Patience, ``None``, or ``<= 0`` to train to the
+            cap without a stopping callback.
 
     Returns:
         The fitted ``model``.
     """
-    if early_stopping_rounds is None or eval_set is None:
+    if (
+        early_stopping_rounds is None
+        or int(early_stopping_rounds) <= 0
+        or eval_set is None
+    ):
         fit_kwargs: dict[str, Any] = {}
         if eval_set is not None:
             fit_kwargs["eval_set"] = eval_set

@@ -293,14 +293,15 @@ values             без type      → то же, сокращение
 
 Это касается **тюнингуемых** ключей (`depth`, `num_leaves`, …).
 `learning_rate` и `early_stopping_rounds` Optuna не ищет: после
-`resolve_tuning_space` селектор всегда подставляет значения из эвристики
-LightAutoML по числу строк локального train
+`resolve_tuning_space` селектор **добирает** недостающие значения из
+эвристики LightAutoML по числу строк локального train
 ([`lama_boost_defaults.py`](../fmlib/feature_selection/utils/lama_boost_defaults.py)).
-Мапа или скаляр на lr / patience в YAML вырезается, таблица побеждает.
-Одна чужая мапа не отключает эту подстановку. Потолок деревьев
-(`iterations` / `n_estimators`) в дефолтную сетку не входит: скаляр в YAML
-остаётся cap, иначе берётся таблица. Реальное число деревьев даёт early
-stopping на `eval_set`.
+Скаляр в YAML на lr / patience / потолок деревьев / `use_best_model`
+остаётся; таблица заполняет только дырки. Мапа lr вырезается из
+пространства поиска, и если скаляра нет — lr берётся из таблицы.
+Одна чужая мапа не отключает эту подстановку. `early_stopping_rounds: 0`
+отключает patience (модель учится ровно до cap). Реальное число деревьев
+при ненулевом ES даёт early stopping на `eval_set`.
 
 ### Что происходит за один трайл
 

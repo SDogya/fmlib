@@ -500,7 +500,7 @@ def test_a_yaml_mapping_replaces_the_default_grid() -> None:
     assert options["fixed_params"] == {"iterations": 10}
 
 
-def test_table_learning_rate_overrides_yaml_scalar() -> None:
+def test_yaml_scalar_learning_rate_is_kept() -> None:
     _require_catboost()
     details = run_catboost_rfe(
         _frame(),
@@ -520,7 +520,7 @@ def test_table_learning_rate_overrides_yaml_scalar() -> None:
     )
 
     assert details["fit_rows"] == 40
-    assert details["best_params"]["learning_rate"] == 0.02
+    assert details["best_params"]["learning_rate"] == 0.1
     assert details["best_params"]["early_stopping_rounds"] == 100
     assert details["best_params"]["iterations"] == 20
     assert details["best_params"]["use_best_model"] is True

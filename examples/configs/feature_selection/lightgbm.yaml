@@ -63,7 +63,7 @@ model:
     # Мапа -> вся сетка пользователя (дефолтный файл не подмешивается).
     # Скаляр -> уходит в LightGBM как есть.
     # Без мап при enabled: true берётся LIGHTGBM_SEARCH_SPACE целиком.
-    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
     parameters:
       num_leaves:
         type: int

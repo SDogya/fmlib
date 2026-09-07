@@ -79,10 +79,11 @@ class LightGbmSelector:
     ``params.parameters`` has no mapping entries. Any mapping in that block
     fully replaces the fallback: unspecified default keys are not mixed in.
     A scalar is passed to LightGBM unchanged instead of being tuned.
-    ``learning_rate`` and ``early_stopping_rounds`` are always taken from the
-    LightAutoML row-count table after the local sample is materialized; Optuna
-    does not sample them. ``params.optuna_params.enabled: false`` skips Optuna
-    entirely.
+    Missing ``learning_rate`` and ``early_stopping_rounds`` are filled from the
+    LightAutoML row-count table after the local sample is materialized; a YAML
+    scalar is kept. Optuna does not sample those keys.
+    ``early_stopping_rounds: 0`` trains to the tree cap with no patience.
+    ``params.optuna_params.enabled: false`` skips Optuna entirely.
 
     Args:
         config: Model-stage settings. Method-specific ``params`` override the

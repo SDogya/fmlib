@@ -25,7 +25,7 @@ model:
 
     # Скаляр - используется как есть, мапа - вся сетка пользователя.
     # Чтобы пропустить тюнинг, поставьте optuna_params.enabled: false.
-    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
     parameters:
       loss_function: Logloss
       eval_metric: AUC

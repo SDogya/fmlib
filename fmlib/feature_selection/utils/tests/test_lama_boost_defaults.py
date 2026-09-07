@@ -10,6 +10,8 @@ from fmlib.feature_selection.utils.default_model_param_spaces import (
 from fmlib.feature_selection.utils.lama_boost_defaults import (
     apply_boost_heuristics,
     boost_fixed_params,
+    fit_lgbm_with_early_stopping,
+    split_lgbm_early_stopping,
 )
 from fmlib.feature_selection.utils.optuna_space import resolve_tuning_space
 
@@ -81,7 +83,7 @@ def test_learning_rate_mapping_is_stripped_and_table_wins() -> None:
     assert fixed["learning_rate"] == 0.035
 
 
-def test_yaml_scalar_learning_rate_is_overwritten_by_the_table() -> None:
+def test_yaml_scalar_learning_rate_is_kept_table_fills_the_rest() -> None:
     _fixed, search_space = resolve_tuning_space(
         {
             "learning_rate": 0.1,
@@ -100,11 +102,14 @@ def test_yaml_scalar_learning_rate_is_overwritten_by_the_table() -> None:
     )
 
     assert "learning_rate" not in space
-    assert fixed["learning_rate"] == 0.035
+    assert fixed["learning_rate"] == 0.1
+    assert fixed["early_stopping_rounds"] == 100
+    assert fixed["iterations"] == 5000
+    assert fixed["use_best_model"] is True
     assert _fixed["learning_rate"] == 0.1
 
 
-def test_lightgbm_yaml_scalar_lr_is_overwritten_and_cap_filled() -> None:
+def test_lightgbm_yaml_scalar_lr_is_kept_and_cap_filled() -> None:
     fixed, space = apply_boost_heuristics(
         {"learning_rate": 0.1},
         LIGHTGBM_SEARCH_SPACE,
@@ -112,12 +117,72 @@ def test_lightgbm_yaml_scalar_lr_is_overwritten_and_cap_filled() -> None:
         library="lightgbm",
     )
 
-    assert fixed["learning_rate"] == 0.02
+    assert fixed["learning_rate"] == 0.1
     assert fixed["n_estimators"] == 3000
     assert fixed["early_stopping_rounds"] == 200
     assert "learning_rate" not in space
     assert "n_estimators" not in space
     assert "num_leaves" in space
+
+
+def test_eta_scalar_blocks_table_learning_rate() -> None:
+    fixed, _space = apply_boost_heuristics(
+        {"eta": 0.05},
+        LIGHTGBM_SEARCH_SPACE,
+        n_rows=15_000,
+        library="lightgbm",
+    )
+
+    assert fixed["eta"] == 0.05
+    assert "learning_rate" not in fixed
+    assert fixed["early_stopping_rounds"] == 200
+    assert fixed["n_estimators"] == 3000
+
+
+def test_pinned_use_best_model_false_is_kept() -> None:
+    fixed, _space = apply_boost_heuristics(
+        {"use_best_model": False, "iterations": 40},
+        {"depth": {"type": "int", "min": 3, "max": 7}},
+        n_rows=10_000,
+        library="catboost",
+    )
+
+    assert fixed["use_best_model"] is False
+    assert fixed["iterations"] == 40
+    assert fixed["learning_rate"] == 0.035
+
+
+def test_zero_early_stopping_is_kept_and_disables_patience() -> None:
+    fixed, _space = apply_boost_heuristics(
+        {"n_estimators": 500, "learning_rate": 0.05, "early_stopping_rounds": 0},
+        {},
+        n_rows=15_000,
+        library="lightgbm",
+    )
+
+    assert fixed["early_stopping_rounds"] == 0
+    ctor_params, rounds = split_lgbm_early_stopping(fixed)
+    assert rounds is None
+    assert "early_stopping_rounds" not in ctor_params
+
+    class _Recorder:
+        def __init__(self) -> None:
+            self.kwargs: dict[str, object] = {}
+
+        def fit(self, features: object, target: object, **kwargs: object) -> None:
+            self.kwargs = kwargs
+
+    model = _Recorder()
+    fit_lgbm_with_early_stopping(
+        model,
+        [[0.0]],
+        [0],
+        eval_set=[([[0.0]], [0])],
+        early_stopping_rounds=0,
+    )
+    assert "callbacks" not in model.kwargs
+    assert "early_stopping_rounds" not in model.kwargs
+    assert "eval_set" in model.kwargs
 
 
 def test_scalar_tree_cap_is_kept() -> None:

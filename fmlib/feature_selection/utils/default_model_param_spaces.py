@@ -5,8 +5,8 @@ These ranges are used only when ``params.optuna_params.enabled`` is true and
 block fully replaces this file: unspecified default keys are not mixed in.
 
 ``learning_rate``, ``early_stopping_rounds`` and the tree cap are not part of
-the grid. Selectors overlay them from ``lama_boost_defaults`` after ``n_rows``
-is known.
+the grid. Selectors fill missing keys from ``lama_boost_defaults`` after
+``n_rows`` is known; YAML scalars are kept.
 """
 
 from __future__ import annotations

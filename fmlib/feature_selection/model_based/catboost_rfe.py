@@ -86,9 +86,10 @@ class CatBoostRfeSelector:
     (``{"type": "int", "min": 4, "max": 8}``), those mappings are the entire
     grid. If it contains only scalars, the fallback in
     ``CATBOOST_RFE_SEARCH_SPACE`` is used. ``enabled: false`` skips Optuna and
-    passes scalars to CatBoost unchanged. ``learning_rate`` and
-    ``early_stopping_rounds`` are always taken from the LightAutoML row-count
-    table after the out-of-time fit part is known; Optuna does not sample them. Both categorical and continuous
+    passes scalars to CatBoost unchanged. Missing ``learning_rate`` and
+    ``early_stopping_rounds`` are filled from the LightAutoML row-count table
+    after the out-of-time fit part is known; a YAML scalar is kept. Optuna
+    does not sample them. Both categorical and continuous
     candidates are evaluated — categorical ones are handed to CatBoost as
     ``cat_features``.
 

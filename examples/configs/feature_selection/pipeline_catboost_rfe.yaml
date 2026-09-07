@@ -76,7 +76,7 @@ model:
     # Мапа → вся сетка Optuna (дефолтный файл не подмешивается).
     # Скаляр → уходит в CatBoost как есть.
     # Нет мап и enabled: true → CATBOOST_RFE_SEARCH_SPACE.
-    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
     parameters:
       loss_function: Logloss
       eval_metric: AUC
@@ -131,7 +131,7 @@ precise:
     tentative_fix_method: rough   # rough | null
 
     # boruta_shap оценивает только continuous — категориальные до него не доходят.
-    # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
     parameters:
       boosting_type: gbdt    # скаляр: фиксируем. Без этого в переборе есть dart,
                              # который не поддерживает раннюю остановку и растягивает трайл

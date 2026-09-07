@@ -85,7 +85,7 @@ catboost_rfe:
   # Мапа   -> вся сетка Optuna; дефолтный файл не подмешивается.
   # Нет мап и optuna_params.enabled: true -> CATBOOST_RFE_SEARCH_SPACE.
   # optuna_params.enabled: false -> сразу RFE на скалярах.
-  # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+  # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
   parameters:
     loss_function: Logloss
     eval_metric: AUC
@@ -146,7 +146,7 @@ catboost_rfe:
 #   boruta_trials: 50
 #   tentative_fix_method: rough
 #   parameters:
-#     # lr и early_stopping_rounds всегда из таблицы по n_rows; Optuna их не трогает.
+#     # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
 #     num_leaves:
 #       type: int
 #       min: 16
