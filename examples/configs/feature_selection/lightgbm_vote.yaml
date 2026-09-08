@@ -1,0 +1,61 @@
+# LightGBM, selection_mode=vote.
+#
+# В каждом фолде отдельно режутся split-важность и SHAP (2 * n_folds наборов).
+# Признак остаётся, если попал в долю наборов >= min_set_share.
+# min_set_share: 1.0 — должен быть во всех наборах (алгебра как у campaign).
+#
+# Отбор только continuous; категориальные проходят без решения.
+# execution.task_type должен совпасть со schema.task_type.
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - lightgbm: ${lightgbm}
+
+statistics:
+  null_rate:
+    threshold: 0.95
+  constants:
+    max_frequency: 0.98
+    chunk_size: 1000
+
+lightgbm:
+  max_rows: 250000
+  n_folds: 5
+  optuna_mode: global
+  n_jobs: -1
+  seed: 17
+  shap_max_rows: 5000
+  selection_mode: vote
+  min_set_share: 1.0
+  lgbm_threshold: 0.85
+  shap_threshold: 0.85
+  optuna_params:
+    enabled: true
+    n_trials: 30
+    n_startup_trials: 10
+    sampler: TPE
+    timeout: null
+  parameters:
+    num_leaves:
+      type: int
+      min: 16
+      max: 255
+    colsample_bytree:
+      type: float
+      min: 0.5
+      max: 1.0
+    subsample:
+      type: float
+      min: 0.5
+      max: 1.0
+    min_child_weight:
+      type: float
+      min: 1.0e-3
+      max: 10.0
+      log: true
+
+execution:
+  seed: 42
+  task_type: binary_classification
+  max_local_rows: 1000000

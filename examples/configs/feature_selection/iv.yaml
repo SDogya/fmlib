@@ -1,3 +1,6 @@
+# Information Value. Только binary_classification (+ target в schema).
+# На classification / regression шаг падает — не копируйте его туда.
+#
 # Шаги пайплайна. Повторы метода с разными параметрами разрешены.
 # ${statistics.iv} — ссылка OmegaConf на пресет ниже.
 order:
@@ -32,6 +35,8 @@ precise:
 
 execution:
   seed: 42
+  # IV только для binary_classification; должен совпасть со schema.task_type.
+  task_type: binary_classification
   allow_local_fallback: true
   max_local_rows: 1000000
   local_memory_limit: 4

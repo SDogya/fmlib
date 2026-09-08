@@ -1,0 +1,58 @@
+# CatBoost RFE на регрессии.
+#
+# task_type: regression = schema.task_type.
+# Пайплайн сам ставит loss_function: RMSE. IV нельзя.
+# Нужен FeatureSchema.time для out-of-time eval.
+# parameters.task_type: CPU — устройство, не тип задачи.
+
+order:
+  - null_rate: ${statistics.null_rate}
+  - constants: ${statistics.constants}
+  - catboost_rfe: ${catboost_rfe}
+
+statistics:
+  null_rate:
+    threshold: 0.95
+  constants:
+    max_frequency: 0.98
+    chunk_size: 1000
+
+catboost_rfe:
+  eval_months: 1
+  max_rows: 500000
+  sample_fraction: 0.1
+  parameters:
+    use_best_model: true
+    max_ctr_complexity: 1
+    boosting_type: Plain
+    bootstrap_type: MVS
+    task_type: CPU
+    depth:
+      type: int
+      min: 3
+      max: 7
+    l2_leaf_reg:
+      type: float
+      min: 1.0e-8
+      max: 10.0
+      log: true
+    min_data_in_leaf:
+      type: int
+      min: 1
+      max: 20
+  optuna_params:
+    enabled: true
+    n_trials: 30
+    n_startup_trials: 10
+    sampler: TPE
+    timeout: 18000
+  feature_selection_params:
+    algorithm: RecursiveByLossFunctionChange
+    steps: 20
+  selection:
+    max_features: 256
+
+execution:
+  seed: 42
+  task_type: regression
+  max_local_rows: 1000000

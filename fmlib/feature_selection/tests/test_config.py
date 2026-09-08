@@ -1096,3 +1096,23 @@ def test_example_yamls_expose_top_level_order(
     assert tuple(step.method for step in config.order) == methods
 
 
+def test_all_feature_selection_example_yamls_load() -> None:
+    repo_root = Path(__file__).resolve().parents[3]
+    folder = repo_root / "examples" / "configs" / "feature_selection"
+    paths = sorted(folder.glob("*.yaml"))
+    assert paths, f"no example YAMLs in {folder}"
+    expected_task = {
+        "lightgbm_classification.yaml": "classification",
+        "lightgbm_regression.yaml": "regression",
+        "catboost_rfe_classification.yaml": "classification",
+        "catboost_rfe_regression.yaml": "regression",
+    }
+    for path in paths:
+        config = FeatureSelectionConfig.from_yaml(path)
+        assert config.order, f"{path.name} must define a non-empty order"
+        assert config.execution.task_type == expected_task.get(
+            path.name,
+            "binary_classification",
+        )
+
+

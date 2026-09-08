@@ -118,7 +118,9 @@ execution:
 флаги `enabled` игнорируются. Вложенный `statistics.order` по-прежнему список
 уникальных имён и нужен только этой совместимости.
 
-Готовые примеры: [`pipeline_catboost_rfe.yaml`](../examples/configs/feature_selection/pipeline_catboost_rfe.yaml)
+Готовые примеры по сценариям (задача, vote/pinned, CatBoost, статистики):
+[`examples/configs/feature_selection/README.md`](../examples/configs/feature_selection/README.md).
+Стартовые пайплайны — [`pipeline_catboost_rfe.yaml`](../examples/configs/feature_selection/pipeline_catboost_rfe.yaml)
 и [`pipeline_lightgbm.yaml`](../examples/configs/feature_selection/pipeline_lightgbm.yaml).
 
 ### Fail-fast конфига
