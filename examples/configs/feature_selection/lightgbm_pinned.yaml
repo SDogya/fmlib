@@ -5,6 +5,7 @@
 # selection_mode=vote и min_set_share=1.0 — та же алгебра, что LGM ∩ SHAP
 # по фолдам. Наборы совпадут с campaign, только если ещё совпали порядок
 # строк (у нас hash-sort) и сиды модели (seed + номер фолда с единицы).
+# Для одного и того же seed на каждом fold задайте shift_seed_per_fold: false.
 #
 # n_jobs: 1 — ближе к бит-в-бит повторам. Дока не обещает это при n_jobs != 1.
 # Отбор только continuous. execution.task_type = schema.task_type.
@@ -27,6 +28,7 @@ lightgbm:
   optuna_mode: global
   n_jobs: 1
   seed: 42
+  shift_seed_per_fold: true
   shap_max_rows: 1000000
   selection_mode: vote
   min_set_share: 1.0

@@ -337,6 +337,19 @@ def test_options_enable_per_fold_nested_tuning() -> None:
     assert options["shap_max_rows"] == 500
 
 
+def test_options_can_keep_the_same_seed_for_every_fold() -> None:
+    context = _context(
+        _frame(),
+        params={"shift_seed_per_fold": False},
+    )
+
+    options = LightGbmSelector(
+        context.config.model,
+    )._resolve_options(context)
+
+    assert options["shift_seed_per_fold"] is False
+
+
 def test_options_enable_vote_selection() -> None:
     context = _context(
         _frame(),
@@ -381,13 +394,24 @@ def test_options_prefer_n_jobs_over_legacy_driver_n_jobs() -> None:
 
 
 @pytest.mark.parametrize(
-    ("mode", "expected_driver_calls"),
-    [("global", 1), ("per_fold", 0)],
+    (
+        "mode",
+        "shift_seed_per_fold",
+        "expected_driver_calls",
+        "expected_fold_seeds",
+    ),
+    [
+        ("global", True, 1, [18, 19]),
+        ("per_fold", True, 0, [18, 19]),
+        ("global", False, 1, [17, 17]),
+    ],
 )
 def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
     monkeypatch: pytest.MonkeyPatch,
     mode: str,
+    shift_seed_per_fold: bool,
     expected_driver_calls: int,
+    expected_fold_seeds: list[int],
 ) -> None:
     _require_ml_backends()
     context = _context(
@@ -448,6 +472,7 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         optuna_mode=mode,
         n_jobs=1,
         shap_max_rows=32,
+        shift_seed_per_fold=shift_seed_per_fold,
         search_space=options["search_space"],
         fixed_params=options["fixed_params"],
         n_startup_trials=1,
@@ -458,7 +483,7 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
     assert len(captured_folds) == 2
     assert all(fold["optuna_mode"] == mode for fold in captured_folds)
     assert all(fold["n_jobs"] == 1 for fold in captured_folds)
-    assert [fold["seed"] for fold in captured_folds] == [18, 19]
+    assert [fold["seed"] for fold in captured_folds] == expected_fold_seeds
     if mode == "global":
         assert tune_calls[0]["n_jobs"] == 1
         assert all(fold["global_params"] is not None for fold in captured_folds)

@@ -400,6 +400,9 @@ def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
     _require_positive_int(params.get("n_trials"), "model.params.n_trials")
     _validate_optuna_params_block("model", params)
     _validate_optional_seed(params.get("seed"), "model.params.seed")
+    shift_seed_per_fold = params.get("shift_seed_per_fold")
+    if shift_seed_per_fold is not None:
+        _require_bool("model.params.shift_seed_per_fold", shift_seed_per_fold)
     for name in (
         "n_folds",
         "max_rows",
@@ -740,7 +743,8 @@ class ModelConfig:
             - ``"lightgbm"``: LightGBM + SHAP importance (params:
               lgbm_threshold, shap_threshold, n_folds, n_trials, max_rows,
               sample_fraction, optuna_mode, selection_mode, min_set_share,
-              n_jobs, seed, shap_max_rows, parameters). Optuna lives in
+              n_jobs, seed, shift_seed_per_fold, shap_max_rows, parameters).
+              Optuna lives in
               ``params.optuna_params``. ``seed`` overrides ``execution.seed``.
             - ``"catboost_rfe"``: CatBoost recursive elimination on an
               out-of-time split, with optional Optuna tuning (params:

@@ -165,6 +165,7 @@ class LightGbmSelector:
                 lgbm_threshold=options["lgbm_threshold"],
                 shap_threshold=options["shap_threshold"],
                 seed=options["seed"],
+                shift_seed_per_fold=options["shift_seed_per_fold"],
                 optuna_mode=options["optuna_mode"],
                 selection_mode=options["selection_mode"],
                 min_set_share=options["min_set_share"],
@@ -241,12 +242,15 @@ class LightGbmSelector:
             "min_set_share": options["min_set_share"],
             "optuna_mode": options["optuna_mode"],
             "optuna_enabled": options["optuna_enabled"],
+            "shift_seed_per_fold": options["shift_seed_per_fold"],
             "search_space": options["search_space"],
             "fixed_params": options["fixed_params"],
             "fold_execution": "driver",
             "global_best_params": details["global_best_params"],
             "fold_best_params": details["fold_best_params"],
         }
+        if "fold_seeds" in details:
+            scores["fold_seeds"] = details["fold_seeds"]
         if selection_mode == "vote":
             scores["n_sets"] = int(details["n_sets"])
             scores["set_presence"] = set_presence
@@ -335,6 +339,7 @@ class LightGbmSelector:
                 "n_jobs": n_jobs,
                 "shap_max_rows": int(params.get("shap_max_rows", 5_000)),
                 "seed": resolve_step_seed(params, context),
+                "shift_seed_per_fold": params.get("shift_seed_per_fold", True),
             }
             fixed, search_space = resolve_tuning_space(
                 params.get("parameters", {}),
@@ -384,6 +389,9 @@ class LightGbmSelector:
             raise ExecutionError(msg)
         if options["shap_max_rows"] < 1:
             msg = "lightgbm: shap_max_rows must be at least 1."
+            raise ExecutionError(msg)
+        if not isinstance(options["shift_seed_per_fold"], bool):
+            msg = "lightgbm: shift_seed_per_fold must be a boolean."
             raise ExecutionError(msg)
         if (
             sample_fraction is not None
@@ -436,6 +444,7 @@ class LightGbmSelector:
         optuna_mode: str,
         n_jobs: int,
         shap_max_rows: int,
+        shift_seed_per_fold: bool = True,
         search_space: dict[str, dict[str, Any]] | None = None,
         fixed_params: dict[str, Any] | None = None,
         n_startup_trials: int = 10,
@@ -446,7 +455,13 @@ class LightGbmSelector:
         return_importances: bool = False,
         context: Any | None = None,
     ) -> list[str] | dict[str, Any]:
-        """Tune parameters and execute every outer fold on the driver."""
+        """Tune parameters and execute every outer fold on the driver.
+
+        ``shift_seed_per_fold`` controls the seed passed to all fold-local
+        random operations: Optuna in ``per_fold`` mode, LightGBM, and SHAP
+        sampling. When enabled, the one-based outer-fold index is added to
+        ``seed``; otherwise every outer fold receives the same seed.
+        """
         feature_matrix, target, evaluated = self._extract_and_prep_data(
             df,
             target_col,
@@ -517,16 +532,18 @@ class LightGbmSelector:
         fold_lgbm: list[np.ndarray] = []
         fold_shap: list[np.ndarray] = []
         fold_best_params: dict[str, dict[str, Any]] = {}
+        fold_seeds: dict[str, int] = {}
         for fold_index, (_, valid_indices) in enumerate(
             folds.split(feature_matrix, target),
             start=1,
         ):
+            fold_seed = seed + fold_index if shift_seed_per_fold else seed
             lgbm_values, shap_values, best_params = self._run_fold(
                 feature_matrix,
                 target,
                 fold_index=fold_index,
                 valid_indices=np.asarray(valid_indices, dtype=np.int64),
-                seed=seed + fold_index,
+                seed=fold_seed,
                 optuna_mode=optuna_mode,
                 n_trials=n_trials,
                 n_startup_trials=n_startup_trials,
@@ -542,6 +559,7 @@ class LightGbmSelector:
             fold_lgbm.append(lgbm_values)
             fold_shap.append(shap_values)
             fold_best_params[str(fold_index)] = dict(best_params)
+            fold_seeds[str(fold_index)] = fold_seed
 
         if not fold_lgbm:
             msg = "lightgbm: cross-validation produced no folds."
@@ -582,6 +600,7 @@ class LightGbmSelector:
             else None
         )
         details["fold_best_params"] = fold_best_params
+        details["fold_seeds"] = fold_seeds
         return details if return_importances else details["selected_features"]
 
     @staticmethod
