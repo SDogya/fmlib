@@ -1,7 +1,6 @@
 # Шаги пайплайна. Повторы метода с разными параметрами разрешены.
 order:
   - psi: ${statistics.psi}
-  - lasso: ${model}
 
 statistics:
   null_rate:
@@ -27,9 +26,8 @@ statistics:
     n_jobs: -1
 
 model:
-  enabled: true
-  # Still a stub until a real model selector is filled in.
-  method: lasso
+  enabled: false
+  method: lightgbm
   params: {}
   selection:
     max_features: 100

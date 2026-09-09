@@ -1,16 +1,14 @@
 # Шаги пайплайна. Повторы метода с разными параметрами разрешены.
 order:
   - null_rate: ${statistics.null_rate}
-  - lasso: ${model}
 
 statistics:
   null_rate:
     threshold: 0.95
 
 model:
-  enabled: true
-  # Still a stub until a real model selector is filled in.
-  method: lasso
+  enabled: false
+  method: lightgbm
   params: {}
   selection:
     max_features: 100

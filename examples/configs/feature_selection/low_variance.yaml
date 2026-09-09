@@ -1,7 +1,6 @@
 # Шаги пайплайна. Повторы метода с разными параметрами разрешены.
 order:
   - low_variance: ${statistics.low_variance}
-  - lasso: ${model}
 
 statistics:
   low_variance:
@@ -9,9 +8,8 @@ statistics:
     scale_method: "standard"
 
 model:
-  enabled: true
-  # Still a stub until a real model selector is filled in.
-  method: lasso
+  enabled: false
+  method: lightgbm
   params: {}
   selection:
     max_features: 100

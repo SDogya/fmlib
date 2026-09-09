@@ -78,7 +78,7 @@ def test_verbose_pipeline_writes_verbose_log_without_feature_names(
     methods = {event["method"] for event in payload["events"]}
     assert "pipeline" in methods
     assert "correlation" in methods
-    assert "lasso" not in methods
+    assert "lightgbm" not in methods
     assert "null_rate" not in methods
     assert "verbose_log" not in result.to_dict()
 
@@ -238,7 +238,7 @@ def test_verbose_true_records_enabled_selectors_only(
     config = FeatureSelectionConfig.from_dict(
         {
             "statistics": {"order": ["null_rate"]},
-            "model": {"enabled": True, "method": "lasso"},
+            "model": {"enabled": False, "method": "lightgbm"},
             "precise": {"enabled": False, "method": "none"},
             "execution": {"seed": 42, "verbose": True},
         },
@@ -258,7 +258,7 @@ def test_verbose_true_records_enabled_selectors_only(
     methods = {event["method"] for event in payload["events"]}
     assert "pipeline" in methods
     assert "null_rate" in methods
-    assert "lasso" in methods
+    assert "lightgbm" not in methods
     assert "correlation" not in methods
     assert "constants" not in methods
     assert result.verbose_log is not None

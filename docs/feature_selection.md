@@ -159,7 +159,7 @@ statistics:
 доли пропусков. Смена compute-параметра (`low_variance.scale_method: robust` vs
 `minmax`) — отдельная запись рядом. Корреляция кэширует матрицу (в fingerprint
 ещё `max_rows` и `seed` сэмпла); кого выкинуть считается заново greedy по
-текущим remaining. `stability_classifier` не кэшируется.
+текущим remaining.
 На кластере задайте явный `path`.
 
 ### Модельные и precise-шаги

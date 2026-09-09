@@ -19,8 +19,7 @@ statistics:
 
 model:
   enabled: false
-  # Still a stub until a real model selector is filled in.
-  method: lasso
+  method: lightgbm
   params: {}
   selection:
     max_features: 100

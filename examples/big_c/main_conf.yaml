@@ -1,8 +1,5 @@
 # Полный конфиг FeatureSelectionPipeline.
-# Здесь только то, что реально исполняется. Заглушки не включены:
-#   model.method: lasso | random_forest
-#   statistics.stability_classifier
-#
+# Здесь только то, что реально исполняется.
 # Пайплайн: корневой order. Повторы метода с разными параметрами разрешены.
 # Параметры — инлайн или ссылка OmegaConf ${...} на пресеты ниже.
 # Если order нет — шаги собираются из preprocessing.enabled / statistics.order /

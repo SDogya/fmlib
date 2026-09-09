@@ -75,9 +75,6 @@ campaign LGM∩SHAP. «Из коробки» campaign режет индексы 
 [`psi_train_valid.yaml`](psi_train_valid.yaml) (train против valid),
 [`iv.yaml`](iv.yaml) (только binary).
 
-В нескольких старых файлах в `order` ещё стоит заглушка `lasso` — в рабочий
-пайплайн её не копируйте.
-
 ### Полные пайплайны
 
 | файл | состав |

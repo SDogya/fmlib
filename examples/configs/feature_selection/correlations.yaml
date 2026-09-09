@@ -4,7 +4,6 @@ order:
   - low_variance: ${statistics.low_variance}
   - constants: ${statistics.constants}
   - correlation: ${statistics.correlation}
-  - lasso: ${model}
 
 statistics:
   null_rate:
@@ -20,9 +19,8 @@ statistics:
     max_rows: 500_000
 
 model:
-  enabled: true
-  # Still a stub until a real model selector is filled in.
-  method: lasso
+  enabled: false
+  method: lightgbm
   params: {}
   selection:
     max_features: 100

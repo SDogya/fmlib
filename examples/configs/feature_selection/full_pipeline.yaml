@@ -71,7 +71,6 @@ statistics:
 # enabled и method здесь не нужны: шаг выбирается строкой в order, а при
 # наличии order оба флага всё равно игнорируются.
 # Рабочие модельные методы: catboost_rfe, lightgbm.
-# lasso и random_forest — заглушки со случайным дропом.
 catboost_rfe:
   # Последние N периодов FeatureSchema.time уходят в eval_set: ранняя
   # остановка и важности считаются out-of-time, внешние valid/test

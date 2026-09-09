@@ -21,7 +21,7 @@ from fmlib.feature_selection.result import (
     _next_available_path,
     stage_backends_for_config,
 )
-from fmlib.feature_selection.runner import STUB_METHODS, run_order, validate_order_prerequisites
+from fmlib.feature_selection.runner import run_order, validate_order_prerequisites
 from fmlib.feature_selection.schema import FeatureSchema, ensure_no_feature_leak
 from fmlib.feature_selection.utils.verbose import (
     VERBOSE_LOG_FILENAME,
@@ -149,19 +149,7 @@ class FeatureSelectionPipeline:
                 if not item.keep
             ]
 
-            warnings = [
-                (
-                    f"Selector {method!r} is a stub; "
-                    "replace it with a real algorithm."
-                )
-                for method in sorted(
-                    {
-                        step.method
-                        for step in self.config.order
-                        if step.method in STUB_METHODS
-                    },
-                )
-            ]
+            warnings: list[str] = []
 
             if recorder.enabled("pipeline"):
                 recorder.emit(

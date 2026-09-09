@@ -313,11 +313,6 @@ statistics:
     mode: train_valid
     threshold: 0.25
     bins: 10
-  stability_classifier:
-    enabled: false
-    metric: roc_auc
-    threshold: 0.8
-
 model:
   method: catboost_rfe
   params: {}

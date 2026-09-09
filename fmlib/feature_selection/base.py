@@ -206,58 +206,6 @@ def derive_seed(root_seed: int, *parts: str) -> int:
     return int(digest[:8], 16)
 
 
-def stub_drop_features(
-    candidates: Sequence[str],
-    *,
-    seed: int,
-    stage: str,
-    method: str,
-    n_min: int = 10,
-    n_max: int = 20,
-) -> list[FeatureDecision]:
-    """Drop a random subset of candidate features (skeleton stub).
-
-    Never drops all candidates when more than one remains. If there is a single
-    candidate, returns an empty decision list (feature is kept).
-
-    Args:
-        candidates: Current candidate feature names.
-        seed: Root seed; a derived seed is used for sampling.
-        stage: Stage name recorded in decisions.
-        method: Method name recorded in decisions.
-        n_min: Minimum number of features to drop when enough candidates exist.
-        n_max: Maximum number of features to drop.
-
-    Returns:
-        Drop decisions with ``reason=\"stub_random_drop\"``.
-    """
-    if len(candidates) <= 1:
-        return []
-
-    rng = random.Random(derive_seed(seed, stage, method))  # noqa: S311 - deterministic stub sampling
-    max_drop = len(candidates) - 1
-    lower = min(n_min, max_drop)
-    upper = min(n_max, max_drop)
-    if lower > upper:
-        lower = upper
-    k = rng.randint(lower, upper)
-    to_drop = set(rng.sample(list(candidates), k=k))
-
-    return [
-        FeatureDecision(
-            feature=name,
-            stage=stage,
-            method=method,
-            reason="stub_random_drop",
-            value=None,
-            threshold=None,
-            keep=False,
-        )
-        for name in candidates
-        if name in to_drop
-    ]
-
-
 def apply_drop_decisions(
     candidates: Sequence[str],
     decisions: Sequence[FeatureDecision],

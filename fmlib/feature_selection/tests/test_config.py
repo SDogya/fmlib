@@ -32,12 +32,12 @@ def test_defaults_validate() -> None:
 def test_from_dict_and_unknown_field() -> None:
     payload = {
         "statistics": {"null_rate": {"threshold": 0.9}},
-        "model": {"method": "lasso"},
+        "model": {"method": "lightgbm"},
         "precise": {"method": None},
         "execution": {"seed": 7},
     }
     config = FeatureSelectionConfig.from_dict(payload)
-    assert config.model.method == "lasso"
+    assert config.model.method == "lightgbm"
     assert config.precise.method == "none"
     assert config.execution.seed == 7
 
@@ -45,9 +45,10 @@ def test_from_dict_and_unknown_field() -> None:
         FeatureSelectionConfig.from_dict({"extra": 1})
 
 
-def test_unsupported_model_method() -> None:
+@pytest.mark.parametrize("method", ["lasso", "random_forest", "xgboost"])
+def test_unsupported_model_method(method: str) -> None:
     with pytest.raises(ConfigError, match=r"model\.method"):
-        FeatureSelectionConfig.from_dict({"model": {"method": "xgboost"}})
+        FeatureSelectionConfig.from_dict({"model": {"method": method}})
 
 
 def test_low_variance_validation() -> None:
@@ -128,7 +129,7 @@ def test_from_yaml_roundtrip(tmp_path: Path) -> None:
                 "    threshold: 0.85",
                 "model:",
                 "  enabled: false",
-                "  method: random_forest",
+                "  method: lightgbm",
                 "precise:",
                 "  enabled: false",
                 "  method: boruta_shap",
@@ -155,7 +156,7 @@ def test_from_yaml_roundtrip(tmp_path: Path) -> None:
     assert config.preprocessing.feature_drop.enabled is True
     assert config.preprocessing.feature_drop.path == str(drop_path)
     assert config.model.enabled is False
-    assert config.model.method == "random_forest"
+    assert config.model.method == "lightgbm"
     assert config.precise.enabled is False
     assert config.precise.method == "boruta_shap"
     assert config.precise.params["model_type"] == "rf"
@@ -706,6 +707,10 @@ def test_statistics_order_rejects_duplicates_and_unknown() -> None:
         FeatureSelectionConfig.from_dict(
             {"statistics": {"order": ["null_rate", "xgboost"]}},
         )
+    with pytest.raises(ConfigError, match="Unknown method in statistics.order"):
+        FeatureSelectionConfig.from_dict(
+            {"statistics": {"order": ["stability_classifier"]}},
+        )
     with pytest.raises(ConfigError, match="statistics.order must be a list"):
         FeatureSelectionConfig.from_dict({"statistics": {"order": "lightgbm"}})
     with pytest.raises(ConfigError, match="must be a method name"):
@@ -721,7 +726,7 @@ def test_top_level_order_accepts_repeats_and_inline_params() -> None:
                 {"null_rate": {"threshold": 0.99}},
                 {"null_rate": {"threshold": 0.9}},
             ],
-            "model": {"enabled": True, "method": "lasso"},
+            "model": {"enabled": True, "method": "lightgbm"},
             "statistics": {"order": ["correlation"]},
         },
     )
@@ -734,11 +739,18 @@ def test_top_level_order_accepts_repeats_and_inline_params() -> None:
     ]
 
 
-def test_top_level_order_rejects_non_mapping_and_unknown_method() -> None:
+def test_top_level_order_rejects_non_mapping() -> None:
     with pytest.raises(ConfigError, match="must be a mapping with exactly one"):
         FeatureSelectionConfig.from_dict({"order": ["null_rate"]})
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["lasso", "random_forest", "stability_classifier", "xgboost"],
+)
+def test_top_level_order_rejects_unknown_method(method: str) -> None:
     with pytest.raises(ConfigError, match="Unknown method in order"):
-        FeatureSelectionConfig.from_dict({"order": [{"xgboost": {}}]})
+        FeatureSelectionConfig.from_dict({"order": [{method: {}}]})
 
 
 def test_nested_layout_without_order_compiles_to_steps() -> None:
@@ -815,7 +827,7 @@ def test_empty_explicit_order_does_not_compile_nested() -> None:
         {
             "order": [],
             "statistics": {"order": ["correlation"]},
-            "model": {"enabled": True, "method": "lasso"},
+            "model": {"enabled": True, "method": "lightgbm"},
         },
     )
     assert config.order == ()
@@ -1069,7 +1081,7 @@ def test_order_prerequisites_require_target_and_time() -> None:
     ("relpath", "methods"),
     [
         ("examples/configs/feature_selection/iv.yaml", ("iv",)),
-        ("examples/configs/feature_selection/null.yaml", ("null_rate", "lasso")),
+        ("examples/configs/feature_selection/null.yaml", ("null_rate",)),
         (
             "examples/big_c/main_conf.yaml",
             ("null_rate", "constants", "low_variance", "correlation", "psi", "lightgbm"),

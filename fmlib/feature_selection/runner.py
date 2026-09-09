@@ -29,15 +29,12 @@ from fmlib.feature_selection.config import (
     PsiConfig,
     RandomFeatureDropConfig,
     RowSampleConfig,
-    StabilityClassifierConfig,
     _build_section,
     split_model_step_params,
 )
-from fmlib.feature_selection.exceptions import BackendError, ConfigError, SchemaError
+from fmlib.feature_selection.exceptions import BackendError, ConfigError
 from fmlib.feature_selection.model_based.catboost_rfe import CatBoostRfeSelector
-from fmlib.feature_selection.model_based.lasso import LassoSelector
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
-from fmlib.feature_selection.model_based.random_forest import RandomForestSelector
 from fmlib.feature_selection.precise.boruta_shap import BorutaShapSelector
 from fmlib.feature_selection.statistical_filters.constants import (
     ConstantsSelector,
@@ -51,9 +48,6 @@ from fmlib.feature_selection.statistical_filters.low_variance import (
 )
 from fmlib.feature_selection.statistical_filters.null_rate import NullRateSelector
 from fmlib.feature_selection.statistical_filters.psi import PsiSelector
-from fmlib.feature_selection.statistical_filters.stability_classifier import (
-    StabilityClassifierSelector,
-)
 from fmlib.feature_selection.utils.model_param_validate import validate_model_parameters
 from fmlib.feature_selection.utils.statistics_cache import (
     CACHEABLE_METHODS,
@@ -68,13 +62,11 @@ from fmlib.feature_selection.utils.steps import (
 )
 from fmlib.feature_selection.utils.verbose import run_selector_logged
 
-STUB_METHODS = frozenset({"lasso", "random_forest", "stability_classifier"})
-
 _PREPROCESSING_METHODS = frozenset(
     {"feature_drop", "random_feature_drop", "row_sample"},
 )
 _MODEL_METHODS = frozenset(
-    {"lasso", "random_forest", "catboost_rfe", "lightgbm"},
+    {"catboost_rfe", "lightgbm"},
 )
 
 
@@ -124,8 +116,6 @@ def validate_order_prerequisites(context: StageContext) -> None:
             _validate_psi(context, settings)
         elif step.method == "iv":
             _validate_iv(context)
-        elif step.method == "stability_classifier":
-            _validate_stability(context)
         elif step.method in _MODEL_METHODS:
             if context.schema.target is None:
                 msg = "model stage requires FeatureSchema.target."
@@ -170,15 +160,6 @@ def _run_step(
     elif step.method == "iv":
         _validate_iv(context)
         selector = IvSelector(_build_section(IvConfig, step.params, f"order.{step.method}"))
-    elif step.method == "stability_classifier":
-        _validate_stability(context)
-        selector = StabilityClassifierSelector(
-            _build_section(
-                StabilityClassifierConfig,
-                step.params,
-                f"order.{step.method}",
-            ),
-        )
     elif step.method in _MODEL_METHODS:
         if context.schema.target is None:
             msg = "model stage requires FeatureSchema.target."
@@ -268,10 +249,6 @@ def _build_model_selector(step: PipelineStepConfig) -> Any:
         return LightGbmSelector(config)
     if step.method == "catboost_rfe":
         return CatBoostRfeSelector(config)
-    if step.method == "lasso":
-        return LassoSelector(config)
-    if step.method == "random_forest":
-        return RandomForestSelector(config)
     msg = f"Unsupported model method {step.method!r}."
     raise ConfigError(msg)
 
@@ -332,20 +309,6 @@ def _validate_iv(context: StageContext) -> None:
             f"Got {context.schema.task_type!r}."
         )
         raise ConfigError(msg)
-
-
-def _validate_stability(context: StageContext) -> None:
-    """Require at least two data sources for the stability classifier."""
-    n_sources = len(context.datasets)
-    if context.schema.split is not None and n_sources < 2:
-        return
-    if n_sources < 2 and context.schema.split is None:
-        msg = (
-            "stability_classifier requires at least two data sources "
-            "(train/valid[/test] mapping or a split column). "
-            "Remove stability_classifier from order or provide additional splits."
-        )
-        raise SchemaError(msg)
 
 
 def _open_stats_cache(context: StageContext) -> StatisticsMetricsCache | None:

@@ -14,7 +14,7 @@ from fmlib.feature_selection.utils.model_param_validate import (
 )
 
 PSI_MODES = frozenset({"month_over_month", "train_valid"})
-MODEL_METHODS = frozenset({"lasso", "random_forest", "catboost_rfe", "lightgbm"})
+MODEL_METHODS = frozenset({"catboost_rfe", "lightgbm"})
 PRECISE_METHODS = frozenset({"boruta_shap", "none"})
 BORUTA_MODEL_TYPES = frozenset({"lgbm", "rf"})
 BORUTA_SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
@@ -43,10 +43,7 @@ VERBOSE_METHODS = (
     "correlation",
     "psi",
     "iv",
-    "stability_classifier",
     "lightgbm",
-    "lasso",
-    "random_forest",
     "catboost_rfe",
     "boruta_shap",
 )
@@ -57,7 +54,6 @@ STATISTICS_ORDER_METHODS = (
     "correlation",
     "psi",
     "iv",
-    "stability_classifier",
 )
 PREPROCESSING_METHODS = (
     "feature_drop",
@@ -674,14 +670,6 @@ class IvConfig:
 
 
 @dataclass(frozen=True)
-class StabilityClassifierConfig:
-    """Per-feature stability classifier settings."""
-
-    metric: str = "roc_auc"
-    threshold: float = 0.8
-
-
-@dataclass(frozen=True)
 class StatisticsCacheConfig:
     """Optional on-disk cache of statistical metrics.
 
@@ -710,7 +698,6 @@ class StatisticsConfig:
     correlation: CorrelationConfig = field(default_factory=CorrelationConfig)
     psi: PsiConfig = field(default_factory=PsiConfig)
     iv: IvConfig = field(default_factory=IvConfig)
-    stability_classifier: StabilityClassifierConfig = field(default_factory=StabilityClassifierConfig)
     cache: StatisticsCacheConfig = field(default_factory=StatisticsCacheConfig)
 
 
@@ -747,8 +734,6 @@ class ModelConfig:
               eval_months, max_rows, sample_fraction, seed, parameters,
               optuna_params, feature_selection_params; the target feature
               count comes from ``selection.max_features``)
-            - ``"random_forest"``: Random Forest importance (stub)
-            - ``"lasso"``: Lasso-based selection (stub)
         params: Method-specific parameters. Methods that tune with Optuna
             read the shared ``params.optuna_params`` block (``enabled``,
             ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``).
@@ -844,10 +829,7 @@ class VerboseConfig:
     correlation: bool = False
     psi: bool = False
     iv: bool = False
-    stability_classifier: bool = False
     lightgbm: bool = False
-    lasso: bool = False
-    random_forest: bool = False
     catboost_rfe: bool = False
     boruta_shap: bool = False
 
@@ -1210,11 +1192,6 @@ class FeatureSelectionConfig:
             ),
             psi=_build_section(PsiConfig, statistics_raw.get("psi", {}), "statistics.psi"),
             iv=_build_section(IvConfig, statistics_raw.get("iv", {}), "statistics.iv"),
-            stability_classifier=_build_section(
-                StabilityClassifierConfig,
-                statistics_raw.get("stability_classifier", {}),
-                "statistics.stability_classifier",
-            ),
             cache=_build_section(
                 StatisticsCacheConfig,
                 statistics_raw.get("cache", {}),
@@ -1498,8 +1475,6 @@ def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
         elif step.method == "iv":
             settings = _build_section(IvConfig, params, section)
             _validate_iv_config(settings)
-        elif step.method == "stability_classifier":
-            _build_section(StabilityClassifierConfig, params, section)
         elif step.method in MODEL_METHODS:
             model_params, selection_raw, cv_raw = split_model_step_params(params)
             selection = _build_section(

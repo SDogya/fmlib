@@ -87,15 +87,9 @@ statistics:
     relative_error: 0.001
     batch_size: 50
 
-  stability_classifier:
-    # This selector is still a stub.
-    metric: roc_auc
-    threshold: 0.8
-
 model:
   enabled: true
-  # Implemented: lightgbm, catboost_rfe.
-  # Stubs: lasso, random_forest.
+  # Supported: lightgbm, catboost_rfe.
   method: lightgbm
   params:
     # Keep the intersection under both cumulative-importance thresholds.

@@ -57,7 +57,7 @@ def test_drops_constant_and_quasi_constant() -> None:
             "statistics": {
                 "constants": {"max_frequency": 0.9, "min_unique": 2},
             },
-            "model": {"method": "lasso"},
+            "model": {"method": "lightgbm"},
             "precise": {"method": "none"},
         },
     )
