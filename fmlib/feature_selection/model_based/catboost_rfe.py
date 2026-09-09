@@ -1,13 +1,14 @@
 """CatBoost recursive feature elimination with optional Optuna tuning.
 
-The selector materializes a bounded sample of the train split; the module-level
-helpers below operate on that pandas frame only. They never touch Spark, never
-read files, and never look at the validation or test splits.
+The selector materializes a bounded sample of the train split. Private helpers
+operate on that pandas frame only: they never touch Spark, read files, or inspect
+the validation and test splits.
 """
 
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
 import pandas as pd
@@ -45,7 +46,16 @@ _DEFAULT_EVAL_MONTHS = 1
 _DEFAULT_RFE_STEPS = 10
 
 
-def constant_drop_targets(
+@dataclass(frozen=True)
+class _Backends:
+    """Third-party CatBoost and Optuna objects used by the selector."""
+
+    estimator_class: Any
+    pool_class: Any
+    optuna_module: Any
+
+
+def _constant_drop_targets(
     n_features: int,
     max_features: int,
     drop_per_step: int,
@@ -67,7 +77,7 @@ def constant_drop_targets(
     return targets
 
 
-ALGORITHMS = frozenset(
+_ALGORITHMS = frozenset(
     {
         "RecursiveByLossFunctionChange",
         "RecursiveByShapValues",
@@ -103,7 +113,7 @@ class CatBoostRfeSelector:
     ``cat_features``.
 
     Args:
-        config: Model-based stage settings.
+        config: Model-stage settings.
     """
 
     method_name = "catboost_rfe"
@@ -185,14 +195,15 @@ class CatBoostRfeSelector:
                 method_name=self.method_name,
                 context=context,
             )
-            details = run_catboost_rfe(
+            details = _run_catboost_rfe(
                 local,
                 feature_cols=features,
                 categorical_cols=categorical,
                 target_col=target_col,
                 time_col=time_col,
                 eval_months=options["eval_months"],
-                parameters=options["parameters"],
+                fixed_params=options["fixed_params"],
+                search_space=options["search_space"],
                 optuna_params=options["optuna_params"],
                 feature_selection_params=options["feature_selection_params"],
                 num_features_to_select=target_count,
@@ -227,7 +238,10 @@ class CatBoostRfeSelector:
             "elimination_order": list(details["eliminated_features"]),
             "best_params": details["best_params"],
             "best_metric": details["best_metric"],
+            "optuna_enabled": options["optuna_enabled"],
             "optuna_trials": details["optuna_trials"],
+            "fixed_params": details["fixed_params"],
+            "search_space": details["search_space"],
             "algorithm": details["algorithm"],
             "num_features_to_select": details["num_features_to_select"],
             # CatBoost measures the eval loss after every elimination step.
@@ -257,18 +271,11 @@ class CatBoostRfeSelector:
         )
         return decisions
 
-    def _resolve_options(self: CatBoostRfeSelector, context: StageContext) -> dict[str, Any]:
-        """Resolve and validate method options.
-
-        Args:
-            context: Shared stage context.
-
-        Returns:
-            Normalized option dictionary.
-
-        Raises:
-            ExecutionError: When an option is missing or has an invalid value.
-        """
+    def _resolve_options(
+        self: CatBoostRfeSelector,
+        context: StageContext,
+    ) -> dict[str, Any]:
+        """Resolve method options and execution capacity limits."""
         params = self.config.params
         parameters = params.get("parameters")
         if not isinstance(parameters, Mapping) or not parameters:
@@ -315,7 +322,6 @@ class CatBoostRfeSelector:
                 ),
                 "sample_fraction": params.get("sample_fraction"),
                 "num_features_to_select": int(target_count),
-                "parameters": dict(parameters),
                 "fixed_params": fixed,
                 "search_space": search_space,
                 "optuna_enabled": optuna_settings["enabled"],
@@ -340,7 +346,7 @@ class CatBoostRfeSelector:
         return options
 
 
-def split_out_of_time(
+def _split_out_of_time(
     frame: pd.DataFrame,
     *,
     time_col: str,
@@ -361,6 +367,7 @@ def split_out_of_time(
         target_col: Target column, checked for class presence in both parts.
         eval_months: Number of latest periods reserved for evaluation.
         method_name: Selector name used in error messages.
+        task_type: Modelling task used to validate target classes.
 
     Returns:
         Tuple of ``(fit_frame, eval_frame, eval_periods)``.
@@ -413,7 +420,7 @@ def _load_backends(
     *,
     require_optuna: bool = True,
     task_type: str = "binary_classification",
-) -> tuple[Any, Any, Any]:
+) -> _Backends:
     """Import CatBoost, Optuna and scikit-learn metrics lazily."""
     try:
         from catboost import Pool
@@ -433,7 +440,11 @@ def _load_backends(
         except ImportError as exc:
             msg = "catboost_rfe: scikit-learn is required. Install the scikit-learn optional dependency."
             raise BackendError(msg) from exc
-    return (estimator_class, Pool), optuna_module, None
+    return _Backends(
+        estimator_class=estimator_class,
+        pool_class=Pool,
+        optuna_module=optuna_module,
+    )
 
 
 def _finalize_parameters(
@@ -450,7 +461,7 @@ def _finalize_parameters(
     return finalized
 
 
-def tune_parameters(
+def _tune_parameters(
     *,
     fit_pool: Any,
     eval_pool: Any,
@@ -460,7 +471,7 @@ def tune_parameters(
     optuna_params: Mapping[str, Any],
     seed: int,
     method_name: str,
-    backends: tuple[Any, Any, Any],
+    backends: _Backends,
     task: TaskRuntime,
 ) -> tuple[dict[str, Any], float, int]:
     """Tune CatBoost parameters with Optuna on the out-of-time eval part.
@@ -482,18 +493,19 @@ def tune_parameters(
     Raises:
         ExecutionError: When tuning fails or produces no usable trial.
     """
-    (estimator_class, _pool), optuna, _unused_metric = backends
-
     settings = resolve_optuna_settings(optuna_params, method_name=method_name)
     sampler = build_sampler(
-        optuna,
+        backends.optuna_module,
         sampler_name=settings["sampler"],
         search_space=search_space,
         seed=seed,
         n_startup_trials=settings["n_startup_trials"],
         method_name=method_name,
     )
-    study = optuna.create_study(direction=optuna_direction(task), sampler=sampler)
+    study = backends.optuna_module.create_study(
+        direction=optuna_direction(task),
+        sampler=sampler,
+    )
 
     def objective(trial: Any) -> float:
         suggested = {
@@ -501,7 +513,7 @@ def tune_parameters(
             for name, specification in search_space.items()
         }
         parameters = _finalize_parameters({**fixed, **suggested}, seed=seed, task=task)
-        model = estimator_class(**parameters)
+        model = backends.estimator_class(**parameters)
         model.fit(fit_pool, eval_set=eval_pool)
         return score_model(task, model, eval_pool, eval_labels)
 
@@ -531,7 +543,7 @@ def tune_parameters(
     return best_params, float(study.best_value), len(completed)
 
 
-def run_catboost_rfe(
+def _run_catboost_rfe(
     frame: pd.DataFrame,
     *,
     feature_cols: Sequence[str],
@@ -539,7 +551,8 @@ def run_catboost_rfe(
     target_col: str,
     time_col: str,
     eval_months: int,
-    parameters: Mapping[str, Any],
+    fixed_params: Mapping[str, Any],
+    search_space: Mapping[str, Mapping[str, Any]],
     optuna_params: Mapping[str, Any],
     feature_selection_params: Mapping[str, Any],
     num_features_to_select: int,
@@ -556,12 +569,14 @@ def run_catboost_rfe(
         target_col: Target column name.
         time_col: Column used for the out-of-time split.
         eval_months: Number of latest periods reserved for evaluation.
-        parameters: Polymorphic CatBoost parameter block (scalars and/or specs).
+        fixed_params: Scalar CatBoost parameters passed through unchanged.
+        search_space: Parameter specifications tuned by Optuna.
         optuna_params: Optuna settings, used when a search space is resolved.
         feature_selection_params: ``algorithm``, ``steps`` and other ``select_features`` options.
         num_features_to_select: Target feature count for elimination.
         seed: Root reproducibility seed.
         method_name: Selector name used in error messages.
+        task_type: Classification or regression task passed to CatBoost.
 
     Returns:
         Dictionary with selected/eliminated features, tuning details and split sizes.
@@ -571,7 +586,8 @@ def run_catboost_rfe(
         ExecutionError: When the split, tuning or elimination fails.
     """
     backends = _load_backends(require_optuna=False, task_type=task_type)
-    (estimator_class, pool_class), _optuna, _metric = backends
+    estimator_class = backends.estimator_class
+    pool_class = backends.pool_class
     task = resolve_task(
         task_type,
         frame[target_col].to_numpy(),
@@ -579,7 +595,7 @@ def run_catboost_rfe(
         encode_labels=False,
     )
 
-    fit_frame, eval_frame, eval_periods = split_out_of_time(
+    fit_frame, eval_frame, eval_periods = _split_out_of_time(
         frame,
         time_col=time_col,
         target_col=target_col,
@@ -601,28 +617,21 @@ def run_catboost_rfe(
         cat_features=categorical,
     )
 
-    settings = resolve_optuna_settings(optuna_params, method_name=method_name)
-    fixed, search_space = resolve_tuning_space(
-        parameters,
-        defaults=CATBOOST_RFE_SEARCH_SPACE,
-        enabled=settings["enabled"],
-        method_name=method_name,
-    )
-    fixed, search_space = apply_boost_heuristics(
-        fixed,
+    fixed, tuned_space = apply_boost_heuristics(
+        fixed_params,
         search_space,
         n_rows=len(fit_frame),
         library="catboost",
         task_type=task.task_type,
     )
-    if search_space:
+    if tuned_space:
         backends = _load_backends(require_optuna=True, task_type=task.task_type)
-        best_params, best_metric, completed_trials = tune_parameters(
+        best_params, best_metric, completed_trials = _tune_parameters(
             fit_pool=fit_pool,
             eval_pool=eval_pool,
             eval_labels=eval_frame[target_col].to_numpy(),
             fixed=fixed,
-            search_space=search_space,
+            search_space=tuned_space,
             optuna_params=optuna_params,
             seed=seed,
             method_name=method_name,
@@ -643,8 +652,11 @@ def run_catboost_rfe(
 
     selection_params = dict(feature_selection_params)
     algorithm = str(selection_params.pop("algorithm", "RecursiveByLossFunctionChange"))
-    if algorithm not in ALGORITHMS:
-        msg = f"{method_name}: unsupported algorithm={algorithm!r}. Expected one of: {sorted(ALGORITHMS)}."
+    if algorithm not in _ALGORITHMS:
+        msg = (
+            f"{method_name}: unsupported algorithm={algorithm!r}. "
+            f"Expected one of: {sorted(_ALGORITHMS)}."
+        )
         raise ExecutionError(msg)
     selection_params.pop("num_features_to_select", None)
     selection_params.pop("train_final_model", None)
@@ -699,6 +711,8 @@ def run_catboost_rfe(
         "best_params": best_params,
         "best_metric": best_metric,
         "optuna_trials": completed_trials,
+        "fixed_params": fixed,
+        "search_space": tuned_space,
         "algorithm": algorithm,
         "num_features_to_select": num_features_to_select,
         "steps": payload_steps,
@@ -782,7 +796,11 @@ def _eliminate_constant_drop(
     graphs: list[Any] = []
     cumulative_removed: list[int] = []
     try:
-        targets = constant_drop_targets(len(remaining), num_features_to_select, drop_per_step)
+        targets = _constant_drop_targets(
+            len(remaining),
+            num_features_to_select,
+            drop_per_step,
+        )
     except ValueError as exc:
         msg = f"{method_name}: {exc}"
         raise ExecutionError(msg) from exc

@@ -17,10 +17,10 @@ from fmlib.feature_selection.config import FeatureSelectionConfig
 from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
 from fmlib.feature_selection.model_based.catboost_rfe import (
     CatBoostRfeSelector,
+    _constant_drop_targets,
     _pop_elimination_schedule,
-    constant_drop_targets,
-    run_catboost_rfe,
-    split_out_of_time,
+    _run_catboost_rfe,
+    _split_out_of_time,
 )
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.utils.conftest import require_spark_session
@@ -95,7 +95,7 @@ def _context(
 def test_split_out_of_time_allows_unique_regression_target() -> None:
     frame = _frame()
     frame["target"] = 1.0
-    fit, evaluation, periods = split_out_of_time(
+    fit, evaluation, periods = _split_out_of_time(
         frame,
         time_col="month_part",
         target_col="target",
@@ -109,7 +109,7 @@ def test_split_out_of_time_allows_unique_regression_target() -> None:
 
 
 def test_split_out_of_time_reserves_latest_periods() -> None:
-    fit, evaluation, periods = split_out_of_time(
+    fit, evaluation, periods = _split_out_of_time(
         _frame(),
         time_col="month_part",
         target_col="target",
@@ -124,7 +124,7 @@ def test_split_out_of_time_reserves_latest_periods() -> None:
 
 def test_split_out_of_time_requires_enough_periods() -> None:
     with pytest.raises(ExecutionError, match="distinct periods"):
-        split_out_of_time(
+        _split_out_of_time(
             _frame(months=("2024-01",)),
             time_col="month_part",
             target_col="target",
@@ -137,7 +137,7 @@ def test_split_out_of_time_rejects_missing_periods() -> None:
     frame = _frame()
     frame.loc[0, "month_part"] = None
     with pytest.raises(ExecutionError, match="contains missing values"):
-        split_out_of_time(
+        _split_out_of_time(
             frame,
             time_col="month_part",
             target_col="target",
@@ -311,6 +311,9 @@ def test_select_builds_decisions_and_scores() -> None:
     assert scores["eval_periods"] == ["2024-03"]
     assert scores["categorical_evaluated"] == ["cat_a"]
     assert set(scores["selected_features"]) == set(kept)
+    assert scores["optuna_enabled"] is False
+    assert scores["fixed_params"]["depth"] == _PARAMETERS["depth"]
+    assert scores["search_space"] == {}
 
 
 # --- loss curve ------------------------------------------------------------
@@ -401,11 +404,11 @@ def test_non_positive_steps_are_rejected() -> None:
 
 
 def test_constant_drop_targets_schedule() -> None:
-    assert constant_drop_targets(10, 4, 3) == [7, 4]
-    assert constant_drop_targets(8, 3, 10) == [3]
-    assert constant_drop_targets(5, 5, 2) == []
+    assert _constant_drop_targets(10, 4, 3) == [7, 4]
+    assert _constant_drop_targets(8, 3, 10) == [3]
+    assert _constant_drop_targets(5, 5, 2) == []
     with pytest.raises(ValueError, match="feature_drop_per_step"):
-        constant_drop_targets(10, 4, 0)
+        _constant_drop_targets(10, 4, 0)
 
 
 def test_runtime_rejects_steps_and_feature_drop_per_step_together() -> None:
@@ -481,14 +484,15 @@ def test_feature_drop_per_step_drops_a_constant_count() -> None:
     features = ["cat_a", "num_a", "num_b", "num_c", "num_d", "num_e"]
     drop_per_step = 2
     max_features = 3
-    details = run_catboost_rfe(
+    details = _run_catboost_rfe(
         frame,
         feature_cols=features,
         categorical_cols=["cat_a"],
         target_col="target",
         time_col="month_part",
         eval_months=1,
-        parameters=_PARAMETERS,
+        fixed_params=_PARAMETERS,
+        search_space={},
         optuna_params={"enabled": False},
         feature_selection_params={
             "algorithm": "RecursiveByPredictionValuesChange",
@@ -512,14 +516,15 @@ def test_feature_drop_per_step_drops_a_constant_count() -> None:
 def test_steps_mode_keeps_a_single_select_features_call() -> None:
     """The geometric ``steps`` path still goes through one CatBoost elimination."""
     _require_catboost()
-    details = run_catboost_rfe(
+    details = _run_catboost_rfe(
         _frame(),
         feature_cols=["cat_a", "num_a", "num_b"],
         categorical_cols=["cat_a"],
         target_col="target",
         time_col="month_part",
         eval_months=1,
-        parameters=_PARAMETERS,
+        fixed_params=_PARAMETERS,
+        search_space={},
         optuna_params={"enabled": False},
         feature_selection_params={
             "algorithm": "RecursiveByPredictionValuesChange",
@@ -570,14 +575,15 @@ def test_a_yaml_mapping_replaces_the_default_grid() -> None:
 
 def test_yaml_scalar_learning_rate_is_kept() -> None:
     _require_catboost()
-    details = run_catboost_rfe(
+    details = _run_catboost_rfe(
         _frame(),
         feature_cols=["cat_a", "num_a", "num_b"],
         categorical_cols=["cat_a"],
         target_col="target",
         time_col="month_part",
         eval_months=1,
-        parameters={**_PARAMETERS, "learning_rate": 0.1},
+        fixed_params={**_PARAMETERS, "learning_rate": 0.1},
+        search_space={},
         optuna_params={"enabled": False},
         feature_selection_params={
             "algorithm": "RecursiveByPredictionValuesChange",
