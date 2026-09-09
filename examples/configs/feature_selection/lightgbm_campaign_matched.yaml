@@ -1,0 +1,52 @@
+# LightGBM + SHAP с параметрами классического campaign-отбора.
+#
+# Перед запуском укажите существующий файл со списком фичей в
+# feature_drop.path. Формат: один признак на строку; пустые строки и # игнорируются.
+# Данные в notebook должны быть тем же подготовленным numeric dataset, что и в
+# campaign: target и service-колонки не включайте в FeatureSchema.continuous.
+
+order:
+  - feature_drop: ${feature_drop}
+  - lightgbm: ${lightgbm}
+
+feature_drop:
+  # CHANGE_ME: замените на свой .txt или SelectionResult JSON.
+  path: CHANGE_ME/features_to_drop.txt
+  # Неизвестные имена попадут в scores, но не остановят запуск.
+  strict: false
+
+lightgbm:
+  # Campaign: StratifiedKFold(n_splits=5, shuffle=True, random_state=42).
+  n_folds: 5
+  seed: 42
+  # Campaign передаёт один random_state всем fold, без seed + fold.
+  shift_seed_per_fold: false
+  n_jobs: -1
+
+  # Campaign обучает на всём подготовленном sample. При необходимости
+  # поднимите оба лимита вместе с execution.max_local_rows.
+  max_rows: 200000
+  shap_max_rows: 200000
+  sample_fraction: null
+
+  # Campaign: пересечение признаков из LGBM и SHAP на каждом из пяти fold.
+  selection_mode: vote
+  min_set_share: 1.0
+  lgbm_threshold: 0.85
+  shap_threshold: 0.85
+
+  optuna_params:
+    enabled: false
+
+  # LGBMClassifier(max_depth=5, n_estimators=500, learning_rate=0.05).
+  # 0 отключает early stopping, как в campaign без eval_set.
+  parameters:
+    max_depth: 5
+    n_estimators: 500
+    learning_rate: 0.05
+    early_stopping_rounds: 0
+
+execution:
+  seed: 42
+  task_type: binary_classification
+  max_local_rows: 200000
