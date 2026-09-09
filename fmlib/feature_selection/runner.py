@@ -39,13 +39,21 @@ from fmlib.feature_selection.model_based.lasso import LassoSelector
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
 from fmlib.feature_selection.model_based.random_forest import RandomForestSelector
 from fmlib.feature_selection.precise.boruta_shap import BorutaShapSelector
-from fmlib.feature_selection.statistics.constants import ConstantsSelector
-from fmlib.feature_selection.statistics.correlation import CorrelationSelector
-from fmlib.feature_selection.statistics.iv import IvSelector
-from fmlib.feature_selection.statistics.low_variance import LowVarianceSelector
-from fmlib.feature_selection.statistics.null_rate import NullRateSelector
-from fmlib.feature_selection.statistics.psi import PsiSelector
-from fmlib.feature_selection.statistics.stability_classifier import StabilityClassifierSelector
+from fmlib.feature_selection.statistical_filters.constants import (
+    ConstantsSelector,
+)
+from fmlib.feature_selection.statistical_filters.correlation import (
+    CorrelationSelector,
+)
+from fmlib.feature_selection.statistical_filters.iv import IvSelector
+from fmlib.feature_selection.statistical_filters.low_variance import (
+    LowVarianceSelector,
+)
+from fmlib.feature_selection.statistical_filters.null_rate import NullRateSelector
+from fmlib.feature_selection.statistical_filters.psi import PsiSelector
+from fmlib.feature_selection.statistical_filters.stability_classifier import (
+    StabilityClassifierSelector,
+)
 from fmlib.feature_selection.utils.model_param_validate import validate_model_parameters
 from fmlib.feature_selection.utils.statistics_cache import (
     CACHEABLE_METHODS,

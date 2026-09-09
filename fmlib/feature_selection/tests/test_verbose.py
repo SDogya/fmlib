@@ -15,7 +15,9 @@ from fmlib.feature_selection.utils.conftest import (
 )
 from fmlib.feature_selection.pipeline import FeatureSelectionPipeline
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.correlation import CorrelationSelector
+from fmlib.feature_selection.statistical_filters.correlation import (
+    CorrelationSelector,
+)
 from fmlib.feature_selection.tests.test_pipeline import _config, _schema
 from fmlib.feature_selection.utils.verbose import VERBOSE_LOG_FILENAME, VerboseRecorder
 

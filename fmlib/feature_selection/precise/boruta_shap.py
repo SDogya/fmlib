@@ -26,7 +26,6 @@ from fmlib.feature_selection.utils.lama_boost_defaults import (
     split_lgbm_early_stopping,
 )
 from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
-from fmlib.feature_selection.utils.stdlib_import import stdlib_module
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
     resolve_optuna_settings,
@@ -53,8 +52,7 @@ except ImportError:
     optuna = None
 
 try:
-    with stdlib_module("statistics"):
-        from BorutaShap import BorutaShap
+    from BorutaShap import BorutaShap
 except Exception as exc:  # noqa: BLE001 - optional package may fail on incompatible numpy
     BorutaShap = None
     _boruta_import_error: BaseException | None = exc

@@ -20,8 +20,8 @@ from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
 from fmlib.feature_selection.pipeline import FeatureSelectionPipeline
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics import iv as iv_mod
-from fmlib.feature_selection.statistics.iv import (
+from fmlib.feature_selection.statistical_filters import iv as iv_mod
+from fmlib.feature_selection.statistical_filters.iv import (
     IvSelector,
     _binary_mapping,
     _categorical_bins_pandas,

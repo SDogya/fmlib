@@ -63,7 +63,7 @@ fmlib/feature_selection/
 ├── schema.py               # FeatureSchema и валидация входа
 ├── result.py               # SelectionResult и сериализация
 ├── backends/               # Spark и внутренние pandas/polars adapters
-├── statistics/             # null, constant, correlation, PSI, stability
+├── statistical_filters/    # null, constant, correlation, PSI, stability
 ├── model_based/            # Lasso, RF, CatBoost RFE, LGBM
 └── precise/                # BorutaShap
 ```

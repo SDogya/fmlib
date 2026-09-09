@@ -12,7 +12,9 @@ from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import CorrelationConfig, FeatureSelectionConfig
 from fmlib.feature_selection.exceptions import ExecutionError
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.correlation import CorrelationSelector
+from fmlib.feature_selection.statistical_filters.correlation import (
+    CorrelationSelector,
+)
 from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.utils.local_data import sample_frame_rows
 
@@ -214,7 +216,7 @@ def test_execution_max_local_rows_caps_correlation_max_rows() -> None:
         return original(*args, **kwargs)
 
     with patch(
-        "fmlib.feature_selection.statistics.correlation.sample_frame_rows",
+        "fmlib.feature_selection.statistical_filters.correlation.sample_frame_rows",
         wrapped,
     ):
         selector.select(context, ["first", "second"])

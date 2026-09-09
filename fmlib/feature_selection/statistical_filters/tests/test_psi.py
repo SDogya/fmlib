@@ -12,7 +12,7 @@ from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, PsiConfig, StatisticsConfig
 from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.psi import PsiSelector
+from fmlib.feature_selection.statistical_filters.psi import PsiSelector
 
 
 def _make_psi_selector(subsample_rows: int | None = None) -> PsiSelector:

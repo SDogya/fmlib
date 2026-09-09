@@ -25,7 +25,7 @@ from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, PsiConfig
 from fmlib.feature_selection.exceptions import ExecutionError
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.psi import PsiSelector
+from fmlib.feature_selection.statistical_filters.psi import PsiSelector
 from fmlib.feature_selection.utils.conftest import require_spark_session
 
 _ROWS = 2000

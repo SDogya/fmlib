@@ -20,8 +20,8 @@ from fmlib.feature_selection.base import FeatureDecision, StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, NullRateConfig, VerboseConfig
 from fmlib.feature_selection.exceptions import ExecutionError
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics import null_rate as null_rate_module
-from fmlib.feature_selection.statistics.null_rate import (
+from fmlib.feature_selection.statistical_filters import null_rate as null_rate_module
+from fmlib.feature_selection.statistical_filters.null_rate import (
     NullRateSelector,
     _is_spark_dataframe,
     _quoted_col,

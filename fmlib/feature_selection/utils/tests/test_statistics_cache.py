@@ -18,8 +18,12 @@ from fmlib.feature_selection.config import (
 )
 from fmlib.feature_selection.runner import run_order
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.correlation import CorrelationSelector
-from fmlib.feature_selection.statistics.null_rate import NullRateSelector
+from fmlib.feature_selection.statistical_filters.correlation import (
+    CorrelationSelector,
+)
+from fmlib.feature_selection.statistical_filters.null_rate import (
+    NullRateSelector,
+)
 from fmlib.feature_selection.utils.statistics_cache import (
     StatisticsMetricsCache,
     compute_fingerprint,

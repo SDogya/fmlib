@@ -11,7 +11,9 @@ from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import FeatureSelectionConfig, LowVarianceConfig
 from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.low_variance import LowVarianceSelector
+from fmlib.feature_selection.statistical_filters.low_variance import (
+    LowVarianceSelector,
+)
 
 
 def _context(

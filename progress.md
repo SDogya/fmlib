@@ -114,7 +114,7 @@ PSI режет фрейм по колонке `split`, беря строки `tr
 
 ## Тесты
 
-- **Новый** `statistics/tests/test_psi_dataset_wiring.py` — 9 тестов: `test` не
+- **Новый** `statistical_filters/tests/test_psi_dataset_wiring.py` — 9 тестов: `test` не
   влияет ни в одном режиме, дрейф в `valid` ловится, стабильный признак
   остаётся, `valid` берётся из `split`, месячный сплит на pandas, три вида
   внятных ошибок.

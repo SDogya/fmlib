@@ -11,7 +11,7 @@ from fmlib.feature_selection.base import StageContext
 from fmlib.feature_selection.config import ConstantsConfig, FeatureSelectionConfig
 from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.schema import FeatureSchema
-from fmlib.feature_selection.statistics.constants import ConstantsSelector
+from fmlib.feature_selection.statistical_filters.constants import ConstantsSelector
 
 
 def _schema() -> FeatureSchema:
