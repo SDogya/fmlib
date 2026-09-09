@@ -239,7 +239,6 @@ def test_verbose_true_records_enabled_selectors_only(
         {
             "statistics": {"order": ["null_rate"]},
             "model": {"enabled": False, "method": "lightgbm"},
-            "precise": {"enabled": False, "method": "none"},
             "execution": {"seed": 42, "verbose": True},
         },
     )

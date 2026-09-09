@@ -9,7 +9,7 @@ Spark используется для проекции и стратифицир
 
 Пайплайн — один цикл в [`runner.py`](../fmlib/feature_selection/runner.py) по корневому
 `order`. Каждый шаг помечает решения тегом стадии из реестра методов:
-`preprocessing` / `statistics` / `model` / `precise`. Кандидаты сужаются после шага;
+`preprocessing` / `statistics` / `model`. Кандидаты сужаются после шага;
 у выброшенного признака в `FeatureDecision` видно, на каком шаге, каким методом и
 по какому порогу его убрали.
 
@@ -21,9 +21,8 @@ Spark используется для проекции и стратифицир
   признаков для тестовых прогонов;
 - **statistics** — дешёвые пофичевые фильтры без модели: пропуски, константы,
   низкая дисперсия, корреляции, PSI, Information Value;
-- **model** — модельный селектор: `lightgbm` или `catboost_rfe` (можно несколько
-  раз в `order`);
-- **precise** — необязательный финальный отбор: `boruta_shap`.
+- **model** — модельные селекторы `lightgbm`, `catboost_rfe` и `boruta_shap`
+  (можно несколько раз в `order`).
 
 ## 🧩 Запуск
 
@@ -100,7 +99,7 @@ execution:
 ```
 
 `params.seed` у шага читается так же, как `params.n_jobs`: ключ рядом с остальными
-параметрами метода (в том числе во вложенных `model.params` / `precise.params`).
+параметрами метода (в том числе во вложенном `model.params`).
 Нет ключа — берётся `execution.seed`. В `optuna_params` сид не кладут.
 `execution.task_type` — глобальная задача для `lightgbm` / `catboost_rfe` /
 `boruta_shap` (`binary_classification`, `classification`, `regression`). Она
@@ -113,8 +112,8 @@ execution:
 ошибка. Если метода нет в `order`, он не запустится, даже если пресет описан.
 
 Если ключа `order` **нет**, шаги собираются из старого вида:
-`preprocessing.*.enabled`, `statistics.order`, `model.enabled`/`method`,
-`precise.enabled`/`method`. Если `order` **есть** — он единственный источник шагов,
+`preprocessing.*.enabled`, `statistics.order`, `model.enabled`/`method`. Если
+`order` **есть** — он единственный источник шагов,
 флаги `enabled` игнорируются. Вложенный `statistics.order` по-прежнему список
 уникальных имён и нужен только этой совместимости.
 
@@ -162,28 +161,24 @@ statistics:
 текущим remaining.
 На кластере задайте явный `path`.
 
-### Модельные и precise-шаги
+### Модельные шаги
 
 Параметры модельного шага — это `params` плюс опционально `selection` и
 `cross_validation` (как у вложенного `model:`). Ссылка `${model}` на весь блок
-тоже работает: `enabled` и `method` из мапы выкидываются. Для `boruta_shap`
-обычно ссылаются на `${precise.params}`.
+тоже работает: `enabled` и `method` из мапы выкидываются. Если в `order` несколько
+модельных методов, для них удобнее завести отдельные блоки-пресеты.
 
 ```yaml
 order:
-  - catboost_rfe: ${model}
-  - boruta_shap: ${precise.params}
+  - catboost_rfe: ${catboost_rfe}
+  - boruta_shap: ${boruta_shap}
 
-model:
-  enabled: true          # игнорируется, если есть корневой order
-  method: catboost_rfe
+catboost_rfe:
   params: {...}
   selection:
     max_features: 200
 
-precise:
-  enabled: true
-  method: boruta_shap
+boruta_shap:
   params: {...}
 ```
 
@@ -191,7 +186,7 @@ precise:
 
 | | `catboost_rfe` | `lightgbm` | `boruta_shap` |
 |---|---|---|---|
-| стадия | model | model | precise |
+| стадия | model | model | model |
 | категориальные | **оценивает** (`cat_features`) | пропускает без решения | пропускает без решения |
 | критерий отбора | до `selection.max_features` | кумулятивные пороги (`aggregated` или `vote`) | статистический тест против теневых признаков |
 | `selection.max_features` | используется | **не читается** | не читается |
@@ -562,8 +557,8 @@ Optuna · Boruta    0:06
 | `learning_rate.min` | 0.01 | 0.03 | −37% времени подбора |
 | `depth.max` | 8 | 6 | −20% времени подбора |
 | `feature_selection_params.steps` | 20 | 10 | вдвое короче RFE |
-| `precise.params.max_rows` | 700 000 | 100 000 | Boruta: 5 ч → 15 мин |
-| `precise` → `boosting_type` | перебор | `gbdt` или `goss` | исключает медленный `dart` |
+| `boruta_shap.max_rows` | 700 000 | 100 000 | Boruta: 5 ч → 15 мин |
+| `boruta_shap.parameters.boosting_type` | перебор | `gbdt` или `goss` | исключает медленный `dart` |
 | `correlation.max_rows` | 500 000 | 200 000 | матрица N×N считается быстрее |
 
 Итого: **~11 часов → ~1.5 часа**.

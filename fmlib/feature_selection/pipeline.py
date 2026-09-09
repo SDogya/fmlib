@@ -39,7 +39,7 @@ class FeatureSelectionPipeline:
     """Configurable feature selection pipeline.
 
     Steps run in ``config.order``. Each step may come from any stage
-    (preprocessing, statistics, model, precise); repeats are allowed.
+    (preprocessing, statistics, model); repeats are allowed.
 
     Args:
         config: Validated pipeline configuration.

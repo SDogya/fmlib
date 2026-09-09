@@ -86,10 +86,6 @@ model:
     # objective, metric, verbosity, n_jobs, random_state и внутренние
     # сиды LightGBM проставляются библиотекой принудительно.
 
-precise:
-  enabled: false
-  method: none
-
 execution:
   seed: 42
   task_type: binary_classification  # classification | regression; совпадает со schema.task_type

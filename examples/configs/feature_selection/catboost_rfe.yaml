@@ -63,10 +63,6 @@ model:
     # num_features_to_select для рекурсивной элиминации
     max_features: 256
 
-precise:
-  enabled: false
-  method: none
-
 execution:
   seed: 42
   task_type: binary_classification  # classification | regression; совпадает со schema.task_type

@@ -84,7 +84,7 @@ def test_load_feature_names_from_selection_result_json(tmp_path: Path) -> None:
             ),
             DroppedFeature(
                 feature="category",
-                stage="precise",
+                stage="model",
                 method="boruta_shap",
                 reason="boruta_rejected",
             ),

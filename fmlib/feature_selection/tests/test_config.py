@@ -17,7 +17,6 @@ def test_defaults_validate() -> None:
     assert config.statistics.order == ()
     assert config.model.enabled is False
     assert config.model.method == "lightgbm"
-    assert config.precise.enabled is False
     # "standard" scales every variance to 1.0, which makes min_variance inert.
     assert config.statistics.low_variance.scale_method == "robust"
     assert config.statistics.correlation.threshold == 0.95
@@ -25,7 +24,6 @@ def test_defaults_validate() -> None:
     assert config.statistics.correlation.max_rows == 100_000
     assert config.statistics.cache.enabled is False
     assert config.statistics.cache.path is None
-    assert config.precise.method == "none"
     assert config.execution.task_type == "binary_classification"
 
 
@@ -33,12 +31,10 @@ def test_from_dict_and_unknown_field() -> None:
     payload = {
         "statistics": {"null_rate": {"threshold": 0.9}},
         "model": {"method": "lightgbm"},
-        "precise": {"method": None},
         "execution": {"seed": 7},
     }
     config = FeatureSelectionConfig.from_dict(payload)
     assert config.model.method == "lightgbm"
-    assert config.precise.method == "none"
     assert config.execution.seed == 7
 
     with pytest.raises(ConfigError, match="Unknown fields"):
@@ -128,10 +124,7 @@ def test_from_yaml_roundtrip(tmp_path: Path) -> None:
                 "    method: spearman",
                 "    threshold: 0.85",
                 "model:",
-                "  enabled: false",
-                "  method: lightgbm",
-                "precise:",
-                "  enabled: false",
+                "  enabled: true",
                 "  method: boruta_shap",
                 "  params:",
                 "    model_type: rf",
@@ -152,18 +145,20 @@ def test_from_yaml_roundtrip(tmp_path: Path) -> None:
     config = FeatureSelectionConfig.from_yaml(path)
     assert config.statistics.correlation.method == "spearman"
     assert config.statistics.order == ("correlation",)
-    assert [step.method for step in config.order] == ["feature_drop", "correlation"]
+    assert [step.method for step in config.order] == [
+        "feature_drop",
+        "correlation",
+        "boruta_shap",
+    ]
     assert config.preprocessing.feature_drop.enabled is True
     assert config.preprocessing.feature_drop.path == str(drop_path)
-    assert config.model.enabled is False
-    assert config.model.method == "lightgbm"
-    assert config.precise.enabled is False
-    assert config.precise.method == "boruta_shap"
-    assert config.precise.params["model_type"] == "rf"
-    assert config.precise.params["boruta_trials"] == 12
-    assert config.precise.params["optuna_params"]["n_trials"] == 4
-    assert config.precise.params["optuna_params"]["timeout"] == 90
-    assert config.precise.params["optuna_params"]["sampler"] == "RANDOM"
+    assert config.model.enabled is True
+    assert config.model.method == "boruta_shap"
+    assert config.model.params["model_type"] == "rf"
+    assert config.model.params["boruta_trials"] == 12
+    assert config.model.params["optuna_params"]["n_trials"] == 4
+    assert config.model.params["optuna_params"]["timeout"] == 90
+    assert config.model.params["optuna_params"]["sampler"] == "RANDOM"
     assert config.execution.seed == 123
     assert config.to_dict()["execution"]["max_local_rows"] == 5000
 
@@ -331,14 +326,15 @@ def test_test_run_preprocessing_config_validation(
         ({"seed": 1.5}, "seed"),
     ],
 )
-def test_boruta_precise_params_validation(
+def test_boruta_model_params_validation(
     params: dict,
     message: str,
 ) -> None:
     with pytest.raises(ConfigError, match=message):
         FeatureSelectionConfig.from_dict(
             {
-                "precise": {
+                "model": {
+                    "enabled": True,
                     "method": "boruta_shap",
                     "params": params,
                 },
@@ -350,7 +346,8 @@ def test_boruta_grid_requires_finite_values() -> None:
     with pytest.raises(ConfigError, match="non-empty 'values'"):
         FeatureSelectionConfig.from_dict(
             {
-                "precise": {
+                "model": {
+                    "enabled": True,
                     "method": "boruta_shap",
                     "params": {
                         "parameters": {
@@ -368,7 +365,8 @@ def test_boruta_grid_requires_finite_values() -> None:
 
     config = FeatureSelectionConfig.from_dict(
         {
-            "precise": {
+            "model": {
+                "enabled": True,
                 "method": "boruta_shap",
                 "params": {
                     "parameters": {
@@ -379,11 +377,11 @@ def test_boruta_grid_requires_finite_values() -> None:
             },
         },
     )
-    assert config.precise.params["parameters"]["max_depth"]["values"] == [3, 5]
+    assert config.model.params["parameters"]["max_depth"]["values"] == [3, 5]
 
 
 def test_optuna_params_roundtrip() -> None:
-    config = FeatureSelectionConfig.from_dict(
+    lightgbm_config = FeatureSelectionConfig.from_dict(
         {
             "model": {
                 "method": "lightgbm",
@@ -397,7 +395,11 @@ def test_optuna_params_roundtrip() -> None:
                     },
                 },
             },
-            "precise": {
+        },
+    )
+    boruta_config = FeatureSelectionConfig.from_dict(
+        {
+            "model": {
                 "method": "boruta_shap",
                 "params": {
                     "boruta_trials": 8,
@@ -412,16 +414,17 @@ def test_optuna_params_roundtrip() -> None:
         },
     )
 
-    assert config.model.params["optuna_params"]["n_trials"] == 11
-    assert config.model.params["optuna_params"]["enabled"] is True
-    assert config.precise.params["optuna_params"]["n_trials"] == 6
-    assert config.precise.params["optuna_params"]["enabled"] is False
-    payload = config.to_dict()
-    assert payload["model"]["params"]["optuna_params"]["timeout"] == 45
-    assert payload["precise"]["params"]["optuna_params"]["n_trials"] == 6
-    assert payload["precise"]["params"]["optuna_params"]["enabled"] is False
-    assert "tuning" not in payload["model"]
-    assert "tuning" not in payload["precise"]
+    assert lightgbm_config.model.params["optuna_params"]["n_trials"] == 11
+    assert lightgbm_config.model.params["optuna_params"]["enabled"] is True
+    assert boruta_config.model.params["optuna_params"]["n_trials"] == 6
+    assert boruta_config.model.params["optuna_params"]["enabled"] is False
+    lightgbm_payload = lightgbm_config.to_dict()
+    boruta_payload = boruta_config.to_dict()
+    assert lightgbm_payload["model"]["params"]["optuna_params"]["timeout"] == 45
+    assert boruta_payload["model"]["params"]["optuna_params"]["n_trials"] == 6
+    assert boruta_payload["model"]["params"]["optuna_params"]["enabled"] is False
+    assert "tuning" not in lightgbm_payload["model"]
+    assert "tuning" not in boruta_payload["model"]
 
 
 def test_tuning_block_is_rejected() -> None:
@@ -437,7 +440,8 @@ def test_tuning_block_is_rejected() -> None:
     with pytest.raises(ConfigError, match="params.optuna_params"):
         FeatureSelectionConfig.from_dict(
             {
-                "precise": {
+                "model": {
+                    "enabled": True,
                     "method": "boruta_shap",
                     "tuning": {"enabled": True, "n_trials": 9},
                 },
@@ -483,25 +487,20 @@ def test_lightgbm_selection_mode_roundtrip() -> None:
 def test_params_seed_roundtrip() -> None:
     config = FeatureSelectionConfig.from_dict(
         {
-            "model": {
-                "enabled": True,
-                "method": "lightgbm",
-                "params": {"seed": 17, "n_jobs": -1},
-            },
-            "precise": {
-                "method": "boruta_shap",
-                "params": {"seed": 0, "n_jobs": 1},
-            },
+            "order": [
+                {"lightgbm": {"seed": 17, "n_jobs": -1}},
+                {"boruta_shap": {"seed": 0, "n_jobs": 1}},
+            ],
             "statistics": {"psi": {"seed": 17, "n_jobs": -1}},
             "execution": {"seed": 42},
         },
     )
-    assert config.model.params["seed"] == 17
-    assert config.precise.params["seed"] == 0
+    assert config.order[0].params["seed"] == 17
+    assert config.order[1].params["seed"] == 0
     assert config.statistics.psi.seed == 17
     payload = config.to_dict()
-    assert payload["model"]["params"]["seed"] == 17
-    assert payload["precise"]["params"]["seed"] == 0
+    assert payload["order"][0]["lightgbm"]["seed"] == 17
+    assert payload["order"][1]["boruta_shap"]["seed"] == 0
     assert payload["statistics"]["psi"]["seed"] == 17
 
 
@@ -602,7 +601,8 @@ def test_order_nested_model_params_seed_roundtrip() -> None:
         ),
         (
             {
-                "precise": {
+                "model": {
+                    "enabled": True,
                     "method": "boruta_shap",
                     "params": {"seed": True},
                 },
@@ -761,7 +761,7 @@ def test_nested_layout_without_order_compiles_to_steps() -> None:
             },
             "statistics": {"order": ["null_rate"]},
             "model": {"enabled": True, "method": "lightgbm"},
-            "precise": {"enabled": False, "method": "none"},
+            "model": {"enabled": False, "method": "none"},
         },
     )
     assert [step.method for step in config.order] == [
@@ -807,7 +807,7 @@ def test_statistics_order_roundtrip() -> None:
                 "null_rate": {"threshold": 0.9},
             },
             "model": {"enabled": True, "method": "lightgbm"},
-            "precise": {"enabled": False, "method": "none"},
+            "model": {"enabled": False, "method": "none"},
         },
     )
     assert config.statistics.order == ("null_rate", "correlation")
@@ -848,16 +848,19 @@ def test_repeated_methods_get_indexed_score_keys() -> None:
     }
 
 
-def test_precise_enabled_requires_boruta_shap() -> None:
-    with pytest.raises(ConfigError, match="boruta_shap"):
+def test_removed_stage_section_is_rejected() -> None:
+    with pytest.raises(ConfigError, match="Unknown fields"):
         FeatureSelectionConfig.from_dict(
-            {"precise": {"enabled": True, "method": "none"}},
+            {"precise": {"enabled": True, "method": "boruta_shap"}},
         )
+
+
+def test_boruta_shap_is_a_model_method() -> None:
     config = FeatureSelectionConfig.from_dict(
-        {"precise": {"enabled": False, "method": "boruta_shap"}},
+        {"model": {"enabled": True, "method": "boruta_shap", "params": {}}},
     )
-    assert config.precise.enabled is False
-    assert config.precise.method == "boruta_shap"
+    assert config.model.enabled is True
+    assert config.model.method == "boruta_shap"
 
 
 def test_feature_drop_missing_file_is_config_error(tmp_path: Path) -> None:
@@ -970,7 +973,8 @@ def test_boruta_rejects_rf_key_on_lgbm() -> None:
     with pytest.raises(ConfigError, match="unknown parameter"):
         FeatureSelectionConfig.from_dict(
             {
-                "precise": {
+                "model": {
+                    "enabled": True,
                     "method": "boruta_shap",
                     "params": {
                         "model_type": "lgbm",

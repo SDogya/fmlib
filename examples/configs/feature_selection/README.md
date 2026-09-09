@@ -83,7 +83,7 @@ campaign LGM∩SHAP. «Из коробки» campaign режет индексы 
 | [`pipeline_catboost_rfe.yaml`](pipeline_catboost_rfe.yaml) | stats → catboost_rfe → boruta |
 | [`full_pipeline.yaml`](full_pipeline.yaml) | stats → catboost_rfe |
 | [`pipeline_all_methods.yaml`](pipeline_all_methods.yaml) | feature_drop → stats (вкл. psi, iv) → boruta → catboost_rfe |
-| [`boruta_shap.yaml`](boruta_shap.yaml) | только precise-стадия |
+| [`boruta_shap.yaml`](boruta_shap.yaml) | только model-стадия |
 
 Для classification/regression возьмите соответствующий модельный YAML и
 подставьте его шаг вместо `lightgbm` / `catboost_rfe` в pipeline-файл. Шаг

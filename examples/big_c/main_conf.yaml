@@ -3,7 +3,7 @@
 # Пайплайн: корневой order. Повторы метода с разными параметрами разрешены.
 # Параметры — инлайн или ссылка OmegaConf ${...} на пресеты ниже.
 # Если order нет — шаги собираются из preprocessing.enabled / statistics.order /
-# model.enabled / precise.enabled.
+# model.enabled.
 #
 # Schema (FeatureSchema) в YAML не живёт — передаётся в fit_select().
 # execution.task_type должен совпасть со schema.task_type.
@@ -149,42 +149,6 @@ model:
     # LightGBM всегда делает stratified K-Fold + AUC.
     # strategy / metric в рантайме не читаются, folds — fallback для n_folds.
     folds: 5
-
-precise:
-  enabled: false
-  # none — стадию пропустить.
-  # boruta_shap — финальный отбор continuous.
-  method: none
-  params:
-    # lgbm | rf
-    model_type: lgbm
-    # Эффективный лимит: min(max_rows, execution.max_local_rows).
-    max_rows: 100_000
-    sample_fraction: null
-    # Итерации Boruta по shadow-features.
-    boruta_trials: 20
-    # rough — TentativeRoughFix; null — tentative оставить tentative.
-    tentative_fix_method: rough
-    optuna_params:
-      n_trials: 5
-      timeout: 3600
-      sampler: TPE
-      n_startup_trials: 3
-      # GRID требует finite values у каждого кастомного параметра:
-      # parameters:
-      #   max_depth:
-      #     values: [3, 5, 7]
-      # Иначе опциональные overrides пространства:
-      # parameters:
-      #   n_estimators:
-      #     type: int
-      #     min: 100
-      #     max: 500
-      #   learning_rate:
-      #     type: float
-      #     min: 0.01
-      #     max: 0.1
-      #     log: true
 
 execution:
   # Корень сидов: сэмплы, Optuna, CV, модели, SHAP, Boruta.

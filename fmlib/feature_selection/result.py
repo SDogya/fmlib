@@ -257,7 +257,7 @@ def _save_intermediate_result(
     Args:
         remaining: Current candidate features after selection.
         decisions: All decisions collected so far.
-        stage_name: Stage tag (preprocessing/statistics/model/precise).
+        stage_name: Stage tag (preprocessing/statistics/model).
         method_name: Selector method name (null_rate/constants/etc).
         output_dir: Directory to save results.
         context: Stage context with schema and config.

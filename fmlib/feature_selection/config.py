@@ -14,8 +14,7 @@ from fmlib.feature_selection.utils.model_param_validate import (
 )
 
 PSI_MODES = frozenset({"month_over_month", "train_valid"})
-MODEL_METHODS = frozenset({"catboost_rfe", "lightgbm"})
-PRECISE_METHODS = frozenset({"boruta_shap", "none"})
+MODEL_METHODS = frozenset({"boruta_shap", "catboost_rfe", "lightgbm"})
 BORUTA_MODEL_TYPES = frozenset({"lgbm", "rf"})
 BORUTA_SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
 OPTUNA_SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
@@ -60,18 +59,16 @@ PREPROCESSING_METHODS = (
     "random_feature_drop",
     "row_sample",
 )
-PRECISE_PIPELINE_METHODS = ("boruta_shap",)
 METHOD_STAGE = {
     **dict.fromkeys(PREPROCESSING_METHODS, "preprocessing"),
     **dict.fromkeys(STATISTICS_ORDER_METHODS, "statistics"),
     **dict.fromkeys(MODEL_METHODS, "model"),
-    **dict.fromkeys(PRECISE_PIPELINE_METHODS, "precise"),
 }
 PIPELINE_METHODS = frozenset(METHOD_STAGE)
 # Steps whose referenced block may still carry the legacy selector switch.
 # ``correlation`` is excluded on purpose: its ``method`` is a real parameter
 # (``pearson`` / ``spearman``), not a leftover selector name.
-SELECTOR_SWITCH_METHODS = MODEL_METHODS | frozenset(PRECISE_PIPELINE_METHODS)
+SELECTOR_SWITCH_METHODS = MODEL_METHODS
 
 
 def parse_statistics_order(raw: Any) -> tuple[str, ...]:
@@ -193,7 +190,6 @@ def compile_order_from_nested(
     preprocessing: "PreprocessingConfig",
     statistics: "StatisticsConfig",
     model: "ModelConfig",
-    precise: "PreciseConfig",
 ) -> tuple[PipelineStepConfig, ...]:
     """Build ``order`` from the legacy nested enabled/order layout."""
     steps: list[PipelineStepConfig] = []
@@ -230,8 +226,6 @@ def compile_order_from_nested(
                 },
             ),
         )
-    if precise.enabled and precise.method not in {None, "none"}:
-        steps.append(PipelineStepConfig(str(precise.method), dict(precise.params)))
     return tuple(steps)
 
 
@@ -471,7 +465,7 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
     model_type = params.get("model_type", "lgbm")
     if model_type not in BORUTA_MODEL_TYPES:
         msg = (
-            f"Unsupported precise.params.model_type={model_type!r}. "
+            f"Unsupported model.params.model_type={model_type!r}. "
             f"Expected one of: {sorted(BORUTA_MODEL_TYPES)}."
         )
         raise ConfigError(msg)
@@ -483,10 +477,10 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
         or n_jobs == 0
         or n_jobs < -1
     ):
-        msg = "precise.params.n_jobs must be -1 or a positive integer."
+        msg = "model.params.n_jobs must be -1 or a positive integer."
         raise ConfigError(msg)
 
-    _validate_optional_seed(params.get("seed"), "precise.params.seed")
+    _validate_optional_seed(params.get("seed"), "model.params.seed")
 
     for name in (
         "max_rows",
@@ -501,7 +495,7 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
             or not isinstance(value, int)
             or value < 1
         ):
-            msg = f"precise.params.{name} must be a positive integer."
+            msg = f"model.params.{name} must be a positive integer."
             raise ConfigError(msg)
 
     sample_fraction = params.get("sample_fraction")
@@ -510,17 +504,17 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
         or not isinstance(sample_fraction, (int, float))
         or not 0.0 < float(sample_fraction) <= 1.0
     ):
-        msg = "precise.params.sample_fraction must be in (0, 1]."
+        msg = "model.params.sample_fraction must be in (0, 1]."
         raise ConfigError(msg)
 
     tentative = params.get("tentative_fix_method", "rough")
     if tentative not in {None, "rough"}:
-        msg = "precise.params.tentative_fix_method must be 'rough' or null."
+        msg = "model.params.tentative_fix_method must be 'rough' or null."
         raise ConfigError(msg)
 
     parameters = params.get("parameters", {})
     if not isinstance(parameters, Mapping):
-        msg = "precise.params.parameters must be a mapping."
+        msg = "model.params.parameters must be a mapping."
         raise ConfigError(msg)
     library = "random_forest" if model_type == "rf" else "lightgbm"
     validate_model_parameters(
@@ -529,7 +523,7 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
         method_name="boruta_shap",
         ignore_keys=frozenset({"bootstrap_type"}) if library == "lightgbm" else frozenset(),
     )
-    _validate_optuna_params_block("precise", params, extra_int_keys=("niter",))
+    _validate_optuna_params_block("model", params, extra_int_keys=("niter",))
     optuna_params = params.get("optuna_params", {})
     sampler = str(optuna_params.get("sampler", "TPE")).upper()
     tuning_enabled = optuna_params.get("enabled", True)
@@ -542,7 +536,7 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
         )
         if not finite:
             msg = (
-                "precise.params Optuna GRID sampler requires every custom "
+                "model.params Optuna GRID sampler requires every custom "
                 "parameter to define a non-empty 'values' list."
             )
             raise ConfigError(msg)
@@ -734,6 +728,8 @@ class ModelConfig:
               eval_months, max_rows, sample_fraction, seed, parameters,
               optuna_params, feature_selection_params; the target feature
               count comes from ``selection.max_features``)
+            - ``"boruta_shap"``: BorutaSHAP selection backed by LightGBM or
+              sklearn RandomForest.
         params: Method-specific parameters. Methods that tune with Optuna
             read the shared ``params.optuna_params`` block (``enabled``,
             ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``).
@@ -746,24 +742,6 @@ class ModelConfig:
     params: dict[str, Any] = field(default_factory=dict)
     selection: ModelSelectionRuleConfig = field(default_factory=ModelSelectionRuleConfig)
     cross_validation: CrossValidationConfig = field(default_factory=CrossValidationConfig)
-
-
-@dataclass(frozen=True)
-class PreciseConfig:
-    """Optional precise/final selection stage configuration.
-
-    Args:
-        enabled: When false, the precise stage is skipped.
-        method: ``"boruta_shap"`` when ``enabled``; ``"none"`` otherwise.
-        params: Method-specific BorutaSHAP parameters (including optional
-            ``seed``, same meaning as ``n_jobs``: omit to inherit
-            ``execution.seed``). Optuna settings live in
-            ``params.optuna_params``.
-    """
-
-    enabled: bool = False
-    method: Optional[str] = "none"
-    params: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -908,14 +886,12 @@ class FeatureSelectionConfig:
     Args:
         order: Pipeline steps as ``[{method: params}, ...]``. Repeats are
             allowed. When omitted, steps are compiled from the nested
-            ``preprocessing`` / ``statistics.order`` / ``model`` / ``precise``
+            ``preprocessing`` / ``statistics.order`` / ``model``
             layout.
         statistics: Nested statistical defaults and, for the legacy layout,
             ``statistics.order``.
         model: Nested model defaults; ``enabled`` is ignored when ``order``
             is set.
-        precise: Nested precise defaults; ``enabled`` is ignored when
-            ``order`` is set.
         execution: Seeds, backend fallback and capacity limits.
         preprocessing: Nested preprocessing defaults; ``enabled`` flags are
             ignored when ``order`` is set.
@@ -924,7 +900,6 @@ class FeatureSelectionConfig:
     order: tuple[PipelineStepConfig, ...] = ()
     statistics: StatisticsConfig = field(default_factory=StatisticsConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
-    precise: PreciseConfig = field(default_factory=PreciseConfig)
     execution: ExecutionConfig = field(default_factory=ExecutionConfig)
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
 
@@ -942,7 +917,6 @@ class FeatureSelectionConfig:
         )
         _require_bool("preprocessing.row_sample.enabled", self.preprocessing.row_sample.enabled)
         _require_bool("model.enabled", self.model.enabled)
-        _require_bool("precise.enabled", self.precise.enabled)
 
         feature_drop = self.preprocessing.feature_drop
         if feature_drop.enabled and (
@@ -1016,6 +990,8 @@ class FeatureSelectionConfig:
             )
         if self.model.enabled and self.model.method == "lightgbm":
             _validate_lightgbm_params(self.model.params)
+        if self.model.enabled and self.model.method == "boruta_shap":
+            _validate_boruta_params(self.model.params)
         if self.model.method == "catboost_rfe" and self.model.enabled:
             _validate_catboost_rfe_params(self.model.params)
             if self.model.selection.max_features is None:
@@ -1033,25 +1009,6 @@ class FeatureSelectionConfig:
             raise ConfigError(
                 msg,
             )
-        precise_method = self.precise.method
-        if precise_method is None:
-            precise_method = "none"
-        if precise_method not in PRECISE_METHODS:
-            msg = (
-                f"Unsupported precise.method={self.precise.method!r}. "
-                f"Expected one of: {sorted(PRECISE_METHODS)} or null."
-            )
-            raise ConfigError(
-                msg,
-            )
-        if self.precise.enabled and precise_method != "boruta_shap":
-            msg = (
-                "precise.enabled: true requires precise.method='boruta_shap'. "
-                "Set enabled: false or method: none to skip the precise stage."
-            )
-            raise ConfigError(msg)
-        if precise_method == "boruta_shap":
-            _validate_boruta_params(self.precise.params)
         if self.execution.local_sample.strategy not in SAMPLE_STRATEGIES:
             msg = (
                 f"Unsupported local_sample.strategy="
@@ -1218,18 +1175,6 @@ class FeatureSelectionConfig:
             ),
         )
 
-        precise_raw = dict(payload_raw.get("precise") or {})
-        _reject_tuning_block("precise", precise_raw)
-        _reject_unknown("precise", precise_raw, {f.name for f in fields(PreciseConfig)})
-        precise_method = precise_raw.get("method", PreciseConfig.method)
-        if precise_method is None:
-            precise_method = "none"
-        precise = PreciseConfig(
-            enabled=precise_raw.get("enabled", False),
-            method=precise_method,
-            params=dict(precise_raw.get("params", {})),
-        )
-
         execution_raw = dict(payload_raw.get("execution") or {})
         _reject_unknown("execution", execution_raw, {f.name for f in fields(ExecutionConfig)})
         local_sample_raw = execution_raw.get("local_sample", {})
@@ -1256,7 +1201,6 @@ class FeatureSelectionConfig:
                 preprocessing=preprocessing,
                 statistics=statistics,
                 model=model,
-                precise=precise,
             )
 
         config = cls(
@@ -1264,7 +1208,6 @@ class FeatureSelectionConfig:
             preprocessing=preprocessing,
             statistics=statistics,
             model=model,
-            precise=precise,
             execution=execution,
         )
         config.validate()
@@ -1493,8 +1436,8 @@ def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
                         "catboost_rfe."
                     )
                     raise ConfigError(msg)
-        elif step.method == "boruta_shap":
-            _validate_boruta_params(params)
+            elif step.method == "boruta_shap":
+                _validate_boruta_params(model_params)
 
 
 def _validate_statistics_cache(config: StatisticsCacheConfig) -> None:

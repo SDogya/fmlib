@@ -13,7 +13,7 @@ order:
   - low_variance: ${statistics.low_variance}
   - correlation: ${statistics.correlation}
   - catboost_rfe: ${model}
-  - boruta_shap: ${precise.params}
+  - boruta_shap: ${boruta_shap}
 
 preprocessing:
   feature_drop:
@@ -117,48 +117,44 @@ model:
     folds: 3
     metric: roc_auc
 
-precise:
-  enabled: true
-  method: boruta_shap
+boruta_shap:
+  model_type: lgbm         # lgbm | rf
+  # Стоимость BorutaSHAP определяется СТРОКАМИ, а не признаками:
+  # SHAP считается по каждой строке. 700k → около 5 часов, 250k → около 2.
+  max_rows: 250000
+  sample_fraction: null
+  boruta_trials: 50        # итераций с теневыми признаками; меньше — больше tentative
+  tentative_fix_method: rough   # rough | null
 
-  params:
-    model_type: lgbm         # lgbm | rf
-    # Стоимость BorutaSHAP определяется СТРОКАМИ, а не признаками:
-    # SHAP считается по каждой строке. 700k → около 5 часов, 250k → около 2.
-    max_rows: 250000
-    sample_fraction: null
-    boruta_trials: 50        # итераций с теневыми признаками; меньше — больше tentative
-    tentative_fix_method: rough   # rough | null
+  # boruta_shap оценивает только continuous — категориальные до него не доходят.
+  # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
+  parameters:
+    boosting_type: gbdt    # скаляр: фиксируем. Без этого в переборе есть dart,
+                           # который не поддерживает раннюю остановку и растягивает трайл
+    num_leaves:
+      type: int
+      min: 16
+      max: 255
+    colsample_bytree:
+      type: float
+      min: 0.5
+      max: 1.0
+    subsample:
+      type: float
+      min: 0.5
+      max: 1.0
+    min_child_weight:
+      type: float
+      min: 1.0e-3
+      max: 10.0
+      log: true
 
-    # boruta_shap оценивает только continuous — категориальные до него не доходят.
-    # lr / ES: скаляр в YAML остаётся; ключа нет — таблица по n_rows. Optuna их не ищет.
-    parameters:
-      boosting_type: gbdt    # скаляр: фиксируем. Без этого в переборе есть dart,
-                             # который не поддерживает раннюю остановку и растягивает трайл
-      num_leaves:
-        type: int
-        min: 16
-        max: 255
-      colsample_bytree:
-        type: float
-        min: 0.5
-        max: 1.0
-      subsample:
-        type: float
-        min: 0.5
-        max: 1.0
-      min_child_weight:
-        type: float
-        min: 1.0e-3
-        max: 10.0
-        log: true
-
-    optuna_params:
-      enabled: true
-      n_trials: 20
-      n_startup_trials: 5
-      sampler: TPE
-      timeout: 3600
+  optuna_params:
+    enabled: true
+    n_trials: 20
+    n_startup_trials: 5
+    sampler: TPE
+    timeout: 3600
 
 execution:
   seed: 42                   # доходит до сэмплирования, Optuna и random_seed моделей

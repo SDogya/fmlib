@@ -18,8 +18,8 @@ class FeatureDecision:
 
     Args:
         feature: Feature name.
-        stage: Pipeline stage name (``preprocessing``, ``statistics``,
-            ``model``, or ``precise``).
+        stage: Pipeline stage name (``preprocessing``, ``statistics``, or
+            ``model``).
         method: Selector method name within the stage.
         reason: Machine-readable reason code.
         value: Measured metric value, if any.

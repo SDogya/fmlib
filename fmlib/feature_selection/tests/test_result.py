@@ -130,13 +130,14 @@ def test_intermediate_result_preserves_context_scores(tmp_path: Path) -> None:
     assert [item.feature for item in loaded.dropped_features] == ["balance"]
 
 
-def test_precise_intermediate_result_preserves_boruta_scores(
+def test_model_intermediate_result_preserves_boruta_scores(
     tmp_path: Path,
 ) -> None:
     sample = _sample_result()
     config = FeatureSelectionConfig.from_dict(
         {
-            "precise": {
+            "model": {
+                "enabled": True,
                 "method": "boruta_shap",
                 "params": {"model_type": "rf"},
             },
@@ -164,23 +165,23 @@ def test_precise_intermediate_result_preserves_boruta_scores(
         decisions=[
             FeatureDecision(
                 feature="balance",
-                stage="precise",
+                stage="model",
                 method="boruta_shap",
                 reason="boruta_rejected",
                 keep=False,
             ),
         ],
-        stage_name="precise",
+        stage_name="model",
         method_name="boruta_shap",
         output_dir=tmp_path,
         context=context,
     )
 
     loaded = SelectionResult.load(
-        tmp_path / "00_precise_boruta_shap_results.json",
+        tmp_path / "00_model_boruta_shap_results.json",
     )
     assert loaded.scores == context.scores
-    assert loaded.dropped_features[0].stage == "precise"
+    assert loaded.dropped_features[0].stage == "model"
     assert loaded.dropped_features[0].method == "boruta_shap"
 
 

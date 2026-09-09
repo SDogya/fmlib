@@ -8,12 +8,12 @@ import numpy as np
 import pandas as pd
 import pytest
 
-import fmlib.feature_selection.precise.boruta_shap as boruta_module
+import fmlib.feature_selection.model_based.boruta_shap as boruta_module
 from fmlib.feature_selection.base import StageContext
-from fmlib.feature_selection.config import FeatureSelectionConfig, PreciseConfig
+from fmlib.feature_selection.config import FeatureSelectionConfig, ModelConfig
 from fmlib.feature_selection.utils.conftest import require_spark_session
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
-from fmlib.feature_selection.precise.boruta_shap import (
+from fmlib.feature_selection.model_based.boruta_shap import (
     BorutaShapSelector,
     _Backends,
 )
@@ -46,7 +46,7 @@ def _context(
 ) -> StageContext:
     config = FeatureSelectionConfig.from_dict(
         {
-            "precise": {
+            "model": {
                 "method": "boruta_shap",
                 "params": params or {},
             },
@@ -137,7 +137,7 @@ def _tiny_boruta_params(model_type: str = "rf", **overrides: Any) -> dict[str, A
 def test_selector_is_boruta_shap() -> None:
     context = _context(_frame())
 
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
 
     assert isinstance(selector, BorutaShapSelector)
     assert selector.method_name == "boruta_shap"
@@ -147,7 +147,7 @@ def test_select_scopes_to_continuous_and_passes_categories(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _context(_frame())
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     captured: dict[str, Any] = {}
     _mock_selector_core(selector, monkeypatch, captured)
 
@@ -160,7 +160,7 @@ def test_select_scopes_to_continuous_and_passes_categories(
     assert decisions[0].reason == "boruta_accepted"
     assert decisions[1].keep is False
     assert decisions[1].reason == "boruta_rejected"
-    assert all(decision.stage == "precise" for decision in decisions)
+    assert all(decision.stage == "model" for decision in decisions)
     assert "category" not in {decision.feature for decision in decisions}
 
 
@@ -168,7 +168,7 @@ def test_select_stores_flat_json_compatible_scores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _context(_frame(), params={"model_type": "rf"})
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     _mock_selector_core(selector, monkeypatch)
 
     selector.select(context, context.candidates)
@@ -186,7 +186,7 @@ def test_unresolved_tentative_feature_is_reported_separately(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     context = _context(_frame())
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     monkeypatch.setattr(
         selector,
         "_load_backends",
@@ -217,7 +217,7 @@ def test_empty_and_categorical_only_candidates_need_no_dependencies() -> None:
         pd.DataFrame({"category": ["a", "b"], "response": [0, 1]}),
         continuous=(),
     )
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
 
     assert selector.select(context, []) == []
     assert selector.select(context, ["category"]) == []
@@ -226,7 +226,7 @@ def test_empty_and_categorical_only_candidates_need_no_dependencies() -> None:
 def test_missing_train_fails_before_dependencies() -> None:
     config = FeatureSelectionConfig.from_dict(
         {
-            "precise": {"method": "boruta_shap", "params": {}},
+            "model": {"method": "boruta_shap", "params": {}},
             "execution": {"seed": 17, "task_type": "binary_classification"},
         },
     )
@@ -244,7 +244,7 @@ def test_missing_train_fails_before_dependencies() -> None:
         seed=17,
         candidates=list(schema.candidate_features()),
     )
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     with pytest.raises(ExecutionError, match="'train' split"):
         selector.select(context, context.candidates)
 
@@ -270,7 +270,7 @@ def test_classification_and_regression_run_with_fake_boruta() -> None:
     def pandas_context(frame: pd.DataFrame, task_type: str) -> StageContext:
         config = FeatureSelectionConfig.from_dict(
             {
-                "precise": {
+                "model": {
                     "method": "boruta_shap",
                     "params": {"optuna_params": {"enabled": False}},
                 },
@@ -308,7 +308,7 @@ def test_classification_and_regression_run_with_fake_boruta() -> None:
     class_frame = _frame(30)
     class_frame["response"] = [0, 1, 2] * 10
     class_context = pandas_context(class_frame, "classification")
-    selector = BorutaShapSelector(class_context.config.precise)
+    selector = BorutaShapSelector(class_context.config.model)
     details = selector._run_boruta_selection(
         train=class_frame,
         target_col="response",
@@ -337,7 +337,7 @@ def test_classification_and_regression_run_with_fake_boruta() -> None:
         optuna_module=None,
         train_test_split=None,
     )
-    selector = BorutaShapSelector(reg_context.config.precise)
+    selector = BorutaShapSelector(reg_context.config.model)
     selector._run_boruta_selection(
         train=reg_frame,
         target_col="response",
@@ -370,7 +370,7 @@ def test_options_support_both_models_and_execution_cap(
     )
 
     options = BorutaShapSelector(
-        context.config.precise,
+        context.config.model,
     )._resolve_options(context)
 
     assert options["model_type"] == model_type
@@ -400,7 +400,7 @@ def test_scalar_parameters_are_accepted_and_split_from_ranges() -> None:
     )
 
     options = BorutaShapSelector(
-        context.config.precise,
+        context.config.model,
     )._resolve_options(context)
 
     assert options["fixed_params"] == {
@@ -420,7 +420,7 @@ def test_options_support_legacy_aliases() -> None:
     )
 
     options = BorutaShapSelector(
-        context.config.precise,
+        context.config.model,
     )._resolve_options(context)
 
     assert options["max_rows"] == 123
@@ -436,13 +436,13 @@ def test_options_support_legacy_aliases() -> None:
         ({"tentative_fix_method": "median"}, "tentative_fix_method"),
     ],
 )
-def test_runtime_option_validation_for_direct_precise_config(
+def test_runtime_option_validation_for_direct_model_config(
     params: dict[str, Any],
     message: str,
 ) -> None:
     context = _context(_frame())
     selector = BorutaShapSelector(
-        PreciseConfig(method="boruta_shap", params=params),
+        ModelConfig(method="boruta_shap", params=params),
     )
 
     with pytest.raises(ExecutionError, match=message):
@@ -457,7 +457,7 @@ def test_core_runs_boruta_for_both_models(
     _require_boruta_stack()
     frame = _frame(40)
     context = _context(frame, params=_tiny_boruta_params(model_type))
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     options = selector._resolve_options(context)
     backends = selector._load_backends(model_type, require_optuna=False)
     original_boruta = backends.boruta_class
@@ -531,7 +531,7 @@ def test_tentative_rough_fix_can_be_disabled(
         frame,
         params=_tiny_boruta_params(tentative_fix_method=None),
     )
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     backends = selector._load_backends("rf", require_optuna=False)
     original_boruta = backends.boruta_class
     rough_calls = {"n": 0}
@@ -638,7 +638,7 @@ def test_optuna_disabled_clears_the_search_space() -> None:
         _frame(),
         params={"optuna_params": {"enabled": False}},
     )
-    options = BorutaShapSelector(context.config.precise)._resolve_options(context)
+    options = BorutaShapSelector(context.config.model)._resolve_options(context)
 
     assert options["optuna_enabled"] is False
     assert options["search_space"] == {}
@@ -647,7 +647,7 @@ def test_optuna_disabled_clears_the_search_space() -> None:
 def test_missing_boruta_and_optuna_raise_backend_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    selector = BorutaShapSelector(_context(_frame()).config.precise)
+    selector = BorutaShapSelector(_context(_frame()).config.model)
     monkeypatch.setattr(boruta_module, "BorutaShap", None)
     with pytest.raises(BackendError, match="BorutaShap"):
         selector._load_backends("lgbm")
@@ -660,7 +660,7 @@ def test_missing_boruta_and_optuna_raise_backend_errors(
 
 def test_core_rejects_single_class_and_all_null_features() -> None:
     _require_boruta_stack()
-    selector = BorutaShapSelector(_context(_frame()).config.precise)
+    selector = BorutaShapSelector(_context(_frame()).config.model)
     options = selector._resolve_options(_context(_frame(), params=_tiny_boruta_params()))
     backends = selector._load_backends("rf", require_optuna=False)
     single_class = _frame().assign(response=0)
@@ -709,7 +709,7 @@ def test_core_keeps_partial_nans() -> None:
     frame = _frame()
     config = FeatureSelectionConfig.from_dict(
         {
-            "precise": {
+            "model": {
                 "method": "boruta_shap",
                 "params": _tiny_boruta_params(),
             },
@@ -722,7 +722,7 @@ def test_core_keeps_partial_nans() -> None:
         target="response",
         task_type="binary_classification",
     )
-    selector = BorutaShapSelector(config.precise)
+    selector = BorutaShapSelector(config.model)
     options = selector._resolve_options(
         StageContext(
             spark=None,
@@ -796,7 +796,7 @@ def test_spark_core_uses_shared_materialization_and_supports_dots(spark: Any) ->
         continuous=("foo.bar", "second"),
         params=_tiny_boruta_params(),
     )
-    selector = BorutaShapSelector(context.config.precise)
+    selector = BorutaShapSelector(context.config.model)
     backends = selector._load_backends("rf", require_optuna=False)
 
     details = selector._run_boruta_selection(
@@ -831,7 +831,7 @@ def test_pandas_end_to_end_with_boruta_stack() -> None:
         params=_tiny_boruta_params("lgbm", max_rows=len(frame), boruta_trials=3),
     )
 
-    decisions = BorutaShapSelector(context.config.precise).select(
+    decisions = BorutaShapSelector(context.config.model).select(
         context,
         context.candidates,
     )

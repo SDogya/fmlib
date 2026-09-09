@@ -1,4 +1,4 @@
-"""BorutaSHAP precise feature selector."""
+"""BorutaSHAP model-based feature selector."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ from fmlib.feature_selection.base import FeatureDecision, StageContext, resolve_
 from fmlib.feature_selection.config import (
     BORUTA_MODEL_TYPES,
     BORUTA_SAMPLERS,
-    PreciseConfig,
+    ModelConfig,
 )
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 from fmlib.feature_selection.utils.default_model_param_spaces import (
@@ -79,13 +79,13 @@ class BorutaShapSelector:
     ``TentativeRoughFix``.
 
     Args:
-        config: Precise-stage method and BorutaSHAP parameters.
+        config: Model-stage method and BorutaSHAP parameters.
     """
 
     method_name = "boruta_shap"
-    stage_name = "precise"
+    stage_name = "model"
 
-    def __init__(self: BorutaShapSelector, config: PreciseConfig) -> None:
+    def __init__(self: BorutaShapSelector, config: ModelConfig) -> None:
         self.config = config
 
     def select(

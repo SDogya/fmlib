@@ -2,7 +2,7 @@
 
 Parameter blocks are polymorphic: a scalar value is used as-is, a mapping
 describes a search space entry. This mirrors the convention already used by
-``precise.params.parameters`` in the BorutaSHAP selector.
+``model.params.parameters`` in the BorutaSHAP selector.
 """
 
 from __future__ import annotations

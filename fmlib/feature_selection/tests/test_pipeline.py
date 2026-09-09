@@ -23,7 +23,7 @@ from fmlib.feature_selection.utils.conftest import (
 )
 from fmlib.feature_selection.exceptions import ConfigError, SchemaError
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
-from fmlib.feature_selection.precise.boruta_shap import BorutaShapSelector
+from fmlib.feature_selection.model_based.boruta_shap import BorutaShapSelector
 
 
 def _schema(categorical: list[str], continuous: list[str], *, with_split: bool = True) -> FeatureSchema:
@@ -42,7 +42,6 @@ def _config(**overrides: object) -> FeatureSelectionConfig:
     payload: dict = {
         "statistics": {"order": ["correlation"]},
         "model": {"enabled": False, "method": "lightgbm"},
-        "precise": {"enabled": False, "method": "none"},
         "execution": {"seed": 42},
     }
     payload.update(overrides)
@@ -254,13 +253,13 @@ def test_deterministic_across_runs() -> None:
     assert [item.feature for item in first.dropped_features] == [item.feature for item in second.dropped_features]
 
 
-def test_precise_boruta_stage_produces_drops_and_scores(
+def test_boruta_model_stage_produces_drops_and_scores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     categorical, continuous, columns = make_wide_schema_columns(50)
     spark = require_spark_session()
     config = _config(
-        precise={
+        model={
             "enabled": True,
             "method": "boruta_shap",
             "params": {"model_type": "rf"},
@@ -289,7 +288,7 @@ def test_precise_boruta_stage_produces_drops_and_scores(
             *[
                 FeatureDecision(
                     feature=name,
-                    stage="precise",
+                    stage="model",
                     method="boruta_shap",
                     reason="boruta_accepted",
                     keep=True,
@@ -298,7 +297,7 @@ def test_precise_boruta_stage_produces_drops_and_scores(
             ],
             FeatureDecision(
                 feature=feature,
-                stage="precise",
+                stage="model",
                 method="boruta_shap",
                 reason="boruta_rejected",
                 keep=False,
@@ -319,8 +318,8 @@ def test_precise_boruta_stage_produces_drops_and_scores(
         if item.method == "boruta_shap"
     ]
     assert len(boruta_drops) == 1
-    assert boruta_drops[0].stage == "precise"
-    assert result.scores["boruta_shap#2"]["model_type"] == "rf"
+    assert boruta_drops[0].stage == "model"
+    assert result.scores["boruta_shap#1"]["model_type"] == "rf"
 
 
 def test_correlation_drop_decisions_have_real_values() -> None:
@@ -358,7 +357,6 @@ def test_low_variance_selector_runs_in_pipeline() -> None:
         {
             "statistics": {"order": ["low_variance"]},
             "model": {"enabled": False, "method": "lightgbm"},
-            "precise": {"enabled": False, "method": "none"},
         },
     )
 
@@ -392,7 +390,6 @@ def test_lightgbm_stage_produces_real_scores_without_stub_warning(
     config = FeatureSelectionConfig.from_dict(
         {
             "model": {"enabled": True, "method": "lightgbm"},
-            "precise": {"enabled": False, "method": "none"},
         },
     )
 
@@ -453,7 +450,6 @@ def test_model_enabled_false_does_not_run_lightgbm(
     config = FeatureSelectionConfig.from_dict(
         {
             "model": {"enabled": False, "method": "lightgbm"},
-            "precise": {"enabled": False, "method": "none"},
         },
     )
     called = {"lightgbm": False}

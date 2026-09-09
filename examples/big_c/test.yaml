@@ -50,10 +50,6 @@ model:
     strategy: stratified
     folds: 5
     metric: roc_auc
-precise:
-  enabled: false
-  method: none
-
 execution:
   seed: 42
   allow_local_fallback: true

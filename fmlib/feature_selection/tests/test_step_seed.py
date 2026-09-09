@@ -9,7 +9,7 @@ from fmlib.feature_selection.config import FeatureSelectionConfig
 from fmlib.feature_selection.model_based import lightgbm as lightgbm_module
 from fmlib.feature_selection.model_based.catboost_rfe import CatBoostRfeSelector
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
-from fmlib.feature_selection.precise.boruta_shap import BorutaShapSelector
+from fmlib.feature_selection.model_based.boruta_shap import BorutaShapSelector
 from fmlib.feature_selection.schema import FeatureSchema
 
 
@@ -32,17 +32,14 @@ def _context(
     payload: dict[str, Any] = {
         "execution": {"seed": seed, "max_local_rows": 1_000},
     }
-    if method == "boruta_shap":
-        payload["precise"] = {"method": "boruta_shap", "params": params}
-    else:
-        model: dict[str, Any] = {
-            "enabled": True,
-            "method": method,
-            "params": params,
-        }
-        if extra:
-            model.update(extra)
-        payload["model"] = model
+    model: dict[str, Any] = {
+        "enabled": True,
+        "method": method,
+        "params": params,
+    }
+    if extra:
+        model.update(extra)
+    payload["model"] = model
     config = FeatureSelectionConfig.from_dict(payload)
     return StageContext(
         spark=None,
@@ -87,7 +84,7 @@ def test_boruta_options_prefer_params_seed() -> None:
         params={"seed": 17, "optuna_params": {"enabled": False}},
         seed=42,
     )
-    options = BorutaShapSelector(context.config.precise)._resolve_options(context)
+    options = BorutaShapSelector(context.config.model)._resolve_options(context)
     assert options["seed"] == 17
 
 

@@ -22,7 +22,7 @@ class FeatureSchema:
     Args:
         categorical: Categorical feature column names.
         continuous: Continuous feature column names.
-        target: Target column name (required for model and precise stages).
+        target: Target column name (required for model stages).
         task_type: ``binary_classification``, ``classification``, or ``regression``.
         time: Optional time column for month-over-month PSI / time-based CV.
         split: Optional split column with values ``train`` / ``valid`` / ``test``.

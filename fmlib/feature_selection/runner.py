@@ -25,7 +25,6 @@ from fmlib.feature_selection.config import (
     ModelSelectionRuleConfig,
     NullRateConfig,
     PipelineStepConfig,
-    PreciseConfig,
     PsiConfig,
     RandomFeatureDropConfig,
     RowSampleConfig,
@@ -35,7 +34,7 @@ from fmlib.feature_selection.config import (
 from fmlib.feature_selection.exceptions import BackendError, ConfigError
 from fmlib.feature_selection.model_based.catboost_rfe import CatBoostRfeSelector
 from fmlib.feature_selection.model_based.lightgbm import LightGbmSelector
-from fmlib.feature_selection.precise.boruta_shap import BorutaShapSelector
+from fmlib.feature_selection.model_based.boruta_shap import BorutaShapSelector
 from fmlib.feature_selection.statistical_filters.constants import (
     ConstantsSelector,
 )
@@ -65,9 +64,7 @@ from fmlib.feature_selection.utils.verbose import run_selector_logged
 _PREPROCESSING_METHODS = frozenset(
     {"feature_drop", "random_feature_drop", "row_sample"},
 )
-_MODEL_METHODS = frozenset(
-    {"catboost_rfe", "lightgbm"},
-)
+_MODEL_METHODS = frozenset({"boruta_shap", "catboost_rfe", "lightgbm"})
 
 
 def run_order(
@@ -129,12 +126,6 @@ def validate_order_prerequisites(context: StageContext) -> None:
             model_params, _, _ = split_model_step_params(step.params)
             _require_method_extras(step.method, model_params)
             _revalidate_model_parameters(step.method, model_params)
-        elif step.method == "boruta_shap":
-            if not context.schema.target:
-                msg = "boruta_shap requires FeatureSchema.target."
-                raise ConfigError(msg)
-            _require_method_extras(step.method, step.params)
-            _revalidate_model_parameters(step.method, step.params)
 
 
 def _run_step(
@@ -165,13 +156,6 @@ def _run_step(
             msg = "model stage requires FeatureSchema.target."
             raise ConfigError(msg)
         selector = _build_model_selector(step)
-    elif step.method == "boruta_shap":
-        if not context.schema.target:
-            msg = "boruta_shap requires FeatureSchema.target."
-            raise ConfigError(msg)
-        selector = BorutaShapSelector(
-            PreciseConfig(enabled=True, method="boruta_shap", params=dict(step.params)),
-        )
     elif step.method == "null_rate":
         selector = NullRateSelector(
             _build_section(NullRateConfig, step.params, f"order.{step.method}"),
@@ -249,6 +233,8 @@ def _build_model_selector(step: PipelineStepConfig) -> Any:
         return LightGbmSelector(config)
     if step.method == "catboost_rfe":
         return CatBoostRfeSelector(config)
+    if step.method == "boruta_shap":
+        return BorutaShapSelector(config)
     msg = f"Unsupported model method {step.method!r}."
     raise ConfigError(msg)
 

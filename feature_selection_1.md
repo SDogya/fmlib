@@ -40,16 +40,14 @@ Parquet-датасетов и конфигурации последующего 
 flowchart LR
     Input["SparkSession, Spark DataFrame и FeatureSchema"]
     Statistics["Статистические фильтры"]
-    Model["Один модельный selector"]
-    Precise["Опциональный точечный selector"]
+    Model["Модельные selectors"]
     Result["SelectionResult"]
     Prepared["Подготовленный Parquet"]
     Training["ParquetDataset и TrainingPipeline"]
 
     Input --> Statistics
     Statistics --> Model
-    Model --> Precise
-    Precise --> Result
+    Model --> Result
     Result --> Prepared
     Prepared --> Training
 ```
@@ -63,9 +61,8 @@ fmlib/feature_selection/
 ├── schema.py               # FeatureSchema и валидация входа
 ├── result.py               # SelectionResult и сериализация
 ├── backends/               # Spark и внутренние pandas/polars adapters
-├── statistical_filters/    # null, constant, correlation, PSI, stability
-├── model_based/            # Lasso, RF, CatBoost RFE, LGBM
-└── precise/                # BorutaShap
+├── statistical_filters/    # null, constant, correlation, PSI, IV
+└── model_based/            # CatBoost RFE, LGBM, BorutaShap
 ```
 
 Структура является целевой декомпозицией, а не требованием создать пустые модули до появления реализаций.
@@ -173,10 +170,9 @@ Pipeline балансирует выборки согласно конфигу, 
 
 На одном запуске выбирается ровно один метод:
 
-- Lasso;
-- Random Forest;
 - CatBoost RFE;
-- LightGBM.
+- LightGBM;
+- BorutaShap.
 
 Общий контракт метода включает обучение, расчёт importance или ранга и применение правила отбора. Конкретная модель
 самостоятельно определяет допустимую обработку категориальных признаков, но итоговые scores приводятся к общему формату.
@@ -193,18 +189,6 @@ Optuna и Cross Validation являются настройками модель�
 Выбор backend зависит от метода и доступной реализации. Наличие Spark DataFrame на входе не означает, что локальная
 библиотека модели автоматически становится распределённой.
 
-### 3. Финальный отбор
-
-Этап опционален и имеет только одно из значений:
-
-- `boruta_shap`;
-- `none` (`None` в Python или `null` в YAML).
-
-Точечный метод работает только с кандидатами, прошедшими предыдущие этапы. Он использует тот же CV/split contract либо
-явно выделенную holdout-выборку. Результат содержит исходные importance, агрегированные scores и принятое решение.
-
-`none` является полноценным вариантом конфигурации и завершает pipeline результатом модельного этапа.
-
 ## Backend-стратегия
 
 Поддержка нескольких DataFrame не означает реализацию всех алгоритмов поверх искусственного наименьшего общего API.
@@ -212,7 +196,7 @@ Optuna и Cross Validation являются настройками модель�
 
 | Операция | Предпочтительный backend | Допустимый fallback |
 |---|---|---|
-| Null, constants, PSI, stability classifier | Spark для больших данных | pandas или polars |
+| Null, constants, PSI, IV | Spark для больших данных | pandas или polars |
 | Correlation | Spark для широких распределённых данных | pandas или polars |
 | Lasso, Random Forest | Реализация определяется конфигом | Локальный pandas/polars dataset |
 | CatBoost RFE | Локальная CPU-реализация | Нет неявного Spark fallback |
@@ -327,9 +311,6 @@ model:
     folds: 5
     metric: roc_auc
 
-precise:
-  method: boruta_shap
-
 execution:
   seed: 42
   allow_local_fallback: true
@@ -433,8 +414,7 @@ Notebook-пример должен:
 
 - Spark: PySpark;
 - Polars: Polars для внутренних локальных преобразований;
-- model selection: CatBoost, LightGBM и Optuna;
-- precise selection: SHAP и реализация BorutaShap.
+- model selection: CatBoost, LightGBM, Optuna, SHAP и реализация BorutaShap.
 
 pandas и scikit-learn уже являются зависимостями проекта. Импорт optional dependency выполняется только при выборе
 соответствующего backend или метода и завершается сообщением с названием требуемой группы установки.
@@ -446,7 +426,7 @@ pandas и scikit-learn уже являются зависимостями про
 ### Unit tests
 
 - валидация `FeatureSchema` и конфигурации;
-- пороговые и граничные случаи каждого фильтра, включая отключённые PSI и stability classifier;
+- пороговые и граничные случаи каждого фильтра, включая отключённый PSI;
 - детерминированное разрешение коррелирующих пар;
 - сериализация и обратная загрузка `SelectionResult`;
 - отсутствие target и служебных колонок среди кандидатов;

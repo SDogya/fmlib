@@ -58,7 +58,6 @@ def test_drops_constant_and_quasi_constant() -> None:
                 "constants": {"max_frequency": 0.9, "min_unique": 2},
             },
             "model": {"method": "lightgbm"},
-            "precise": {"method": "none"},
         },
     )
     selector = ConstantsSelector(fs_config.statistics.constants)
