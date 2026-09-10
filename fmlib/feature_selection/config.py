@@ -668,17 +668,20 @@ class StatisticsCacheConfig:
     """Необязательный дисковый кэш статистических метрик.
 
     Метрики вычисляются для полного списка ``schema.candidate_features()`` и
-    сохраняются по методу и отпечатку параметров вычисления. Пороги применяются
+    сохраняются по методу, snapshot данных и параметрам вычисления. Пороги применяются
     позже и не входят в отпечаток.
 
-    ``path`` указывает на файл, а не на каталог. Файл **не** помещается в
-    защищённый от коллизий ``output_dir``, чтобы использовать его в следующих запусках. ``null`` означает
-    ``statistics_metrics.json`` в рабочем каталоге процесса.
+    При включении обязателен ``dataset_version`` — версия неизменяемого snapshot
+    всех входных выборок после внешних преобразований. При изменении данных,
+    фильтрации или порядка строк версию нужно обновлять.
+    ``path`` указывает на файл. ``null`` означает ``output_dir/statistics_metrics.json``;
+    без ``output_dir`` необходимо задать явный путь.
     """
 
     enabled: bool = False
     path: Optional[str] = None
     force_recompute: bool = False
+    dataset_version: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -1444,6 +1447,14 @@ def _validate_statistics_cache(config: StatisticsCacheConfig) -> None:
     """Проверяет необязательный блок кэша статистических метрик."""
     _require_bool("statistics.cache.enabled", config.enabled)
     _require_bool("statistics.cache.force_recompute", config.force_recompute)
+    if config.dataset_version is not None and (
+        not isinstance(config.dataset_version, str) or not config.dataset_version.strip()
+    ):
+        msg = "statistics.cache.dataset_version must be a non-empty string or null."
+        raise ConfigError(msg)
+    if config.enabled and config.dataset_version is None:
+        msg = "statistics.cache.enabled requires dataset_version identifying an immutable input snapshot."
+        raise ConfigError(msg)
     if config.path is not None and (
         isinstance(config.path, bool) or not isinstance(config.path, str)
     ):

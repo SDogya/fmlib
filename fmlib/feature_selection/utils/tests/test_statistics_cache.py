@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +19,7 @@ from fmlib.feature_selection.config import (
     NullRateConfig,
 )
 from fmlib.feature_selection.runner import run_order
+from fmlib.feature_selection.exceptions import ConfigError
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistical_filters.correlation import (
     CorrelationSelector,
@@ -26,6 +29,7 @@ from fmlib.feature_selection.statistical_filters.null_rate import (
 )
 from fmlib.feature_selection.utils.statistics_cache import (
     StatisticsMetricsCache,
+    compute_data_fingerprint,
     compute_fingerprint,
     resolve_cache_path,
 )
@@ -68,9 +72,11 @@ def _context(
     )
 
 
-def test_resolve_cache_path_defaults_to_cwd(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_resolve_cache_path_requires_output_or_explicit_path(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.chdir(tmp_path)
-    assert resolve_cache_path(None) == tmp_path / "statistics_metrics.json"
+    with pytest.raises(ConfigError, match="output_dir"):
+        resolve_cache_path(None)
+    assert resolve_cache_path(None, output_dir=tmp_path / "run") == tmp_path / "run" / "statistics_metrics.json"
     assert resolve_cache_path("custom.json") == tmp_path / "custom.json"
 
 
@@ -79,7 +85,7 @@ def test_cache_miss_appends_and_hit_reuses(tmp_path: Path) -> None:
     config = FeatureSelectionConfig.from_dict(
         {
             "order": [{"null_rate": {"threshold": 0.5}}],
-            "statistics": {"cache": {"enabled": True, "path": str(path)}},
+            "statistics": {"cache": {"enabled": True, "path": str(path), "dataset_version": "v1"}},
         },
     )
     context = _context(config)
@@ -104,7 +110,8 @@ def test_cache_miss_appends_and_hit_reuses(tmp_path: Path) -> None:
         assert remaining2 == first_kept
 
     cache = StatisticsMetricsCache.load(path)
-    assert cache.lookup("null_rate", {}) is not None
+    fingerprint = {"data": compute_data_fingerprint(context), "parameters": {}}
+    assert cache.lookup("null_rate", fingerprint) is not None
     assert "drop_null" not in remaining2
     assert "keep" in remaining2
 
@@ -136,7 +143,7 @@ def test_different_scale_method_is_a_second_entry(tmp_path: Path) -> None:
                         },
                     },
                 ],
-                "statistics": {"cache": {"enabled": True, "path": str(path)}},
+                "statistics": {"cache": {"enabled": True, "path": str(path), "dataset_version": "v1"}},
             },
         )
         context = StageContext(
@@ -167,6 +174,7 @@ def test_force_recompute_replaces_entry(tmp_path: Path) -> None:
                     "enabled": True,
                     "path": str(path),
                     "force_recompute": True,
+                    "dataset_version": "v1",
                 },
             },
         },
@@ -300,3 +308,159 @@ def test_fingerprint_omits_thresholds() -> None:
     assert pearson["max_rows"] == 1000
     assert other_seed["seed"] == 1
     assert regression["stratified"] is False
+
+
+def _cache_config(path: Path | None, version: str = "v1") -> FeatureSelectionConfig:
+    """Создаёт конфигурацию для проверок идентичности данных."""
+    return FeatureSelectionConfig.from_dict({
+        "order": [{"null_rate": {"threshold": 0.5}}],
+        "statistics": {"cache": {
+            "enabled": True,
+            "path": str(path) if path is not None else None,
+            "dataset_version": version,
+        }},
+    })
+
+
+def test_changed_values_with_same_shape_do_not_reuse_metrics(tmp_path: Path) -> None:
+    config = _cache_config(tmp_path / "metrics.json")
+    first = _context(config)
+    remaining, _ = run_order(first, first.candidates)
+    assert "drop_null" not in remaining
+
+    changed = _frame().fillna(0.0)
+    second = _context(config, changed)
+    remaining, _ = run_order(second, second.candidates)
+    assert "drop_null" in remaining
+    entries = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))["entries"]
+    assert len(entries) == 2
+
+
+def test_new_candidate_is_computed(tmp_path: Path) -> None:
+    config = _cache_config(tmp_path / "metrics.json")
+    first = _context(config)
+    run_order(first, first.candidates)
+    frame = _frame().assign(new_feature=float("nan"))
+    second = _context(config, frame)
+    second.schema = replace(second.schema, continuous=(*second.schema.continuous, "new_feature"))
+    second.candidates = second.schema.candidate_features()
+    remaining, _ = run_order(second, second.candidates)
+    assert "new_feature" not in remaining
+    assert any(item.feature == "new_feature" for item in second.decisions)
+
+
+def test_threshold_change_reuses_metrics(tmp_path: Path) -> None:
+    config = _cache_config(tmp_path / "metrics.json")
+    first = _context(config)
+    run_order(first, first.candidates)
+    payload = config.to_dict()
+    payload["order"] = [{"null_rate": {"threshold": 0.9}}]
+    second = _context(FeatureSelectionConfig.from_dict(payload))
+    with patch.object(NullRateSelector, "compute", side_effect=AssertionError("cache miss")):
+        remaining, _ = run_order(second, second.candidates)
+    assert "drop_null" in remaining
+
+
+@pytest.mark.parametrize("change", ["version", "target", "types", "valid", "row_order"])
+def test_data_fingerprint_tracks_input_changes(tmp_path: Path, change: str) -> None:
+    first = _context(_cache_config(tmp_path / "metrics.json"))
+    second = _context(first.config)
+    if change == "version":
+        second.config = _cache_config(tmp_path / "metrics.json", "v2")
+    elif change == "target":
+        second.schema = replace(second.schema, target="other_target")
+    elif change == "types":
+        second.datasets["train"]["keep"] = second.datasets["train"]["keep"].astype("int64")
+    elif change == "valid":
+        first.datasets["valid"] = _frame()
+        second.datasets["valid"] = _frame().fillna(0.0)
+    else:
+        second.datasets["train"] = _frame().iloc[::-1]
+    assert compute_data_fingerprint(first) != compute_data_fingerprint(second)
+
+
+def test_row_sample_invalidates_cache_within_run(tmp_path: Path) -> None:
+    payload = _cache_config(tmp_path / "metrics.json").to_dict()
+    payload["order"] = [
+        {"null_rate": {"threshold": 1.0}},
+        {"row_sample": {"max_rows": 3, "stratified": False}},
+        {"null_rate": {"threshold": 1.0}},
+    ]
+    context = _context(FeatureSelectionConfig.from_dict(payload))
+    run_order(context, context.candidates)
+    entries = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))["entries"]
+    assert len(entries) == 2
+    assert entries[0]["fingerprint"]["data"]["row_transforms"] == []
+    assert entries[1]["fingerprint"]["data"]["row_transforms"] == [{
+        "method": "row_sample", "max_rows": 3, "stratified": False, "seed": context.seed,
+    }]
+
+
+def test_default_cache_is_written_inside_output_dir(tmp_path: Path) -> None:
+    context = _context(_cache_config(None))
+    context.output_dir = tmp_path / "run"
+    run_order(context, context.candidates)
+    assert (context.output_dir / "statistics_metrics.json").is_file()
+
+
+@pytest.mark.parametrize("version", [None, "", "  ", 5, True])
+def test_enabled_cache_requires_valid_version(version: object) -> None:
+    with pytest.raises(ConfigError, match="dataset_version"):
+        FeatureSelectionConfig.from_dict({"statistics": {"cache": {
+            "enabled": True, "dataset_version": version,
+        }}})
+
+
+def test_legacy_cache_is_rejected_unless_recomputed(tmp_path: Path) -> None:
+    path = tmp_path / "metrics.json"
+    path.write_text(json.dumps({
+        "format_version": 1,
+        "entries": [{"method": "null_rate", "fingerprint": {}, "metrics": {"values": {"keep": 1.0}}}],
+    }), encoding="utf-8")
+    with pytest.raises(ConfigError, match="format_version"):
+        StatisticsMetricsCache.load(path)
+    config = _cache_config(path)
+    config = replace(config, statistics=replace(config.statistics, cache=replace(
+        config.statistics.cache, force_recompute=True,
+    )))
+    context = _context(config)
+    remaining, _ = run_order(context, context.candidates)
+    assert "keep" in remaining
+    assert json.loads(path.read_text(encoding="utf-8"))["format_version"] == 2
+
+
+def test_spark_fingerprint_uses_snapshot_without_reading_rows(tmp_path: Path) -> None:
+    """Проверяет только построение ключа по метаданным, без выполнения Spark."""
+    class Schema:
+        def jsonValue(self) -> dict:
+            return {"type": "struct", "fields": [{"name": "keep", "type": "double"}]}
+
+    class MetadataOnlyFrame:
+        __module__ = "pyspark.sql.dataframe"
+        schema = Schema()
+
+        def count(self) -> int:
+            raise AssertionError("Fingerprint must not scan Spark data")
+
+        def collect(self) -> list:
+            raise AssertionError("Fingerprint must not collect Spark data")
+
+    context = _context(_cache_config(tmp_path / "metrics.json"))
+    context.datasets = {"train": MetadataOnlyFrame(), "test": object()}
+    first = compute_data_fingerprint(context)
+    assert set(first["splits"]) == {"train"}
+    context.config = _cache_config(tmp_path / "metrics.json", "v2")
+    assert compute_data_fingerprint(context) != first
+    second = compute_data_fingerprint(context)
+    context.statistics_row_transforms.append({"method": "row_sample", "seed": 19, "max_rows": 100})
+    assert compute_data_fingerprint(context) != second
+
+
+def test_new_snapshot_version_recomputes_metrics(tmp_path: Path) -> None:
+    first = _context(_cache_config(tmp_path / "metrics.json"))
+    run_order(first, first.candidates)
+    second = _context(_cache_config(tmp_path / "metrics.json", "v2"))
+    original = NullRateSelector.compute
+    with patch.object(NullRateSelector, "compute", autospec=True, side_effect=original) as compute:
+        run_order(second, second.candidates)
+    assert compute.call_count == 1

@@ -51,6 +51,7 @@ from fmlib.feature_selection.utils.model_param_validate import validate_model_pa
 from fmlib.feature_selection.utils.statistics_cache import (
     CACHEABLE_METHODS,
     StatisticsMetricsCache,
+    compute_data_fingerprint,
     compute_fingerprint,
     resolve_cache_path,
 )
@@ -302,7 +303,10 @@ def _open_stats_cache(context: StageContext) -> StatisticsMetricsCache | None:
     settings = context.config.statistics.cache
     if not settings.enabled:
         return None
-    path = resolve_cache_path(settings.path)
+    if not isinstance(settings.dataset_version, str) or not settings.dataset_version.strip():
+        msg = "statistics.cache requires a non-empty dataset_version."
+        raise ConfigError(msg)
+    path = resolve_cache_path(settings.path, output_dir=context.output_dir)
     return StatisticsMetricsCache.load(
         path,
         force_recompute=settings.force_recompute,
@@ -317,13 +321,17 @@ def _run_cached_statistics(
 ) -> list[FeatureDecision]:
     """Находит в кэше или вычисляет метрики по всем кандидатам, затем применяет пороги."""
     method = selector.method_name
-    fingerprint = compute_fingerprint(
+    method_fingerprint = compute_fingerprint(
         method,
         selector.config,
         max_local_rows=context.config.execution.max_local_rows,
         seed=step_seed(context),
         task_type=context.schema.task_type,
     )
+    fingerprint = {
+        "data": compute_data_fingerprint(context),
+        "parameters": method_fingerprint,
+    }
     force = bool(context.config.statistics.cache.force_recompute)
     metrics = None if force else cache.lookup(method, fingerprint)
     full_features = list(context.schema.candidate_features())

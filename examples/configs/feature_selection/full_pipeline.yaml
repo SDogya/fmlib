@@ -29,7 +29,8 @@ order:
 statistics:
   cache:
     enabled: false           # true — считать метрики один раз на всех кандидатах
-    path: null               # null → statistics_metrics.json в cwd; на кластере задайте явный path
+    dataset_version: null    # при enabled: true задайте версию неизменяемого snapshot данных
+    path: null               # null → output_dir/statistics_metrics.json; без output_dir задайте путь
     force_recompute: false   # true — переписать методы из текущего order
 
   null_rate:

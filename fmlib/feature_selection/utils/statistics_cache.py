@@ -7,14 +7,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
 from fmlib.feature_selection.exceptions import ConfigError
 
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
 DEFAULT_CACHE_FILENAME = "statistics_metrics.json"
 CACHEABLE_METHODS = frozenset(
     {
@@ -36,10 +38,11 @@ def compute_fingerprint(
     seed: int | None = None,
     task_type: str | None = None,
 ) -> dict[str, Any]:
-    """Формирует ключ кэша для одного статистического метода.
+    """Формирует часть ключа кэша, описывающую параметры статистического метода.
 
     Пороги не включаются: они применяются позже. Здесь нужны только значения, влияющие на
-    сохраняемые результаты вычислений.
+    сохраняемые результаты вычислений. Исполнитель добавляет отпечаток данных
+    из ``compute_data_fingerprint`` перед поиском и сохранением записи.
     """
     if method == "null_rate":
         return {}
@@ -85,10 +88,61 @@ def compute_fingerprint(
     return {}
 
 
-def resolve_cache_path(path: Optional[Union[str, Path]]) -> Path:
-    """Определяет путь к файлу кэша. ``None`` означает ``statistics_metrics.json`` в рабочем каталоге."""
+def compute_data_fingerprint(context: Any) -> dict[str, Any]:
+    """Описывает snapshot данных, текущую схему и выполненные преобразования строк.
+
+    Для pandas дополнительно хешируется содержимое с сохранением порядка строк.
+    Для Spark читается только схема: актуальность snapshot гарантирует пользователь
+    через ``dataset_version``. Полный обход Spark ради ключа не выполняется.
+    Внешний test не читается и не влияет на статистики.
+    """
+    import pandas as pd
+
+    version = context.config.statistics.cache.dataset_version
+    if not isinstance(version, str) or not version.strip():
+        msg = "statistics.cache requires a non-empty dataset_version."
+        raise ConfigError(msg)
+    splits = {}
+    for name in ("train", "valid"):
+        frame = context.datasets.get(name)
+        if frame is None:
+            continue
+        if isinstance(frame, pd.DataFrame):
+            try:
+                rows = pd.util.hash_pandas_object(frame, index=True, categorize=True)
+            except (TypeError, ValueError) as exc:
+                msg = f"statistics.cache: cannot fingerprint pandas split {name!r}: {exc}. Disable the cache."
+                raise ConfigError(msg) from exc
+            splits[name] = {
+                "backend": "pandas",
+                "columns": [(str(column), str(dtype)) for column, dtype in frame.dtypes.items()],
+                "rows": len(frame),
+                "content": hashlib.sha256(rows.to_numpy().tobytes()).hexdigest(),
+            }
+        elif type(frame).__module__.startswith("pyspark"):
+            splits[name] = {"backend": "spark", "schema": frame.schema.jsonValue()}
+        else:
+            msg = f"statistics.cache: unsupported split type {type(frame)!r}. Disable the cache."
+            raise ConfigError(msg)
+    return {
+        "dataset_version": version,
+        "schema": asdict(context.schema),
+        "splits": splits,
+        "row_transforms": list(context.statistics_row_transforms),
+    }
+
+
+def resolve_cache_path(
+    path: Optional[Union[str, Path]],
+    *,
+    output_dir: Optional[Union[str, Path]] = None,
+) -> Path:
+    """Определяет явный путь или файл внутри каталога результатов; общего пути по умолчанию нет."""
     if path is None or not str(path).strip():
-        return Path.cwd() / DEFAULT_CACHE_FILENAME
+        if output_dir is None:
+            msg = "statistics.cache requires an explicit path or pipeline output_dir."
+            raise ConfigError(msg)
+        return Path(output_dir).expanduser().resolve() / DEFAULT_CACHE_FILENAME
     resolved = Path(str(path)).expanduser()
     if not resolved.is_absolute():
         resolved = Path.cwd() / resolved
@@ -150,7 +204,8 @@ class StatisticsMetricsCache:
                 return cls(file_path)
             msg = (
                 f"statistics.cache: {str(file_path)!r} has format_version="
-                f"{version!r}, expected {FORMAT_VERSION}."
+                f"{version!r}, expected {FORMAT_VERSION}. "
+                "Use a new cache path or set statistics.cache.force_recompute: true."
             )
             raise ConfigError(msg)
         entries = raw.get("entries", [])
@@ -166,7 +221,7 @@ class StatisticsMetricsCache:
         method: str,
         fingerprint: Mapping[str, Any],
     ) -> dict[str, Any] | None:
-        """Возвращает кэшированные метрики для ``method`` и отпечатка параметров или ``None``."""
+        """Возвращает метрики для ``method`` и полного отпечатка данных и параметров или ``None``."""
         key = fingerprint_json(fingerprint)
         for entry in self._entries:
             if entry.get("method") != method:

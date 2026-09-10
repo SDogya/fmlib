@@ -761,7 +761,6 @@ def test_nested_layout_without_order_compiles_to_steps() -> None:
             },
             "statistics": {"order": ["null_rate"]},
             "model": {"enabled": True, "method": "lightgbm"},
-            "model": {"enabled": False, "method": "none"},
         },
     )
     assert [step.method for step in config.order] == [
@@ -807,7 +806,6 @@ def test_statistics_order_roundtrip() -> None:
                 "null_rate": {"threshold": 0.9},
             },
             "model": {"enabled": True, "method": "lightgbm"},
-            "model": {"enabled": False, "method": "none"},
         },
     )
     assert config.statistics.order == ("null_rate", "correlation")
@@ -1014,6 +1012,7 @@ def test_statistics_cache_roundtrip() -> None:
                 "cache": {
                     "enabled": True,
                     "path": "metrics.json",
+                    "dataset_version": "v1",
                     "force_recompute": True,
                 },
             },
@@ -1026,6 +1025,7 @@ def test_statistics_cache_roundtrip() -> None:
     assert payload == {
         "enabled": True,
         "path": "metrics.json",
+        "dataset_version": "v1",
         "force_recompute": True,
     }
 

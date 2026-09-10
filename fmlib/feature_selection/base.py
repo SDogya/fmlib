@@ -81,6 +81,7 @@ class StageContext:
         output_dir: Необязательный каталог промежуточных артефактов для каждого метода.
         local_numeric_sample: Кэшированный числовой DataFrame в памяти драйвера, совместно используемый
             LightGBM и BorutaSHAP при совпадении параметров выборки.
+        statistics_row_transforms: Выполненные преобразования строк для ключа кэша статистик.
     """
 
     spark: Any
@@ -97,6 +98,7 @@ class StageContext:
     run_seed: Optional[int] = None
     output_dir: Optional[Path] = None
     local_numeric_sample: Optional[Any] = None
+    statistics_row_transforms: list[dict[str, Any]] = field(default_factory=list)
 
 
 def step_seed(context: StageContext) -> int:

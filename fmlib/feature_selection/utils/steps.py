@@ -217,5 +217,11 @@ class RowSampleStep:
                 for split in report.splits
             },
         }
+        context.statistics_row_transforms.append({
+            "method": self.method_name,
+            "max_rows": row_sample.max_rows,
+            "stratified": row_sample.stratified,
+            "seed": used_seed,
+        })
         context.candidates = list(candidates)
         return list(candidates)
