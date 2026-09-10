@@ -110,7 +110,11 @@ def test_cache_miss_appends_and_hit_reuses(tmp_path: Path) -> None:
         assert remaining2 == first_kept
 
     cache = StatisticsMetricsCache.load(path)
-    fingerprint = {"data": compute_data_fingerprint(context), "parameters": {}}
+    fingerprint = {
+        "data": compute_data_fingerprint(context),
+        "parameters": {},
+        "candidates": context.schema.candidate_features(),
+    }
     assert cache.lookup("null_rate", fingerprint) is not None
     assert "drop_null" not in remaining2
     assert "keep" in remaining2
@@ -464,3 +468,95 @@ def test_new_snapshot_version_recomputes_metrics(tmp_path: Path) -> None:
     with patch.object(NullRateSelector, "compute", autospec=True, side_effect=original) as compute:
         run_order(second, second.candidates)
     assert compute.call_count == 1
+
+
+@pytest.mark.parametrize("previous_step", ["null_rate", "feature_drop", "random_feature_drop", "row_sample"])
+def test_correlation_cache_matches_uncached_after_previous_steps(tmp_path: Path, previous_step: str) -> None:
+    """Обычный запуск, промах и попадание кеша используют одинаковые входы и решения."""
+    drop_path = tmp_path / "drop.txt"
+    drop_path.write_text("drop_null\n", encoding="utf-8")
+    steps = {
+        "null_rate": {"threshold": 0.5},
+        "feature_drop": {"path": str(drop_path)},
+        "random_feature_drop": {"n_features": 1},
+        "row_sample": {"max_rows": 4, "stratified": False},
+    }
+    payload = _cache_config(tmp_path / "metrics.json").to_dict()
+    payload["order"] = [
+        {previous_step: steps[previous_step]},
+        {"correlation": {"threshold": 0.9}},
+    ]
+    payload["statistics"]["cache"]["enabled"] = False
+    uncached = _context(FeatureSelectionConfig.from_dict(payload))
+    original = CorrelationSelector.compute
+    with patch.object(CorrelationSelector, "compute", autospec=True, side_effect=original) as compute:
+        expected = run_order(uncached, uncached.candidates)
+    expected_candidates = list(compute.call_args.args[2])
+    assert compute.call_count == 1
+
+    payload["statistics"]["cache"]["enabled"] = True
+    cached = _context(FeatureSelectionConfig.from_dict(payload))
+    with patch.object(CorrelationSelector, "compute", autospec=True, side_effect=original) as compute:
+        actual = run_order(cached, cached.candidates)
+    assert actual == expected
+    assert compute.call_count == 1
+    assert list(compute.call_args.args[2]) == expected_candidates
+    pd.testing.assert_frame_equal(cached.datasets["train"], uncached.datasets["train"])
+
+    repeated = _context(cached.config)
+    with patch.object(CorrelationSelector, "compute", side_effect=AssertionError("cache miss")):
+        assert run_order(repeated, repeated.candidates) == expected
+
+
+@pytest.mark.parametrize("second_candidates", [["a", "b"], ["b", "a", "keep"]])
+def test_candidate_subset_and_order_have_separate_entries(tmp_path: Path, second_candidates: list[str]) -> None:
+    payload = _cache_config(tmp_path / "metrics.json").to_dict()
+    payload["order"] = [{"correlation": {"threshold": 0.9}}]
+    config = FeatureSelectionConfig.from_dict(payload)
+    first = _context(config)
+    run_order(first, ["keep", "a", "b"])
+
+    second = _context(config)
+    original = CorrelationSelector.compute
+    with patch.object(CorrelationSelector, "compute", autospec=True, side_effect=original) as compute:
+        actual = run_order(second, second_candidates)
+    assert compute.call_count == 1
+    assert list(compute.call_args.args[2]) == second_candidates
+    payload["statistics"]["cache"]["enabled"] = False
+    uncached = _context(FeatureSelectionConfig.from_dict(payload))
+    assert actual == run_order(uncached, second_candidates)
+    entries = json.loads((tmp_path / "metrics.json").read_text(encoding="utf-8"))["entries"]
+    assert [entry["fingerprint"]["candidates"] for entry in entries] == [["keep", "a", "b"], second_candidates]
+
+
+def test_repeated_statistics_compute_only_remaining_candidates(tmp_path: Path) -> None:
+    payload = _cache_config(tmp_path / "metrics.json").to_dict()
+    payload["order"] = [{"null_rate": {"threshold": 0.5}}, {"null_rate": {"threshold": 0.9}}]
+    context = _context(FeatureSelectionConfig.from_dict(payload))
+    initial = list(context.candidates)
+    original = NullRateSelector.compute
+    with patch.object(NullRateSelector, "compute", autospec=True, side_effect=original) as compute:
+        run_order(context, initial)
+    assert [list(call.args[2]) for call in compute.call_args_list] == [
+        initial, [feature for feature in initial if feature != "drop_null"],
+    ]
+
+
+def test_empty_candidates_do_not_compute_or_write_metrics(tmp_path: Path) -> None:
+    path = tmp_path / "metrics.json"
+    context = _context(_cache_config(path))
+    with patch.object(NullRateSelector, "compute", side_effect=AssertionError("unexpected compute")):
+        assert run_order(context, []) == ([], [])
+    assert not path.exists()
+
+
+def test_old_entry_without_candidates_is_not_reused(tmp_path: Path) -> None:
+    path = tmp_path / "metrics.json"
+    context = _context(_cache_config(path))
+    cache = StatisticsMetricsCache(path)
+    cache.upsert("null_rate", {"data": compute_data_fingerprint(context), "parameters": {}}, {
+        "values": {"keep": 1.0},
+    })
+    remaining, _ = run_order(context, context.candidates)
+    assert "keep" in remaining
+    assert "drop_null" not in remaining

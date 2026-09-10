@@ -28,7 +28,7 @@ order:
 
 statistics:
   cache:
-    enabled: false           # true — считать метрики один раз на всех кандидатах
+    enabled: false           # true — кешировать метрики для кандидатов перед каждым шагом
     dataset_version: null    # при enabled: true задайте версию неизменяемого snapshot данных
     path: null               # null → output_dir/statistics_metrics.json; без output_dir задайте путь
     force_recompute: false   # true — переписать методы из текущего order

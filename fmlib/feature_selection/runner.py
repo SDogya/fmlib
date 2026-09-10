@@ -319,7 +319,10 @@ def _run_cached_statistics(
     remaining: Sequence[str],
     cache: StatisticsMetricsCache,
 ) -> list[FeatureDecision]:
-    """Находит в кэше или вычисляет метрики по всем кандидатам, затем применяет пороги."""
+    """Находит или вычисляет метрики для текущих кандидатов, затем применяет пороги."""
+    columns = list(remaining)
+    if not columns:
+        return []
     method = selector.method_name
     method_fingerprint = compute_fingerprint(
         method,
@@ -331,14 +334,14 @@ def _run_cached_statistics(
     fingerprint = {
         "data": compute_data_fingerprint(context),
         "parameters": method_fingerprint,
+        "candidates": columns,
     }
     force = bool(context.config.statistics.cache.force_recompute)
     metrics = None if force else cache.lookup(method, fingerprint)
-    full_features = list(context.schema.candidate_features())
     if metrics is None:
-        metrics = selector.compute(context, full_features)
+        metrics = selector.compute(context, columns)
         cache.upsert(method, fingerprint, metrics)
-    return selector.apply(metrics, remaining, context)
+    return selector.apply(metrics, columns, context)
 
 
 class _CachedStatisticsSelector:
