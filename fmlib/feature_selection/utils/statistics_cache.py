@@ -80,6 +80,8 @@ def compute_fingerprint(
         return fingerprint
     if method == "iv":
         return {
+            # Старые записи могли содержать нулевой IV для вырожденного таргета.
+            "target_validation": "binary_two_classes",
             "num_bins": int(getattr(settings, "num_bins", 10)),
             "eps": float(getattr(settings, "eps", 1e-4)),
             "min_bin_share": float(getattr(settings, "min_bin_share", 0.0)),

@@ -105,6 +105,9 @@ execution:
 `boruta_shap` (`binary_classification`, `classification`, `regression`). Она
 должна совпасть с `FeatureSchema.task_type`. Это не CatBoost
 `parameters.task_type` (CPU/GPU). IV по-прежнему только binary.
+Для IV в текущей train-выборке после исключения пропусков таргета должны
+остаться ровно два класса. Один класс, пустая выборка или таргет целиком
+из пропусков приводят к `ExecutionError`, а не к удалению всех признаков по `low_iv`.
 `study.optimize` всегда идёт с `n_jobs=1`. Бит-в-бит не обещаем при
 `n_jobs != 1` у модели и на GPU CatBoost.
 

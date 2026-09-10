@@ -37,6 +37,8 @@ class IvSelector:
     Входные данные Spark остаются распределёнными: вычисляются квантили и пакетные агрегации, затем
     собирается компактная таблица частот. Для уже локальных pandas DataFrame используется
     аналогичный вариант на numpy.
+    После исключения пропусков таргет должен содержать ровно два класса;
+    иначе расчёт завершается с ``ExecutionError`` без удаления признаков.
 
     Args:
         config: Настройки фильтра IV.
@@ -220,8 +222,6 @@ class IvSelector:
             msg = f"iv: columns missing from train DataFrame: {missing}."
             raise ExecutionError(msg)
         working = frame[[*columns, target]].dropna(subset=[target])
-        if working.empty:
-            return dict.fromkeys(columns, 0.0)
         y = _as_binary_numpy(working[target], method="iv")
         scores: dict[str, float] = {}
         for name in columns:
@@ -602,17 +602,15 @@ def _as_binary_numpy(series: pd.Series, *, method: str) -> np.ndarray:
 
 
 def _binary_mapping(unique: Any, *, method: str) -> dict[Any, float]:
-    """Отображает до двух целевых меток в {0.0, 1.0}."""
+    """Отображает ровно две целевые метки в {0.0, 1.0}, иначе вызывает ExecutionError."""
     raw = unique.tolist() if hasattr(unique, "tolist") else list(unique)
-    labels = [item for item in raw if not _is_null(item)]
-    if len(labels) > 2:
+    labels = list(dict.fromkeys(item for item in raw if not _is_null(item)))
+    if len(labels) != 2:
         msg = (
-            f"{method}: target must be binary. "
+            f"{method}: target must be binary with exactly two classes. "
             f"Found {len(labels)} distinct non-null values."
         )
         raise ExecutionError(msg)
-    if len(labels) <= 1:
-        return {labels[0]: 1.0} if labels else {}
     as_set = set(labels)
     if as_set <= {0, 1, 0.0, 1.0, False, True}:
         return {
@@ -643,10 +641,6 @@ def _spark_binary_target(frame: Any, target: str, y_col: Any) -> Any:
         raise ExecutionError(msg) from exc
     labels = [item for item in distinct if item is not None]
     mapping = _binary_mapping(labels, method="iv")
-    if not mapping:
-        return F.lit(0.0)
-    if len(mapping) == 1:
-        return F.lit(next(iter(mapping.values())))
     (label_a, bit_a), (label_b, bit_b) = list(mapping.items())
     return F.when(y_col == F.lit(label_a), float(bit_a)).otherwise(float(bit_b))
 

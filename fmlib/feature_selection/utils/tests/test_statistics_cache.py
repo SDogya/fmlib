@@ -15,11 +15,12 @@ from fmlib.feature_selection.config import (
     ConstantsConfig,
     CorrelationConfig,
     FeatureSelectionConfig,
+    IvConfig,
     LowVarianceConfig,
     NullRateConfig,
 )
 from fmlib.feature_selection.runner import run_order
-from fmlib.feature_selection.exceptions import ConfigError
+from fmlib.feature_selection.exceptions import ConfigError, ExecutionError
 from fmlib.feature_selection.schema import FeatureSchema
 from fmlib.feature_selection.statistical_filters.correlation import (
     CorrelationSelector,
@@ -560,3 +561,35 @@ def test_old_entry_without_candidates_is_not_reused(tmp_path: Path) -> None:
     remaining, _ = run_order(context, context.candidates)
     assert "keep" in remaining
     assert "drop_null" not in remaining
+
+
+@pytest.mark.parametrize("cache_enabled", [False, True])
+def test_iv_degenerate_target_raises_even_with_legacy_cache(
+    tmp_path: Path, cache_enabled: bool,
+) -> None:
+    """Старые нулевые метрики не обходят проверку двух классов в IV."""
+    path = tmp_path / "metrics.json"
+    config = FeatureSelectionConfig.from_dict({
+        "order": [{"iv": {}}],
+        "statistics": {"cache": {
+            "enabled": cache_enabled, "path": str(path), "dataset_version": "v1",
+        }},
+    })
+    frame = _frame()
+    frame["response"] = 1
+    context = _context(config, frame)
+    parameters = compute_fingerprint("iv", IvConfig(), max_local_rows=100_000)
+    assert parameters.pop("target_validation") == "binary_two_classes"
+    cache = StatisticsMetricsCache(path)
+    cache.upsert("iv", {
+        "data": compute_data_fingerprint(context),
+        "parameters": parameters,
+        "candidates": list(context.candidates),
+    }, {"values": dict.fromkeys(context.candidates, 0.0)})
+    previous_cache = path.read_bytes()
+
+    with pytest.raises(ExecutionError, match="Found 1 distinct non-null values"):
+        run_order(context, context.candidates)
+
+    assert "iv" not in context.scores
+    assert path.read_bytes() == previous_cache

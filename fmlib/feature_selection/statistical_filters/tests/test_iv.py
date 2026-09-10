@@ -263,10 +263,13 @@ class TestMathAndHelperFunctions:
         ordered = sorted([1, "a"], key=str)
         assert mapped == {ordered[0]: 0.0, ordered[1]: 1.0}
 
-    def test_binary_mapping_one_label_empty_and_numpy(self) -> None:
-        assert _binary_mapping(["only"], method="iv") == {"only": 1.0}
-        assert _binary_mapping([], method="iv") == {}
+    def test_binary_mapping_numpy(self) -> None:
         assert _binary_mapping(np.array([0, 1]), method="iv") == {0: 0.0, 1: 1.0}
+
+    @pytest.mark.parametrize("labels", [[], [None, np.nan, pd.NA], ["only"], [0], [1, 1], [1, 1, 1]])
+    def test_binary_mapping_fewer_than_two_classes_raises(self, labels: list[Any]) -> None:
+        with pytest.raises(ExecutionError, match="target must be binary with exactly two classes"):
+            _binary_mapping(labels, method="iv")
 
     def test_binary_mapping_more_than_two_classes_raises(self) -> None:
         with pytest.raises(ExecutionError, match="target must be binary"):
@@ -478,7 +481,7 @@ class TestIvSelectorPandas:
                 ["absent"],
             )
 
-    def test_all_target_nulls_return_zero_iv(self) -> None:
+    def test_all_target_nulls_raise(self) -> None:
         frame = pd.DataFrame(
             {
                 "num": [1.0, 2.0, 3.0],
@@ -487,10 +490,9 @@ class TestIvSelectorPandas:
             },
         )
         context = _context(frame, categorical=("cat",), continuous=("num",))
-        decisions = IvSelector(IvConfig(threshold=0.02)).select(context, ["num", "cat"])
-        assert context.scores["iv"]["values"] == {"num": 0.0, "cat": 0.0}
-        assert {item.feature for item in decisions} == {"num", "cat"}
-        assert all(item.reason == "low_iv" for item in decisions)
+        with pytest.raises(ExecutionError, match="Found 0 distinct non-null values"):
+            IvSelector(IvConfig(threshold=0.02)).select(context, ["num", "cat"])
+        assert "iv" not in context.scores
 
     def test_mixed_types_end_to_end_matches_helpers(self) -> None:
         frame = pd.DataFrame(
@@ -548,11 +550,26 @@ class TestIvSelectorPandas:
                 ["x"],
             )
 
-    def test_single_class_target_yields_zero_iv(self) -> None:
-        frame = pd.DataFrame({"x": [1.0, 2.0, 3.0, 4.0], "response": [1, 1, 1, 1]})
-        context = _context(frame, categorical=(), continuous=("x",))
-        IvSelector(IvConfig(threshold=0.02, num_bins=2)).select(context, ["x"])
-        assert context.scores["iv"]["values"]["x"] == 0.0
+    @pytest.mark.parametrize("label", [0, 1, False, True, "only"])
+    @pytest.mark.parametrize("entrypoint", ["select", "compute"])
+    def test_single_class_target_raises(self, label: Any, entrypoint: str) -> None:
+        frame = pd.DataFrame({
+            "num": [1.0, 2.0, 3.0, 4.0],
+            "cat": ["a", "b", "a", "b"],
+            "response": [label, label, None, label],
+        })
+        context = _context(frame, categorical=("cat",), continuous=("num",))
+        selector = IvSelector(IvConfig(threshold=0.02, num_bins=2))
+        with pytest.raises(ExecutionError, match="Found 1 distinct non-null values"):
+            getattr(selector, entrypoint)(context, ["num", "cat"])
+        assert "iv" not in context.scores
+
+    def test_empty_train_raises(self) -> None:
+        frame = pd.DataFrame(columns=["num", "response"])
+        context = _context(frame, categorical=(), continuous=("num",))
+        with pytest.raises(ExecutionError, match="Found 0 distinct non-null values"):
+            IvSelector(IvConfig()).select(context, ["num"])
+        assert "iv" not in context.scores
 
     def test_nulls_form_a_separate_bin(self) -> None:
         frame = pd.DataFrame(
@@ -931,27 +948,30 @@ class TestIvSelectorSpark:
         with pytest.raises(ExecutionError, match=r"failed to inspect target.*inspect exploded"):
             IvSelector(IvConfig()).select(context, ["num"])
 
-    def test_spark_binary_target_empty_one_and_three_labels(self, spark: Any) -> None:
-        from pyspark.sql.types import DoubleType, IntegerType, StructField, StructType
-
-        empty_schema = StructType(
-            [
-                StructField("num", DoubleType(), True),
-                StructField("response", IntegerType(), True),
-            ],
+    @pytest.mark.parametrize("labels, target_type, count", [
+        ([], "int", 0),
+        ([None, None], "int", 0),
+        ([0, 0, None], "int", 1),
+        ([1, 1, None], "int", 1),
+        ([False, False, None], "boolean", 1),
+        ([True, True, None], "boolean", 1),
+        (["only", "only", None], "string", 1),
+    ])
+    @pytest.mark.parametrize("entrypoint", ["select", "compute"])
+    def test_spark_degenerate_target_raises(
+        self, spark: Any, labels: list[Any], target_type: str, count: int, entrypoint: str,
+    ) -> None:
+        train = spark.createDataFrame(
+            [(float(index), str(index % 2), label) for index, label in enumerate(labels)],
+            f"num double, cat string, response {target_type}",
         )
-        empty = spark.createDataFrame([(1.0, None), (2.0, None)], empty_schema)
-        empty_ctx = _context(empty, categorical=(), continuous=("num",), spark=spark)
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(empty_ctx, ["num"])
-        assert "num" in empty_ctx.scores["iv"]["values"]
+        context = _context(train, categorical=("cat",), continuous=("num",), spark=spark)
+        selector = IvSelector(IvConfig())
+        with pytest.raises(ExecutionError, match=f"Found {count} distinct non-null values"):
+            getattr(selector, entrypoint)(context, ["num", "cat"])
+        assert "iv" not in context.scores
 
-        single = spark.createDataFrame(
-            pd.DataFrame({"num": [1.0, 2.0, 3.0, 4.0], "response": [1, 1, 1, 1]}),
-        )
-        single_ctx = _context(single, categorical=(), continuous=("num",), spark=spark)
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(single_ctx, ["num"])
-        assert single_ctx.scores["iv"]["values"]["num"] == 0.0
-
+    def test_spark_binary_target_three_labels_raises(self, spark: Any) -> None:
         three = spark.createDataFrame(
             pd.DataFrame({"num": [1.0, 2.0, 3.0], "response": [0, 1, 2]}),
         )
