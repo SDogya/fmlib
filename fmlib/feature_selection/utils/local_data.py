@@ -1,4 +1,4 @@
-"""Shared bounded Spark/pandas materialization for local ML selectors."""
+"""Общая загрузка Spark/pandas в локальную память с ограничением размера для методов отбора на основе моделей."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ _NUMERIC_SPARK_TYPE_NAMES = frozenset(
 
 @dataclass
 class LocalNumericSample:
-    """Driver-local numeric sample shared by LightGBM and BorutaSHAP."""
+    """Числовая выборка в памяти драйвера, общая для LightGBM и BorutaSHAP."""
 
     frame: pd.DataFrame
     target_col: str
@@ -35,31 +35,31 @@ class LocalNumericSample:
 
 
 def _canonical_row_order(frame: pd.DataFrame) -> pd.DataFrame:
-    """Order rows by content so the frame does not depend on partitioning.
+    """Упорядочивает строки по содержимому, чтобы DataFrame не зависел от разбиения на партиции.
 
-    ``toPandas`` concatenates partitions in index order, so a materialized
-    frame carries whatever row order the input happened to be split into --
-    and Spark chooses that split from the cores available at read time, which
-    varies between runs. That order then reaches the tuning hold-out split,
-    LightGBM's binning and Boruta's shadow shuffles, so the same data selects
-    different features on a rerun even with every seed pinned.
+    ``toPandas`` объединяет партиции в порядке их индексов, поэтому загруженный
+    DataFrame сохраняет порядок строк, возникший при разбиении входных данных, —
+    а Spark выбирает это разбиение по числу ядер, доступных при чтении, которое
+    меняется между запусками. Затем этот порядок влияет на отложенное разбиение для подбора параметров,
+    разбиение на интервалы в LightGBM и перемешивание теневых признаков Boruta, поэтому на тех же данных
+    повторный запуск отбирает другие признаки даже при фиксированных значениях seed всех генераторов.
 
-    Sorting by a row hash makes the order a property of the data instead.
-    Rows that collide are byte-identical for the selectors, so a stable sort
-    leaves nothing order-dependent behind.
+    Сортировка по хэшу строки делает порядок свойством самих данных.
+    Строки с совпавшими хэшами побитово идентичны для методов отбора, поэтому стабильная сортировка
+    устраняет зависимость от исходного порядка.
 
     Args:
-        frame: Materialized driver-local frame.
+        frame: DataFrame, загруженный в память драйвера.
 
     Returns:
-        The same rows in a partitioning-independent order.
+        Те же строки в порядке, не зависящем от разбиения на партиции.
     """
     keys = pd.util.hash_pandas_object(frame, index=False).to_numpy()
     return frame.iloc[np.argsort(keys, kind="stable")].reset_index(drop=True)
 
 
 def _stratified_from_context(context: Any | None) -> bool:
-    """Stratify local samples unless the schema task is regression."""
+    """Стратифицирует локальные выборки, если задача в схеме не является регрессией."""
     if context is None:
         return True
     schema = getattr(context, "schema", None)
@@ -79,13 +79,13 @@ def prepare_numeric_frame(
     method_name: str,
     context: Any | None = None,
 ) -> pd.DataFrame:
-    """Build a bounded local numeric frame.
+    """Создаёт локальный числовой DataFrame ограниченного размера.
 
-    Numeric missing values stay as NaN so LightGBM and BorutaSHAP can use
-    native missing-value splits. Sampling is stratified by the target unless
-    ``context.schema.task_type`` is ``regression``. When ``context`` is given,
-    a compatible sample prepared by an earlier driver method (same seed /
-    max_rows / target) is reused instead of a second Spark ``toPandas``.
+    Пропуски в числовых данных остаются NaN, чтобы LightGBM и BorutaSHAP могли использовать
+    встроенную обработку пропусков при разбиениях. Выборка стратифицируется по целевой переменной, если
+    ``context.schema.task_type`` не равен ``regression``. Если передан ``context``,
+    совместимая выборка от предыдущего метода на драйвере (те же seed /
+    max_rows / target) используется повторно вместо второго вызова Spark ``toPandas``.
     """
     reused = _reuse_local_numeric_sample(
         context,
@@ -177,12 +177,12 @@ def prepare_mixed_frame(
     method_name: str,
     context: Any | None = None,
 ) -> pd.DataFrame:
-    """Build a bounded local frame that preserves categorical features.
+    """Создаёт локальный DataFrame ограниченного размера с сохранением категориальных признаков.
 
-    Categorical candidates stay as strings; numeric missing values stay as
-    NaN. Gradient boosting libraries with native categorical and NaN support
-    handle both themselves. Sampling is stratified by the target unless
-    ``context.schema.task_type`` is ``regression``.
+    Категориальные кандидаты остаются строками; пропуски в числовых данных остаются
+    NaN. Библиотеки градиентного бустинга со встроенной поддержкой категорий и NaN
+    обрабатывают их самостоятельно. Выборка стратифицируется по целевой переменной, если
+    ``context.schema.task_type`` не равен ``regression``.
     """
     categorical_set = set(categorical_cols)
     categorical = [column for column in feature_cols if column in categorical_set]
@@ -265,7 +265,7 @@ def _materialize_spark(
     method_name: str,
     stratified: bool = True,
 ) -> pd.DataFrame:
-    """Project, sample, and materialize a Spark input without type coercion."""
+    """Выбирает столбцы и строки входных данных Spark и загружает их в память без приведения типов."""
     fields = {field.name: field.dataType for field in frame.schema.fields}
     missing = [column for column in columns if column not in fields]
     if missing:
@@ -305,7 +305,7 @@ def _materialize_pandas(
     method_name: str,
     stratified: bool = True,
 ) -> pd.DataFrame:
-    """Project and sample an already-local pandas input without type coercion."""
+    """Выбирает столбцы и строки уже локальных данных pandas без приведения типов."""
     missing = [column for column in columns if column not in frame.columns]
     if missing:
         msg = f"{method_name}: columns missing from train DataFrame: {missing}."
@@ -332,7 +332,7 @@ def _reuse_local_numeric_sample(
     sample_fraction: float | None,
     seed: int,
 ) -> pd.DataFrame | None:
-    """Return a column subset of a compatible cached sample, if any."""
+    """Возвращает подмножество столбцов совместимой кэшированной выборки, если она есть."""
     if context is None:
         return None
     cached = getattr(context, "local_numeric_sample", None)
@@ -363,7 +363,7 @@ def _store_local_numeric_sample(
     sample_fraction: float | None,
     seed: int,
 ) -> None:
-    """Keep the widest sample so a later method can subset columns."""
+    """Сохраняет выборку с наибольшим числом столбцов, чтобы следующий метод мог выбрать нужные."""
     if context is None:
         return
     cached = getattr(context, "local_numeric_sample", None)
@@ -385,7 +385,7 @@ def sample_size(
     max_rows: int,
     sample_fraction: float | None,
 ) -> int:
-    """Resolve a positive sample size bounded by the execution row limit."""
+    """Определяет положительный размер выборки в пределах лимита строк выполнения."""
     if total_rows <= 0:
         return 0
     fraction_rows = (
@@ -405,7 +405,7 @@ def sample_frame_rows(
     seed: int,
     method_name: str,
 ) -> tuple[Any, int, int]:
-    """Return a bounded test-run sample and before/after row counts."""
+    """Возвращает выборку ограниченного размера для тестового запуска и число строк до и после отбора."""
     if is_spark_dataframe(data):
         if stratified and target_col not in data.columns:
             msg = (
@@ -464,7 +464,7 @@ def sample_frame_rows(
 
 
 def is_spark_dataframe(data: Any) -> bool:
-    """Return whether data looks like a pyspark DataFrame."""
+    """Возвращает, соответствуют ли данные интерфейсу pyspark DataFrame."""
     module_name = type(data).__module__
     return (
         module_name.startswith("pyspark")
@@ -474,7 +474,7 @@ def is_spark_dataframe(data: Any) -> bool:
 
 
 def root_cause(exc: BaseException) -> str:
-    """Extract a concise message from nested Spark and model exceptions."""
+    """Извлекает краткое сообщение из вложенных исключений Spark и моделей."""
     java_exc = getattr(exc, "java_exception", None)
     if java_exc is not None:
         return str(java_exc).splitlines()[0]
@@ -496,7 +496,7 @@ def _prepare_spark_frame(
     method_name: str,
     stratified: bool = True,
 ) -> pd.DataFrame:
-    """Project, validate, sample, and materialize a Spark input."""
+    """Выбирает столбцы, проверяет данные, формирует выборку Spark и загружает её в память."""
     fields = {field.name: field.dataType for field in frame.schema.fields}
     _validate_spark_columns(
         fields,
@@ -540,7 +540,7 @@ def _prepare_pandas_frame(
     method_name: str,
     stratified: bool = True,
 ) -> pd.DataFrame:
-    """Validate and sample an already-local pandas input."""
+    """Проверяет уже локальные данные pandas и формирует выборку."""
     missing = [
         column
         for column in [*feature_cols, target_col]
@@ -571,7 +571,7 @@ def _sample_spark(
     method_name: str,
     stratified: bool = True,
 ) -> Any:
-    """Apply bounded Spark sampling, stratified by the target when requested."""
+    """Формирует выборку Spark ограниченного размера со стратификацией по целевой переменной при необходимости."""
     try:
         from pyspark.sql import functions
     except ImportError as exc:
@@ -637,7 +637,7 @@ def _sample_pandas(
     method_name: str,
     stratified: bool = True,
 ) -> pd.DataFrame:
-    """Apply bounded sampling to a pandas input."""
+    """Формирует выборку ограниченного размера из входных данных pandas."""
     if frame[target_col].isna().any():
         msg = f"{method_name}: target column contains missing values."
         raise ExecutionError(msg)
@@ -665,7 +665,7 @@ def _sample_pandas(
 
 
 def _allocate_strata(counts: pd.Series, target_rows: int) -> pd.Series:
-    """Allocate an exact bounded sample proportionally across target classes."""
+    """Распределяет выборку точно заданного ограниченного размера пропорционально между целевыми классами."""
     ideal = counts.astype(float) * (target_rows / int(counts.sum()))
     sizes = np.floor(ideal).astype(int).clip(lower=1)
     sizes = sizes.combine(counts, min)
@@ -707,7 +707,7 @@ def _validate_spark_columns(
     target_col: str,
     method_name: str,
 ) -> None:
-    """Validate required Spark columns and continuous physical types."""
+    """Проверяет обязательные столбцы Spark и физические типы непрерывных признаков."""
     required = [*feature_cols, target_col]
     missing = [column for column in required if column not in fields]
     if missing:
@@ -727,7 +727,7 @@ def _validate_spark_columns(
 
 
 def _quoted_col(name: str) -> Any:
-    """Build a Spark column reference that tolerates dots and spaces."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов."""
     from pyspark.sql import functions as F  # noqa: N812
 
     escaped = name.replace("`", "")

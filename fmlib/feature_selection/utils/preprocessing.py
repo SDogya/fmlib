@@ -1,4 +1,4 @@
-"""Test-run preprocessing helpers for rows and random feature columns."""
+"""Функции предобработки строк и случайных столбцов-признаков для тестового запуска."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from fmlib.feature_selection.schema import FeatureSchema
 
 @dataclass(frozen=True)
 class SplitSampleReport:
-    """Before/after row counts for one dataset split."""
+    """Число строк до и после обработки одной выборки."""
 
     split: str
     seed: int
@@ -29,7 +29,7 @@ class SplitSampleReport:
 
 @dataclass(frozen=True)
 class RowSampleReport:
-    """Summary of preprocessing row sampling across all splits."""
+    """Сводка формирования выборок строк на этапе предобработки по всем частям данных."""
 
     max_rows: int
     stratified: bool
@@ -43,7 +43,7 @@ def apply_random_feature_drop(
     n_features: int,
     seed: int,
 ) -> tuple[dict[str, Any], FeatureSchema, FeatureDropReport]:
-    """Drop a deterministic random subset of schema candidates."""
+    """Исключает воспроизводимое случайное подмножество кандидатов из схемы."""
     candidates = schema.candidate_features()
     if n_features >= len(candidates):
         msg = (
@@ -84,7 +84,7 @@ def apply_row_sample(
     stratified: bool,
     seed: int,
 ) -> tuple[dict[str, Any], RowSampleReport]:
-    """Bound every dataset split, preserving smaller splits unchanged."""
+    """Ограничивает размер каждой выборки, сохраняя меньшие выборки без изменений."""
     if stratified and schema.task_type == "regression":
         msg = (
             "row_sample: stratified sampling is not supported for regression; "

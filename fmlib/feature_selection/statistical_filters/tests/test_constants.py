@@ -1,4 +1,4 @@
-"""Tests for ConstantsSelector."""
+"""Тесты ConstantsSelector."""
 
 from __future__ import annotations
 

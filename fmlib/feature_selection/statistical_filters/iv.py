@@ -1,4 +1,4 @@
-"""Information Value filter for binary classification."""
+"""Фильтр информационной ценности (IV) для бинарной классификации."""
 
 from __future__ import annotations
 
@@ -30,16 +30,16 @@ _OTHER_LEVEL = "__iv_other__"
 
 
 class IvSelector:
-    """Drop features whose Information Value is too weak (or suspiciously strong).
+    """Исключает признаки со слишком низкой или подозрительно высокой информационной ценностью (IV).
 
-    Continuous candidates are quantile-binned; categorical candidates use
-    distinct values (rare levels can be merged). Nulls are a separate bin.
-    Spark inputs stay distributed: quantiles + batched aggregations, then a
-    compact count table is collected. Already-local pandas frames use the
-    equivalent numpy path.
+    Непрерывные кандидаты разбиваются на квантильные интервалы; для категориальных используются
+    отдельные значения (редкие категории могут объединяться). Пропуски образуют отдельную группу.
+    Входные данные Spark остаются распределёнными: вычисляются квантили и пакетные агрегации, затем
+    собирается компактная таблица частот. Для уже локальных pandas DataFrame используется
+    аналогичный вариант на numpy.
 
     Args:
-        config: IV filter settings.
+        config: Настройки фильтра IV.
     """
 
     method_name = "iv"
@@ -53,19 +53,19 @@ class IvSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Compute IV on the train split and drop weak (or leaky) candidates.
+        """Вычисляет IV на train и исключает слабые кандидаты или кандидаты с утечкой целевой переменной.
 
         Args:
-            context: Shared stage context.
-            candidates: Current candidate features.
+            context: Общий контекст этапа.
+            candidates: Текущие признаки-кандидаты.
 
         Returns:
-            Drop decisions for features outside the configured IV range.
+            Решения об исключении признаков за пределами заданного диапазона IV.
 
         Raises:
-            ConfigError: When the task is not binary classification.
-            BackendError: When Spark APIs are required but pyspark is missing.
-            ExecutionError: When statistics cannot be computed.
+            ConfigError: Если задача не является бинарной классификацией.
+            BackendError: Если требуется API Spark, но pyspark отсутствует.
+            ExecutionError: Если статистики невозможно вычислить.
         """
         if not candidates:
             return []
@@ -87,7 +87,7 @@ class IvSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> dict[str, Any]:
-        """Return ``{feature: iv}`` for ``candidates``."""
+        """Возвращает ``{feature: iv}`` для ``candidates``."""
         schema = context.schema
         if not schema.target:
             msg = "iv requires FeatureSchema.target."
@@ -158,7 +158,7 @@ class IvSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Drop remaining features whose IV is outside the configured range."""
+        """Исключает оставшиеся признаки, у которых IV выходит за заданный диапазон."""
         values = metrics.get("values", metrics)
         if not isinstance(values, Mapping):
             values = {}
@@ -214,7 +214,7 @@ class IvSelector:
         categorical: set[str],
         continuous: set[str],
     ) -> dict[str, float]:
-        """Compute IV for an already-local pandas DataFrame."""
+        """Вычисляет IV для уже локального pandas DataFrame."""
         missing = [name for name in [*columns, target] if name not in frame.columns]
         if missing:
             msg = f"iv: columns missing from train DataFrame: {missing}."
@@ -252,7 +252,7 @@ class IvSelector:
         categorical: set[str],
         continuous: set[str],
     ) -> dict[str, float]:
-        """Compute IV with Spark aggregations; collect only bin counts."""
+        """Вычисляет IV агрегациями Spark; собирает только численности групп."""
         try:
             from pyspark.sql import functions as F  # noqa: F401, N812
         except ImportError as exc:
@@ -326,7 +326,7 @@ class IvSelector:
         columns: list[str],
         indexes: list[int],
     ) -> dict[str, float]:
-        """Quantile-bin continuous columns and aggregate good/bad counts."""
+        """Разбивает непрерывные столбцы на квантильные интервалы и агрегирует численности good/bad."""
         from pyspark.sql import functions as F  # noqa: N812
 
         aliases = [f"c{index}" for index in indexes]
@@ -405,7 +405,7 @@ class IvSelector:
         columns: list[str],
         indexes: list[int],
     ) -> dict[str, float]:
-        """Group categorical levels and aggregate good/bad counts."""
+        """Группирует категории и агрегирует численности good/bad."""
         from pyspark.sql import functions as F  # noqa: N812
 
         scores: dict[str, float] = {}
@@ -467,7 +467,7 @@ def information_value(
     bads: Sequence[float],
     eps: float,
 ) -> float:
-    """Return IV from per-bin good/bad counts."""
+    """Возвращает IV по числу good/bad в каждой группе."""
     total_good = float(sum(goods))
     total_bad = float(sum(bads))
     if total_good <= 0.0 or total_bad <= 0.0:
@@ -488,7 +488,7 @@ def information_value_from_bins(
     *,
     eps: float,
 ) -> float:
-    """Return IV from aligned target labels and bin ids."""
+    """Возвращает IV по согласованным целевым меткам и идентификаторам групп."""
     goods: list[float] = []
     bads: list[float] = []
     for level in pd.unique(bins):
@@ -501,7 +501,7 @@ def information_value_from_bins(
 
 
 def _quantile_bins_pandas(series: pd.Series, *, num_bins: int) -> np.ndarray:
-    """Assign quantile-bin labels; nulls get a dedicated bin."""
+    """Присваивает метки квантильных интервалов; пропуски образуют отдельную группу."""
     values = pd.to_numeric(series, errors="coerce")
     labels = np.empty(len(values), dtype=object)
     null_mask = values.isna()
@@ -533,7 +533,7 @@ def _categorical_bins_pandas(
     min_bin_share: float,
     max_levels: int | None,
 ) -> np.ndarray:
-    """Assign categorical bin labels, merging rare / excess levels."""
+    """Присваивает метки категориальных групп, объединяя редкие или избыточные категории."""
     as_str = series.astype("string")
     labels = np.where(as_str.isna(), _NULL_LEVEL, as_str.to_numpy(dtype=object))
     counts: dict[str, int] = {}
@@ -558,7 +558,7 @@ def _levels_to_keep(
     min_bin_share: float,
     max_levels: int | None,
 ) -> set[str]:
-    """Return categorical levels that should stay unmerged."""
+    """Возвращает категории, которые не следует объединять."""
     items = sorted(counts.items(), key=lambda item: (-item[1], item[0]))
     if min_bin_share > 0.0 and n_rows > 0:
         items = [
@@ -577,7 +577,7 @@ def _merge_categorical_counts(
     min_bin_share: float,
     max_levels: int | None,
 ) -> tuple[list[float], list[float]]:
-    """Merge rare categorical levels, then return good/bad count lists."""
+    """Объединяет редкие категории и возвращает списки численностей good/bad."""
     n_rows = sum(good + bad for _level, good, bad in levels)
     counts = {
         level: int(good + bad)
@@ -596,13 +596,13 @@ def _merge_categorical_counts(
 
 
 def _as_binary_numpy(series: pd.Series, *, method: str) -> np.ndarray:
-    """Map a binary target series to a 0/1 float array."""
+    """Преобразует бинарную целевую Series в массив чисел с плавающей точкой 0/1."""
     mapping = _binary_mapping(pd.unique(series.dropna()), method=method)
     return series.map(mapping).to_numpy(dtype=np.float64)
 
 
 def _binary_mapping(unique: Any, *, method: str) -> dict[Any, float]:
-    """Map up to two target labels onto {0.0, 1.0}."""
+    """Отображает до двух целевых меток в {0.0, 1.0}."""
     raw = unique.tolist() if hasattr(unique, "tolist") else list(unique)
     labels = [item for item in raw if not _is_null(item)]
     if len(labels) > 2:
@@ -627,7 +627,7 @@ def _binary_mapping(unique: Any, *, method: str) -> dict[Any, float]:
 
 
 def _spark_binary_target(frame: Any, target: str, y_col: Any) -> Any:
-    """Return a 0/1 Spark column for ``target``."""
+    """Возвращает столбец Spark со значениями 0/1 для ``target``."""
     from pyspark.sql import functions as F  # noqa: N812
 
     try:
@@ -652,7 +652,7 @@ def _spark_binary_target(frame: Any, target: str, y_col: Any) -> Any:
 
 
 def _count_exprs(cond: Any, y_col: Any, prefix: str) -> list[Any]:
-    """Spark aggregations: event count and row count under ``cond``."""
+    """Агрегации Spark: число событий и строк при условии ``cond``."""
     from pyspark.sql import functions as F  # noqa: N812
 
     return [
@@ -662,14 +662,14 @@ def _count_exprs(cond: Any, y_col: Any, prefix: str) -> list[Any]:
 
 
 def _counts_from_row(row: dict[str, Any], prefix: str) -> tuple[float, float]:
-    """Read ``(n_bad, n_total)`` produced by ``_count_exprs``."""
+    """Читает ``(n_bad, n_total)``, полученные через ``_count_exprs``."""
     n_bad = float(row.get(f"{prefix}__bad") or 0.0)
     n_total = float(row.get(f"{prefix}__n") or 0.0)
     return n_bad, n_total
 
 
 def _quoted_col(name: str) -> Any:
-    """Build a Spark column reference that tolerates dots and spaces."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов."""
     from pyspark.sql import functions as F  # noqa: N812
 
     escaped = name.replace("`", "")
@@ -677,7 +677,7 @@ def _quoted_col(name: str) -> Any:
 
 
 def _root_cause(exc: BaseException) -> str:
-    """Extract a concise root cause from Spark/Py4J exceptions."""
+    """Извлекает краткое описание первопричины из исключений Spark/Py4J."""
     java_exc = getattr(exc, "java_exception", None)
     if java_exc is not None:
         return str(java_exc).splitlines()[0]
@@ -688,7 +688,7 @@ def _root_cause(exc: BaseException) -> str:
 
 
 def _is_spark_dataframe(data: Any) -> bool:
-    """Return whether data looks like a pyspark DataFrame."""
+    """Возвращает, соответствуют ли данные интерфейсу pyspark DataFrame."""
     module_name = type(data).__module__
     return (
         module_name.startswith("pyspark")
@@ -698,7 +698,7 @@ def _is_spark_dataframe(data: Any) -> bool:
 
 
 def _is_null(value: Any) -> bool:
-    """Return whether ``value`` is a scalar null."""
+    """Возвращает, является ли ``value`` скалярным пропуском."""
     try:
         return bool(pd.isna(value))
     except (TypeError, ValueError):

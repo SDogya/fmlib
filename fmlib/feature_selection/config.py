@@ -1,4 +1,4 @@
-"""Typed configuration for the feature selection pipeline."""
+"""Типизированная конфигурация пайплайна отбора признаков."""
 
 from __future__ import annotations
 
@@ -72,10 +72,10 @@ SELECTOR_SWITCH_METHODS = MODEL_METHODS
 
 
 def parse_statistics_order(raw: Any) -> tuple[str, ...]:
-    """Parse ``statistics.order`` as unique method names.
+    """Выполняет парсинг ``statistics.order`` как набора уникальных имён методов.
 
-    Parameter blocks live under ``statistics.<method>``, not in the list.
-    Duplicates and unknown names are rejected.
+    Блоки параметров находятся в ``statistics.<method>``, а не в списке.
+    Дубликаты и неизвестные имена не допускаются.
     """
     if raw is None:
         return ()
@@ -107,17 +107,17 @@ def parse_statistics_order(raw: Any) -> tuple[str, ...]:
 
 @dataclass(frozen=True)
 class PipelineStepConfig:
-    """One pipeline step: a method name plus its resolved parameter mapping."""
+    """Один шаг пайплайна: имя метода и словарь его параметров с разрешёнными ссылками."""
 
     method: str
     params: dict[str, Any] = field(default_factory=dict)
 
 
 def parse_pipeline_order(raw: Any) -> tuple[PipelineStepConfig, ...]:
-    """Parse top-level ``order`` as a list of single-key method mappings.
+    """Выполняет парсинг верхнеуровневого ``order`` как списка словарей методов с одним ключом.
 
-    Repeats are allowed. Each value is a parameter mapping (inline or already
-    resolved from an OmegaConf interpolation).
+    Повторения допустимы. Каждое значение — словарь параметров, заданный непосредственно или уже
+    полученный при разрешении интерполяции OmegaConf.
     """
     if raw is None:
         return ()
@@ -151,7 +151,7 @@ def parse_pipeline_order(raw: Any) -> tuple[PipelineStepConfig, ...]:
 def split_model_step_params(
     params: Mapping[str, Any],
 ) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any]]:
-    """Split a model-step mapping into params / selection / cross_validation."""
+    """Разделяет словарь шага модели на params / selection / cross_validation."""
     raw = dict(params)
     selection = raw.pop("selection", {})
     cross_validation = raw.pop("cross_validation", {})
@@ -179,7 +179,7 @@ def split_model_step_params(
 
 
 def _section_params(section: Any) -> dict[str, Any]:
-    """Serialize a nested config block for a compiled order step."""
+    """Сериализует вложенный блок конфигурации для сформированного шага order."""
     payload = asdict(section)
     payload.pop("enabled", None)
     return payload
@@ -191,7 +191,7 @@ def compile_order_from_nested(
     statistics: "StatisticsConfig",
     model: "ModelConfig",
 ) -> tuple[PipelineStepConfig, ...]:
-    """Build ``order`` from the legacy nested enabled/order layout."""
+    """Формирует ``order`` из устаревшей вложенной структуры enabled/order."""
     steps: list[PipelineStepConfig] = []
     if preprocessing.feature_drop.enabled:
         steps.append(
@@ -243,7 +243,7 @@ def _require_bool(section: str, value: Any) -> None:
 
 
 def _reject_tuning_block(section: str, payload: Mapping[str, Any]) -> None:
-    """Reject the removed ``tuning`` block in favour of ``params.optuna_params``."""
+    """Отклоняет удалённый блок ``tuning`` в пользу ``params.optuna_params``."""
     if "tuning" not in payload:
         return
     msg = (
@@ -254,7 +254,7 @@ def _reject_tuning_block(section: str, payload: Mapping[str, Any]) -> None:
 
 
 def _require_positive_int(value: Any, name: str) -> None:
-    """Raise when a value is present but is not a positive integer."""
+    """Вызывает исключение, если значение задано, но не является положительным целым числом."""
     if value is None:
         return
     if isinstance(value, bool) or not isinstance(value, int) or value < 1:
@@ -263,10 +263,10 @@ def _require_positive_int(value: Any, name: str) -> None:
 
 
 def _validate_optional_seed(value: Any, name: str) -> None:
-    """Raise when ``seed`` is present but is not an integer.
+    """Вызывает исключение, если ``seed`` задано, но не является целым числом.
 
-    ``None`` means inherit ``execution.seed``. ``0`` is allowed; booleans
-    are rejected because ``bool`` is a subclass of ``int``.
+    ``None`` означает наследование ``execution.seed``. ``0`` допустим; логические значения
+    отклоняются, поскольку ``bool`` — подкласс ``int``.
     """
     if value is None:
         return
@@ -281,7 +281,7 @@ def _validate_optuna_params_block(
     *,
     extra_int_keys: tuple[str, ...] = (),
 ) -> None:
-    """Validate the shared ``params.optuna_params`` mapping."""
+    """Проверяет общий словарь ``params.optuna_params``."""
     optuna_params = params.get("optuna_params", {})
     if not isinstance(optuna_params, Mapping):
         msg = f"{section}.params.optuna_params must be a mapping."
@@ -304,10 +304,10 @@ def _validate_optuna_params_block(
 
 
 def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
-    """Validate method-specific CatBoost RFE configuration.
+    """Проверяет специфичную для CatBoost RFE конфигурацию.
 
-    ``parameters`` must be a non-empty mapping: aliases and unknown names are
-    rejected here so a typo does not wait until the model is constructed.
+    ``parameters`` должен быть непустым словарём: псевдонимы и неизвестные имена
+    отклоняются здесь, чтобы опечатка обнаружилась до создания модели.
     """
     parameters = params.get("parameters", {})
     if not isinstance(parameters, Mapping):
@@ -360,7 +360,7 @@ def _validate_catboost_rfe_schedule(
     selection_params: Mapping[str, Any],
     section: str,
 ) -> None:
-    """Reject mixed or non-positive elimination schedules."""
+    """Отклоняет смешанные схемы исключения и схемы с неположительными значениями."""
     has_steps = "steps" in selection_params
     has_drop = "feature_drop_per_step" in selection_params
     if has_steps and has_drop:
@@ -377,7 +377,7 @@ def _validate_catboost_rfe_schedule(
 
 
 def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
-    """Validate method-specific LightGBM configuration."""
+    """Проверяет специфичную для LightGBM конфигурацию."""
     parameters = params.get("parameters", {})
     if not isinstance(parameters, Mapping):
         msg = "model.params.parameters must be a mapping."
@@ -461,7 +461,7 @@ def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
 
 
 def _validate_boruta_params(params: Mapping[str, Any]) -> None:
-    """Validate method-specific BorutaSHAP configuration."""
+    """Проверяет специфичную для BorutaSHAP конфигурацию."""
     model_type = params.get("model_type", "lgbm")
     if model_type not in BORUTA_MODEL_TYPES:
         msg = (
@@ -544,14 +544,14 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
 
 @dataclass(frozen=True)
 class NullRateConfig:
-    """Null-rate statistical filter settings."""
+    """Настройки статистического фильтра по доле пропусков."""
 
     threshold: float = 0.95
 
 
 @dataclass(frozen=True)
 class ConstantsConfig:
-    """Constant / quasi-constant filter settings."""
+    """Настройки фильтра константных и квазиконстантных признаков."""
 
     max_frequency: float = 0.999
     min_unique: Optional[int] = None
@@ -560,10 +560,10 @@ class ConstantsConfig:
 
 @dataclass(frozen=True)
 class LowVarianceConfig:
-    """Low-variance filter settings for continuous features.
+    """Настройки фильтра низкой дисперсии для непрерывных признаков.
 
-    ``scale_method`` defaults to ``robust``: ``standard`` scales every
-    variance to exactly 1.0, which makes ``min_variance`` inert.
+    ``scale_method`` по умолчанию равен ``robust``: ``standard`` приводит каждую
+    дисперсию ровно к 1.0, из-за чего ``min_variance`` перестаёт влиять на отбор.
     """
 
     min_variance: float = 0.01
@@ -572,18 +572,18 @@ class LowVarianceConfig:
 
 @dataclass(frozen=True)
 class CorrelationConfig:
-    """Pairwise correlation filter settings.
+    """Настройки фильтра попарной корреляции.
 
-    Only ``FeatureSchema.continuous`` candidates are evaluated. Categorical features
-    pass through unchanged. Correlation is computed on at most
-    ``min(max_rows, execution.max_local_rows)`` train rows, sampled
-    proportionally by ``FeatureSchema.target`` (a seeded random sample when
-    ``task_type`` is ``regression``).
+    Оцениваются только кандидаты из ``FeatureSchema.continuous``. Категориальные признаки
+    сохраняются без изменений. Корреляция вычисляется максимум по
+    ``min(max_rows, execution.max_local_rows)`` строкам train, отобранным
+    пропорционально по ``FeatureSchema.target`` (случайная выборка с заданным seed, если
+    ``task_type`` равен ``regression``).
 
-    Tie-breaking for a correlated pair:
+    Правило выбора исключаемого признака в коррелирующей паре:
 
-    - ``original_order`` (default): drop the later candidate;
-    - ``null_rate``: drop the feature with more nulls; on tie fall back to
+    - ``original_order`` (по умолчанию): исключается кандидат, стоящий позже;
+    - ``null_rate``: исключается признак с большей долей пропусков; при равенстве используется
       ``original_order``.
     """
 
@@ -595,25 +595,25 @@ class CorrelationConfig:
 
 @dataclass(frozen=True)
 class PsiConfig:
-    """Population Stability Index filter settings.
+    """Настройки фильтра индекса стабильности популяции (PSI).
 
-    When mode='train_valid' and explicit test data is not provided,
-    the selector can split the train dataset by month_part column:
-    - latest N months go to test (for PSI comparison)
-    - all earlier months go to train
+    Если mode='train_valid' и тестовые данные явно не переданы,
+    метод отбора может разделить обучающий набор по столбцу month_part:
+    - последние N месяцев попадают в test (для сравнения по PSI)
+    - все более ранние месяцы попадают в train
 
     Args:
-        mode: 'train_valid' or 'month_over_month' comparison mode.
-        threshold: PSI value threshold for feature exclusion.
-        num_bins: Number of quantile bins for PSI calculation.
-        month_column: Column name containing month identifier (for train_valid mode).
-        test_months: Number of latest months to use as test set.
-        eps: Small constant for probability adjustment in Pandas PSI calculation.
-        relative_error: Relative error for approximate quantiles in PySpark PSI.
-        batch_size: Column batch size for PySpark PSI computation.
-        n_jobs: Number of parallel jobs for Pandas PSI calculation.
-        subsample_rows: Maximum number of rows for stratified subsampling (optional).
-        seed: Optional RNG seed for stratified subsample. ``null`` inherits
+        mode: Режим сравнения 'train_valid' или 'month_over_month'.
+        threshold: Порог PSI для исключения признака.
+        num_bins: Число квантильных интервалов для вычисления PSI.
+        month_column: Имя столбца с идентификатором месяца (для режима train_valid).
+        test_months: Число последних месяцев для тестовой выборки.
+        eps: Малая константа для корректировки вероятностей при вычислении PSI в Pandas.
+        relative_error: Относительная погрешность приближённых квантилей при вычислении PSI в PySpark.
+        batch_size: Число столбцов в пакете при вычислении PSI в PySpark.
+        n_jobs: Число параллельных задач для вычисления PSI в Pandas.
+        subsample_rows: Максимальное число строк в стратифицированной подвыборке (необязательно).
+        seed: Необязательный seed для стратифицированной подвыборки. ``null`` наследует
             ``execution.seed``.
     """
 
@@ -632,25 +632,25 @@ class PsiConfig:
 
 @dataclass(frozen=True)
 class IvConfig:
-    """Information Value filter for binary classification.
+    """Фильтр информационной ценности (IV) для бинарной классификации.
 
-    Continuous features are split into ``num_bins`` quantile bins; categorical
-    features use distinct values (rare / excess levels can be merged). Nulls
-    form a separate bin. A feature is dropped when IV is strictly below
-    ``threshold`` (and optionally when it exceeds ``max_threshold``).
+    Непрерывные признаки разбиваются на ``num_bins`` квантильных интервалов; для категориальных
+    используются отдельные значения (редкие или избыточные категории могут объединяться). Пропуски
+    образуют отдельную группу. Признак исключается, если IV строго меньше
+    ``threshold`` (и, при включённой проверке, если превышает ``max_threshold``).
 
     Args:
-        threshold: Drop when IV is strictly below this value.
-        num_bins: Number of quantile bins for continuous features.
-        max_threshold: Optional upper bound; drop when IV is strictly above
-            (typical leakage / ID-like columns). ``null`` disables the rule.
-        eps: Smoothing added to good/bad shares inside the WoE logarithm.
-        min_bin_share: Merge categorical levels whose row share is below this
-            value into an ``other`` bin. ``0`` disables the rule.
-        max_levels: Keep at most this many non-null categorical levels
-            (most frequent); the rest go to ``other``. ``null`` disables.
-        relative_error: Relative error for Spark ``approxQuantile``.
-        batch_size: How many columns to aggregate in one Spark job.
+        threshold: Признак исключается, если IV строго меньше этого значения.
+        num_bins: Число квантильных интервалов для непрерывных признаков.
+        max_threshold: Необязательная верхняя граница; признак исключается, если IV строго выше неё
+            (обычно при утечке целевой переменной или для столбцов-идентификаторов). ``null`` отключает правило.
+        eps: Сглаживание, добавляемое к долям good/bad под логарифмом WoE.
+        min_bin_share: Категории с долей строк ниже этого
+            значения объединяются в группу ``other``. ``0`` отключает правило.
+        max_levels: Максимальное число сохраняемых категорий без учёта пропусков
+            (наиболее частых); остальные попадают в ``other``. ``null`` отключает правило.
+        relative_error: Относительная погрешность Spark ``approxQuantile``.
+        batch_size: Число столбцов для агрегации в одной задаче Spark.
     """
 
     threshold: float = 0.02
@@ -665,15 +665,15 @@ class IvConfig:
 
 @dataclass(frozen=True)
 class StatisticsCacheConfig:
-    """Optional on-disk cache of statistical metrics.
+    """Необязательный дисковый кэш статистических метрик.
 
-    Metrics are computed on the full ``schema.candidate_features()`` list and
-    stored by method plus compute-parameter fingerprint. Thresholds are applied
-    later and are not part of the fingerprint.
+    Метрики вычисляются для полного списка ``schema.candidate_features()`` и
+    сохраняются по методу и отпечатку параметров вычисления. Пороги применяются
+    позже и не входят в отпечаток.
 
-    ``path`` is a file, not a directory. It is **not** placed inside the
-    collision-safe ``output_dir`` so later runs can reuse it. ``null`` means
-    ``statistics_metrics.json`` in the process working directory.
+    ``path`` указывает на файл, а не на каталог. Файл **не** помещается в
+    защищённый от коллизий ``output_dir``, чтобы использовать его в следующих запусках. ``null`` означает
+    ``statistics_metrics.json`` в рабочем каталоге процесса.
     """
 
     enabled: bool = False
@@ -683,7 +683,7 @@ class StatisticsCacheConfig:
 
 @dataclass(frozen=True)
 class StatisticsConfig:
-    """Statistical stage configuration."""
+    """Конфигурация статистического этапа."""
 
     order: tuple[str, ...] = ()
     null_rate: NullRateConfig = field(default_factory=NullRateConfig)
@@ -697,14 +697,14 @@ class StatisticsConfig:
 
 @dataclass(frozen=True)
 class ModelSelectionRuleConfig:
-    """Rule applied to aggregated model importances."""
+    """Правило отбора по агрегированным оценкам важности модели."""
 
     max_features: Optional[int] = 100
 
 
 @dataclass(frozen=True)
 class CrossValidationConfig:
-    """Cross-validation settings for the model stage."""
+    """Настройки кросс-валидации для этапа модели."""
 
     strategy: str = "stratified"
     folds: int = 5
@@ -713,28 +713,28 @@ class CrossValidationConfig:
 
 @dataclass(frozen=True)
 class ModelConfig:
-    """Model-based selection stage configuration.
+    """Конфигурация этапа отбора на основе модели.
 
     Args:
-        enabled: When false, the model stage is skipped.
-        method: Exactly one selector when ``enabled``. Supported values:
-            - ``"lightgbm"``: LightGBM + SHAP importance (params:
+        enabled: При false этап модели пропускается.
+        method: Ровно один метод отбора при ``enabled``. Допустимые значения:
+            - ``"lightgbm"``: LightGBM + важность по SHAP (параметры:
               lgbm_threshold, shap_threshold, n_folds, n_trials, max_rows,
               sample_fraction, optuna_mode, selection_mode, min_set_share,
-              n_jobs, seed, shap_max_rows, parameters). Optuna lives in
-              ``params.optuna_params``. ``seed`` overrides ``execution.seed``.
-            - ``"catboost_rfe"``: CatBoost recursive elimination on an
-              out-of-time split, with optional Optuna tuning (params:
+              n_jobs, seed, shap_max_rows, parameters). Настройки Optuna находятся в
+              ``params.optuna_params``. ``seed`` переопределяет ``execution.seed``.
+            - ``"catboost_rfe"``: рекурсивное исключение признаков CatBoost с
+              разделением по времени и необязательным подбором параметров Optuna (параметры:
               eval_months, max_rows, sample_fraction, seed, parameters,
-              optuna_params, feature_selection_params; the target feature
-              count comes from ``selection.max_features``)
-            - ``"boruta_shap"``: BorutaSHAP selection backed by LightGBM or
+              optuna_params, feature_selection_params; целевое число признаков
+              задаётся в ``selection.max_features``)
+            - ``"boruta_shap"``: отбор BorutaSHAP на основе LightGBM или
               sklearn RandomForest.
-        params: Method-specific parameters. Methods that tune with Optuna
-            read the shared ``params.optuna_params`` block (``enabled``,
+        params: Параметры конкретного метода. Методы с подбором параметров через Optuna
+            читают общий блок ``params.optuna_params`` (``enabled``,
             ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``).
-        selection: Rule for selecting top features from importances.
-        cross_validation: Cross-validation settings.
+        selection: Правило выбора лучших признаков по оценкам важности.
+        cross_validation: Настройки кросс-валидации.
     """
 
     enabled: bool = False
@@ -746,7 +746,7 @@ class ModelConfig:
 
 @dataclass(frozen=True)
 class FeatureDropConfig:
-    """Manual feature exclusions loaded from a text file or result JSON."""
+    """Ручные исключения признаков из текстового файла или JSON с результатом."""
 
     enabled: bool = False
     path: Optional[str] = None
@@ -755,7 +755,7 @@ class FeatureDropConfig:
 
 @dataclass(frozen=True)
 class RowSampleConfig:
-    """Optional test-run row cap applied to every dataset split."""
+    """Необязательное ограничение числа строк в каждой выборке для тестового запуска."""
 
     enabled: bool = False
     max_rows: Optional[int] = None
@@ -764,7 +764,7 @@ class RowSampleConfig:
 
 @dataclass(frozen=True)
 class RandomFeatureDropConfig:
-    """Optional deterministic random candidate exclusion for test runs."""
+    """Необязательное воспроизводимое случайное исключение кандидатов для тестовых запусков."""
 
     enabled: bool = False
     n_features: int = 0
@@ -772,7 +772,7 @@ class RandomFeatureDropConfig:
 
 @dataclass(frozen=True)
 class PreprocessingConfig:
-    """Input preparation performed before schema validation and selectors."""
+    """Подготовка входных данных перед проверкой схемы и отбором признаков."""
 
     feature_drop: FeatureDropConfig = field(default_factory=FeatureDropConfig)
     random_feature_drop: RandomFeatureDropConfig = field(
@@ -783,7 +783,7 @@ class PreprocessingConfig:
 
 @dataclass(frozen=True)
 class LocalSampleConfig:
-    """Sampling used before controlled Spark → local materialization."""
+    """Формирование выборки перед контролируемой загрузкой данных из Spark в локальную память."""
 
     strategy: str = "stratified"
     cache_intermediate: bool = True
@@ -791,10 +791,10 @@ class LocalSampleConfig:
 
 @dataclass(frozen=True)
 class VerboseConfig:
-    """Per-method debug flags. Omitted methods stay silent.
+    """Флаги отладки для отдельных методов. Для неуказанных методов журналирование отключено.
 
-    ``execution.verbose`` accepts ``true`` (all methods), ``false`` (none),
-    or a mapping such as ``{lightgbm: true, correlation: true}``.
+    ``execution.verbose`` принимает ``true`` (все методы), ``false`` (ни одного)
+    или словарь вида ``{lightgbm: true, correlation: true}``.
     """
 
     pipeline: bool = False
@@ -812,26 +812,26 @@ class VerboseConfig:
     boruta_shap: bool = False
 
     def any_enabled(self: VerboseConfig) -> bool:
-        """Return whether at least one method is verbose."""
+        """Возвращает, включено ли подробное журналирование хотя бы для одного метода."""
         return any(bool(getattr(self, name)) for name in VERBOSE_METHODS)
 
     @classmethod
     def all_enabled(cls: type[VerboseConfig]) -> VerboseConfig:
-        """Turn on every known method flag."""
+        """Включает флаги всех известных методов."""
         return cls(**dict.fromkeys(VERBOSE_METHODS, True))
 
 
 def parse_verbose(raw: Any) -> VerboseConfig:
-    """Parse ``execution.verbose`` from a boolean or per-method mapping.
+    """Выполняет парсинг ``execution.verbose`` из логического значения или словаря флагов методов.
 
     Args:
-        raw: ``True`` / ``False`` / ``None`` / mapping of method flags.
+        raw: ``True`` / ``False`` / ``None`` / словарь флагов методов.
 
     Returns:
-        Normalized ``VerboseConfig``.
+        Нормализованный ``VerboseConfig``.
 
     Raises:
-        ConfigError: On unknown methods or non-boolean flags.
+        ConfigError: При неизвестных методах или нелогических значениях флагов.
     """
     if raw is None or raw is False:
         return VerboseConfig()
@@ -863,10 +863,10 @@ def parse_verbose(raw: Any) -> VerboseConfig:
 
 @dataclass(frozen=True)
 class ExecutionConfig:
-    """Execution, reproducibility and capacity settings.
+    """Настройки выполнения, воспроизводимости и ограничений ресурсов.
 
-    ``task_type`` is the global modelling task for LightGBM, CatBoost RFE and
-    BorutaSHAP. It must match ``FeatureSchema.task_type``. This is not CatBoost
+    ``task_type`` задаёт общую задачу моделирования для LightGBM, CatBoost RFE и
+    BorutaSHAP. Значение должно совпадать с ``FeatureSchema.task_type``. Это не параметр CatBoost
     ``parameters.task_type`` (CPU/GPU).
     """
 
@@ -881,20 +881,20 @@ class ExecutionConfig:
 
 @dataclass(frozen=True)
 class FeatureSelectionConfig:
-    """Top-level configuration for ``FeatureSelectionPipeline``.
+    """Верхнеуровневая конфигурация ``FeatureSelectionPipeline``.
 
     Args:
-        order: Pipeline steps as ``[{method: params}, ...]``. Repeats are
-            allowed. When omitted, steps are compiled from the nested
+        order: Шаги пайплайна в виде ``[{method: params}, ...]``. Повторения
+            допускаются. Если не задано, шаги формируются из вложенных блоков
             ``preprocessing`` / ``statistics.order`` / ``model``
-            layout.
-        statistics: Nested statistical defaults and, for the legacy layout,
+            конфигурации.
+        statistics: Вложенные статистические настройки по умолчанию и, для устаревшей структуры,
             ``statistics.order``.
-        model: Nested model defaults; ``enabled`` is ignored when ``order``
-            is set.
-        execution: Seeds, backend fallback and capacity limits.
-        preprocessing: Nested preprocessing defaults; ``enabled`` flags are
-            ignored when ``order`` is set.
+        model: Вложенные настройки модели по умолчанию; ``enabled`` игнорируется, если ``order``
+            задан.
+        execution: Значения seed, резервный бэкенд и ограничения ресурсов.
+        preprocessing: Вложенные настройки предобработки по умолчанию; флаги ``enabled``
+            игнорируются, если задан ``order``.
     """
 
     order: tuple[PipelineStepConfig, ...] = ()
@@ -904,10 +904,10 @@ class FeatureSelectionConfig:
     preprocessing: PreprocessingConfig = field(default_factory=PreprocessingConfig)
 
     def validate(self: FeatureSelectionConfig) -> None:
-        """Validate enums and numeric constraints.
+        """Проверяет перечислимые значения и числовые ограничения.
 
         Raises:
-            ConfigError: On unsupported values or inconsistent settings.
+            ConfigError: При неподдерживаемых значениях или несогласованных настройках.
         """
         parse_statistics_order(self.statistics.order)
         _require_bool("preprocessing.feature_drop.enabled", self.preprocessing.feature_drop.enabled)
@@ -1055,10 +1055,10 @@ class FeatureSelectionConfig:
         _validate_order_steps(self.order)
 
     def to_dict(self: FeatureSelectionConfig) -> dict[str, Any]:
-        """Serialize config to a plain nested dictionary.
+        """Сериализует конфигурацию в обычный вложенный словарь.
 
         Returns:
-            JSON/YAML-compatible dictionary.
+            Словарь, совместимый с JSON/YAML.
         """
         payload = asdict(self)
         payload["order"] = [
@@ -1069,16 +1069,16 @@ class FeatureSelectionConfig:
 
     @classmethod
     def from_dict(cls: type[FeatureSelectionConfig], payload: Mapping[str, Any]) -> FeatureSelectionConfig:
-        """Build config from a nested mapping.
+        """Создаёт конфигурацию из вложенного словаря.
 
         Args:
-            payload: Configuration dictionary (e.g. parsed YAML).
+            payload: Словарь конфигурации (например, результат парсинга YAML).
 
         Returns:
-            Validated ``FeatureSelectionConfig``.
+            Проверенная конфигурация ``FeatureSelectionConfig``.
 
         Raises:
-            ConfigError: On unknown fields or invalid values.
+            ConfigError: При неизвестных полях или недопустимых значениях.
         """
         if not isinstance(payload, Mapping):
             msg = "Config payload must be a mapping."
@@ -1215,16 +1215,16 @@ class FeatureSelectionConfig:
 
     @classmethod
     def from_yaml(cls: type[FeatureSelectionConfig], path: Union[str, Path]) -> FeatureSelectionConfig:
-        """Load config from a YAML file.
+        """Загружает конфигурацию из YAML-файла.
 
-        OmegaConf interpolations such as ``${null_rate.wide}`` are resolved.
-        Hydra config-group composition is not used.
+        Интерполяции OmegaConf вида ``${null_rate.wide}`` разрешаются.
+        Композиция групп конфигурации Hydra не используется.
 
         Args:
-            path: Path to a YAML file.
+            path: Путь к YAML-файлу.
 
         Returns:
-            Validated ``FeatureSelectionConfig``.
+            Проверенная конфигурация ``FeatureSelectionConfig``.
         """
         file_path = Path(path)
         try:
@@ -1250,7 +1250,7 @@ class FeatureSelectionConfig:
 
 
 def _resolve_drop_path(mapping: Mapping[str, Any], file_path: Path) -> dict[str, Any]:
-    """Resolve a relative feature-drop path against the YAML file directory."""
+    """Разрешает относительный путь к списку исключаемых признаков от каталога YAML-файла."""
     updated = dict(mapping)
     drop_path = updated.get("path")
     if drop_path is None:
@@ -1266,7 +1266,7 @@ def _resolve_yaml_feature_drop_paths(
     payload: Mapping[str, Any],
     file_path: Path,
 ) -> dict[str, Any]:
-    """Make feature_drop.path absolute relative to the YAML file."""
+    """Преобразует feature_drop.path в абсолютный путь относительно YAML-файла."""
     resolved = dict(payload)
     preprocessing_raw = resolved.get("preprocessing", {})
     if isinstance(preprocessing_raw, Mapping):
@@ -1295,7 +1295,7 @@ def _resolve_yaml_feature_drop_paths(
 
 
 def _resolve_feature_drop_tree(raw: Mapping[str, Any], file_path: Path) -> dict[str, Any]:
-    """Resolve ``path`` on a drop config or on each named preset under it."""
+    """Разрешает ``path`` в конфигурации исключения или в каждом вложенном именованном наборе настроек."""
     if "path" in raw:
         return _resolve_drop_path(raw, file_path)
     updated: dict[str, Any] = {}
@@ -1311,19 +1311,19 @@ def _reject_conflicting_selector_switch(
     step: PipelineStepConfig,
     section: str,
 ) -> None:
-    """Reject a legacy ``method`` switch that disagrees with the order key.
+    """Отклоняет устаревший переключатель ``method``, если он противоречит ключу в order.
 
-    Under the nested layout ``model.method`` chose the selector. With a
-    top-level ``order`` the step key decides and ``method`` is dropped during
-    parsing, so a stale value silently runs a different selector than the one
-    the config appears to name. Fail while building the config instead.
+    Во вложенной структуре метод отбора определялся через ``model.method``. При
+    верхнеуровневом ``order`` метод задаёт ключ шага, а ``method`` удаляется при
+    парсинге, поэтому устаревшее значение незаметно запускает другой метод отбора, чем тот,
+    который, судя по конфигурации, указан. Поэтому ошибка возникает уже при создании конфигурации.
 
     Args:
-        step: Pipeline step to inspect.
-        section: Human-readable config path used in the error message.
+        step: Проверяемый шаг пайплайна.
+        section: Читаемый путь в конфигурации для сообщения об ошибке.
 
     Raises:
-        ConfigError: If ``params.method`` names a different selector.
+        ConfigError: Если ``params.method`` указывает другой метод отбора.
     """
     if step.method not in SELECTOR_SWITCH_METHODS:
         return
@@ -1339,7 +1339,7 @@ def _reject_conflicting_selector_switch(
 
 
 def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
-    """Validate parameter mappings for each explicit pipeline step."""
+    """Проверяет словари параметров для каждого явно заданного шага пайплайна."""
     for index, step in enumerate(order):
         section = f"order[{index}].{step.method}"
         params = step.params
@@ -1441,7 +1441,7 @@ def _validate_order_steps(order: tuple[PipelineStepConfig, ...]) -> None:
 
 
 def _validate_statistics_cache(config: StatisticsCacheConfig) -> None:
-    """Validate the optional statistics metrics cache block."""
+    """Проверяет необязательный блок кэша статистических метрик."""
     _require_bool("statistics.cache.enabled", config.enabled)
     _require_bool("statistics.cache.force_recompute", config.force_recompute)
     if config.path is not None and (
@@ -1452,7 +1452,7 @@ def _validate_statistics_cache(config: StatisticsCacheConfig) -> None:
 
 
 def _require_readable_feature_drop(path: Optional[str], section: str) -> None:
-    """Fail when the drop list cannot be read or has no names."""
+    """Вызывает исключение, если список исключений не читается или не содержит имён."""
     from fmlib.feature_selection.utils.feature_drop import load_feature_names
 
     if path is None or not str(path).strip():
@@ -1466,7 +1466,7 @@ def _require_readable_feature_drop(path: Optional[str], section: str) -> None:
 
 
 def _validate_psi_config(config: PsiConfig, section: str = "statistics.psi") -> None:
-    """Validate Population Stability Index numeric settings."""
+    """Проверяет числовые настройки индекса стабильности популяции (PSI)."""
     if (
         isinstance(config.threshold, bool)
         or not isinstance(config.threshold, (int, float))
@@ -1530,7 +1530,7 @@ def _validate_psi_config(config: PsiConfig, section: str = "statistics.psi") -> 
 
 
 def _validate_iv_config(config: IvConfig) -> None:
-    """Validate Information Value filter settings."""
+    """Проверяет настройки фильтра информационной ценности (IV)."""
     if (
         isinstance(config.threshold, bool)
         or not isinstance(config.threshold, (int, float))

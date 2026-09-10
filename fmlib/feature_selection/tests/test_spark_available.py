@@ -1,4 +1,4 @@
-"""Fail fast when pyspark is missing from the runtime."""
+"""Немедленно вызывает ошибку, если pyspark отсутствует в среде выполнения."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import pytest
 
 
 def test_pyspark_is_installed() -> None:
-    """Cluster/CI smoke: do not hide a missing Spark extra behind skips and fakes."""
+    """Базовая проверка кластера/CI: отсутствие зависимости Spark не скрывается пропусками и подменами."""
     try:
         import pyspark
     except ImportError:

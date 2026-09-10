@@ -1,4 +1,4 @@
-"""Feature selection package public API."""
+"""Пакет отбора признаков."""
 
 from fmlib.feature_selection.config import FeatureSelectionConfig
 from fmlib.feature_selection.pipeline import FeatureSelectionPipeline

@@ -1,4 +1,4 @@
-"""Pairwise correlation filter for continuous features."""
+"""Фильтр попарной корреляции для непрерывных признаков."""
 
 from __future__ import annotations
 
@@ -29,32 +29,32 @@ _NUMERIC_SPARK_TYPE_NAMES = frozenset(
 
 
 class CorrelationSelector:
-    """Exclude one feature from each highly correlated continuous pair.
+    """Исключает один признак из каждой пары непрерывных признаков с высокой корреляцией.
 
-    Pairwise correlation on continuous candidates:
+    Попарная корреляция непрерывных кандидатов:
 
-    1. take ``candidates ∩ schema.continuous`` (not Spark dtype discovery);
-    2. bound the train split to ``min(config.max_rows, execution.max_local_rows)``
-       with a target-stratified sample (random sample when ``task_type`` is
-       ``regression``), not the first N rows;
-    3. drop all-null columns (Spark ``Imputer`` cannot fit them);
-    4. fill remaining nulls with the column median;
-    5. compute the pairwise correlation matrix;
-    6. for every pair with ``abs(corr) > threshold``, drop exactly one feature.
+    1. выбирает ``candidates ∩ schema.continuous`` (без определения типов через Spark);
+    2. ограничивает train до ``min(config.max_rows, execution.max_local_rows)`` строк
+       с помощью стратификации по целевой переменной (случайной выборки, если ``task_type`` равен
+       ``regression``), а не выбирает первые N строк;
+    3. удаляет столбцы, состоящие только из пропусков (Spark ``Imputer`` не может на них обучиться);
+    4. заполняет оставшиеся пропуски медианой столбца;
+    5. вычисляет матрицу попарной корреляции;
+    6. для каждой пары с ``abs(corr) > threshold`` исключает ровно один признак.
 
-    Spark inputs use ``Imputer`` → ``VectorAssembler`` → ``pyspark.ml.stat.Correlation``
-    and never call ``toPandas``. Already-local pandas inputs use the equivalent
-    median-fill + ``DataFrame.corr`` path for unit tests and small local runs.
+    Для входных данных Spark используется ``Imputer`` → ``VectorAssembler`` → ``pyspark.ml.stat.Correlation``
+    без вызова ``toPandas``. Для уже локальных данных pandas используется аналогичная
+    схема заполнения медианой + ``DataFrame.corr`` для модульных тестов и небольших локальных запусков.
 
-    Which feature is dropped from a correlated pair is controlled by
+    Выбор исключаемого признака из коррелирующей пары регулируется
     ``config.tie_break``:
 
-    - ``original_order`` (default): drop the later candidate;
-    - ``null_rate``: drop the feature with the higher null rate, falling back to
-      ``original_order`` on ties.
+    - ``original_order`` (по умолчанию): исключается кандидат, стоящий позже;
+    - ``null_rate``: исключается признак с большей долей пропусков; при равенстве используется
+      ``original_order``.
 
     Args:
-        config: Correlation filter settings.
+        config: Настройки фильтра корреляции.
     """
 
     method_name = "correlation"
@@ -68,20 +68,20 @@ class CorrelationSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Compute pairwise correlations and drop one member of each correlated pair.
+        """Вычисляет попарные корреляции и исключает один признак из каждой коррелирующей пары.
 
         Args:
-            context: Shared stage context containing datasets, schema and execution
-                config.
-            candidates: Feature names still under consideration.
+            context: Общий контекст этапа с наборами данных, схемой и конфигурацией
+                выполнения.
+            candidates: Имена признаков, которые ещё рассматриваются для отбора.
 
         Returns:
-            Drop decisions with ``reason="high_correlation"`` and the measured
-            absolute correlation as ``value``.
+            Решения об исключении с ``reason="high_correlation"`` и измеренным
+            модулем корреляции в качестве ``value``.
 
         Raises:
-            BackendError: When Spark APIs are required but pyspark is missing.
-            ExecutionError: When statistics cannot be computed for the train split.
+            BackendError: Если требуется API Spark, но pyspark отсутствует.
+            ExecutionError: Если статистики невозможно вычислить для train.
         """
         continuous = set(context.schema.continuous)
         columns = [column for column in candidates if column in continuous]
@@ -95,7 +95,7 @@ class CorrelationSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> dict[str, Any]:
-        """Return the correlation matrix, null rates and evaluated feature order."""
+        """Возвращает матрицу корреляции, доли пропусков и порядок оценённых признаков."""
         continuous = set(context.schema.continuous)
         columns = [column for column in candidates if column in continuous]
         if len(columns) < 2:
@@ -148,7 +148,7 @@ class CorrelationSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Greedy-drop correlated pairs among the remaining features."""
+        """Жадно исключает признаки из коррелирующих пар среди оставшихся признаков."""
         del context
         features = [str(name) for name in metrics.get("features", [])]
         raw_matrix = metrics.get("matrix", [])
@@ -190,7 +190,7 @@ class CorrelationSelector:
         context: StageContext,
         max_rows: int,
     ) -> tuple[Any, int, int, bool]:
-        """Cap train rows with a target-stratified (or random) sample."""
+        """Ограничивает число строк train стратифицированной по целевой переменной или случайной выборкой."""
         target = context.schema.target
         if not target:
             msg = (
@@ -215,10 +215,10 @@ class CorrelationSelector:
         columns: list[str],
         max_rows: int,
     ) -> tuple[np.ndarray, dict[str, float], list[str]]:
-        """Compute correlation stats with Spark ML on a sampled row projection.
+        """Вычисляет статистики корреляции средствами Spark ML на проекции выбранных строк.
 
-        Filter all-null columns, median-impute, assemble a feature vector,
-        then call ``Correlation.corr``.
+        Удаляет столбцы только с пропусками, заполняет остальные пропуски медианой, собирает вектор признаков,
+        затем вызывает ``Correlation.corr``.
         """
         try:
             from pyspark.ml.feature import Imputer, VectorAssembler
@@ -309,7 +309,7 @@ class CorrelationSelector:
         frame: pd.DataFrame,
         columns: list[str],
     ) -> tuple[np.ndarray, dict[str, float], list[str]]:
-        """Compute correlation stats for an already-local pandas DataFrame."""
+        """Вычисляет статистики корреляции для уже локального pandas DataFrame."""
         missing = [column for column in columns if column not in frame.columns]
         if missing:
             msg = f"correlation: columns missing from train DataFrame: {missing}."
@@ -344,10 +344,10 @@ class CorrelationSelector:
         null_rates: dict[str, float],
         candidates: list[str],
     ) -> dict[str, float]:
-        """Drop one feature from each upper-triangle pair above the threshold.
+        """Исключает один признак из каждой пары верхнего треугольника матрицы, превышающей порог.
 
-        Already-dropped features are skipped so each feature yields at most
-        one drop decision.
+        Уже исключённые признаки пропускаются, поэтому для каждого признака формируется не более
+        одного решения об исключении.
         """
         upper = np.triu(np.abs(corr_matrix), k=1)
         dropped: dict[str, float] = {}
@@ -373,7 +373,7 @@ class CorrelationSelector:
         null_rates: dict[str, float],
         candidates: list[str],
     ) -> str:
-        """Choose which of two correlated features to drop."""
+        """Выбирает, какой из двух коррелирующих признаков исключить."""
         if self.config.tie_break == "null_rate":
             rate_a = null_rates.get(feat_a, 0.0)
             rate_b = null_rates.get(feat_b, 0.0)
@@ -385,7 +385,7 @@ class CorrelationSelector:
 
     @staticmethod
     def _validate_spark_columns(fields: dict[str, Any], columns: list[str]) -> None:
-        """Validate that requested Spark columns exist and are numeric."""
+        """Проверяет, что запрошенные столбцы Spark существуют и имеют числовой тип."""
         missing = [column for column in columns if column not in fields]
         if missing:
             msg = f"correlation: columns missing from train schema: {missing}."
@@ -403,7 +403,7 @@ class CorrelationSelector:
 
 
 def _quoted_col(name: str) -> Any:
-    """Build a Spark column reference that tolerates dots and spaces in names."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов в имени."""
     from pyspark.sql import functions as F  # noqa: N812
 
     escaped = name.replace("`", "")
@@ -411,7 +411,7 @@ def _quoted_col(name: str) -> Any:
 
 
 def _root_cause(exc: BaseException) -> str:
-    """Extract a concise root cause from Spark/Py4J exceptions."""
+    """Извлекает краткое описание первопричины из исключений Spark/Py4J."""
     java_exc = getattr(exc, "java_exception", None)
     if java_exc is not None:
         return str(java_exc).splitlines()[0]
@@ -422,6 +422,6 @@ def _root_cause(exc: BaseException) -> str:
 
 
 def _is_spark_dataframe(data: Any) -> bool:
-    """Return whether data looks like a pyspark DataFrame."""
+    """Возвращает, соответствуют ли данные интерфейсу pyspark DataFrame."""
     module_name = type(data).__module__
     return module_name.startswith("pyspark") and hasattr(data, "select") and hasattr(data, "agg")

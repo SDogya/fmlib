@@ -1,4 +1,4 @@
-"""Tests for FeatureSchema validation."""
+"""Тесты проверки FeatureSchema."""
 
 import pytest
 

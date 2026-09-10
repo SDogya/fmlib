@@ -1,4 +1,4 @@
-"""Tests for test-run row and random-column preprocessing."""
+"""Тесты предобработки строк и случайных столбцов для тестового запуска."""
 
 from __future__ import annotations
 

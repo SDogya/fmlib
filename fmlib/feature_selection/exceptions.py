@@ -1,11 +1,11 @@
-"""Exceptions for the feature selection module."""
+"""Исключения модуля отбора признаков."""
 
 
 class FeatureSelectionError(Exception):
-    """Base error for the feature selection pipeline.
+    """Базовая ошибка пайплайна отбора признаков.
 
     Args:
-        message: Human-readable description with a fixable action when possible.
+        message: Понятное описание, по возможности с указанием способа исправления.
     """
 
     def __init__(self: "FeatureSelectionError", message: str) -> None:
@@ -14,20 +14,20 @@ class FeatureSelectionError(Exception):
 
 
 class SchemaError(FeatureSelectionError):
-    """Raised when FeatureSchema or input columns are invalid."""
+    """Возникает при некорректной FeatureSchema или недопустимых входных столбцах."""
 
 
 class ConfigError(FeatureSelectionError):
-    """Raised when FeatureSelectionConfig is invalid or incompatible."""
+    """Возникает при некорректной или несовместимой FeatureSelectionConfig."""
 
 
 class CapacityError(FeatureSelectionError):
-    """Raised when local materialization limits are exceeded."""
+    """Возникает при превышении лимитов загрузки данных в локальную память."""
 
 
 class BackendError(FeatureSelectionError):
-    """Raised when a required backend or optional dependency is unavailable."""
+    """Возникает, если требуемый бэкенд или необязательная зависимость недоступны."""
 
 
 class ExecutionError(FeatureSelectionError):
-    """Raised when a stage fails during execution."""
+    """Возникает при сбое во время выполнения этапа."""

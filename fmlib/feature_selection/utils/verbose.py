@@ -1,12 +1,12 @@
-"""Per-method verbose event log for feature selection.
+"""Подробный журнал событий отбора признаков по методам.
 
-Gated by ``execution.verbose``. Events are sizes, timings and numeric summaries.
-Feature-name lists are stripped: those already live in the JSON artifacts written
-after each stage.
+Управляется ``execution.verbose``. События содержат размеры, время выполнения и числовые сводки.
+Списки имён признаков удаляются: они уже есть в JSON-артефактах, записываемых
+после каждого этапа.
 
-Lines go to stdout (so Jupyter cells see them even without logging config) and
-to the stdlib logger. JSON is written to ``verbose_log.json`` only when
-``fit_select(..., output_dir=...)`` is set; otherwise the payload stays on
+Строки выводятся в stdout (чтобы отображаться в ячейках Jupyter даже без настройки журналирования) и
+в логгер стандартной библиотеки. JSON записывается в ``verbose_log.json``, только если задан
+``fit_select(..., output_dir=...)``; иначе данные остаются в
 ``SelectionResult.verbose_log``.
 """
 
@@ -52,25 +52,25 @@ _FEATURE_LIST_KEYS = frozenset(
 
 
 def default_verbose_recorder() -> "VerboseRecorder":
-    """Build a silent recorder for StageContext defaults and unit tests."""
+    """Создаёт средство журналирования с отключённым выводом для значений по умолчанию StageContext и модульных тестов."""
     from fmlib.feature_selection.config import VerboseConfig
 
     return VerboseRecorder(verbose=VerboseConfig())
 
 
 def echo(line: str) -> None:
-    """Print a line to stdout so notebooks see it without logging setup."""
+    """Выводит строку в stdout, чтобы она отображалась в ноутбуках без настройки журналирования."""
     print(line, file=sys.stdout, flush=True)  # noqa: T201 - notebooks have no logging config
     logger.info("%s", line)
 
 
 def announce_saved(path: Path, n_events: int) -> None:
-    """Tell the user where the verbose JSON landed."""
+    """Сообщает пользователю, куда сохранён JSON подробного журнала."""
     echo(f"{LINE_PREFIX} wrote {path} ({n_events} events)")
 
 
 def announce_not_saved(n_events: int) -> None:
-    """Tell the user why JSON was not written (typical Jupyter call)."""
+    """Сообщает пользователю, почему JSON не записан (типичный вызов из Jupyter)."""
     echo(
         f"{LINE_PREFIX} {n_events} events kept on result.verbose_log; "
         f"pass output_dir=... to write {VERBOSE_LOG_FILENAME}"
@@ -78,13 +78,13 @@ def announce_not_saved(n_events: int) -> None:
 
 
 def announce_save_failed(exc: BaseException) -> None:
-    """Surface a dump failure on stdout, not only in logging."""
+    """Сообщает об ошибке сохранения в stdout, а не только через журналирование."""
     echo(f"{LINE_PREFIX} failed to write {VERBOSE_LOG_FILENAME}: {exc}")
 
 
 @dataclass
 class VerboseRecorder:
-    """In-memory event log gated by per-method ``execution.verbose`` flags."""
+    """Журнал событий в памяти, управляемый флагами ``execution.verbose`` для отдельных методов."""
 
     verbose: Any
     events: list[dict[str, Any]] = field(default_factory=list)
@@ -92,18 +92,18 @@ class VerboseRecorder:
     wall_started_at: float = field(default_factory=time.time)
 
     def enabled(self: VerboseRecorder, method: str) -> bool:
-        """Return whether ``method`` should emit events."""
+        """Возвращает, должен ли ``method`` регистрировать события."""
         return bool(getattr(self.verbose, method, False))
 
     def any_enabled(self: VerboseRecorder) -> bool:
-        """Return whether at least one method is verbose."""
+        """Возвращает, включено ли подробное журналирование хотя бы для одного метода."""
         flags = getattr(self.verbose, "__dataclass_fields__", None)
         if flags is None:
             return False
         return any(bool(getattr(self.verbose, name, False)) for name in flags)
 
     def emit(self: VerboseRecorder, method: str, stage: str, **payload: Any) -> None:
-        """Append one event when ``method`` is verbose and echo it to stdout."""
+        """Добавляет одно событие при подробном журналировании ``method`` и выводит его в stdout."""
         if not self.enabled(method):
             return
         clean = _sanitize(payload)
@@ -122,10 +122,10 @@ class VerboseRecorder:
         *,
         count_rows: bool = False,
     ) -> dict[str, Any]:
-        """Describe a DataFrame-like object without Spark actions.
+        """Описывает объект с интерфейсом DataFrame без запуска действий Spark.
 
-        ``count_rows`` is accepted for call-site compatibility and ignored:
-        verbose logging must never call ``count()`` / ``collect()`` / ``toPandas()``.
+        ``count_rows`` принимается для совместимости с вызывающим кодом и игнорируется:
+        подробное журналирование никогда не должно вызывать ``count()`` / ``collect()`` / ``toPandas()``.
         """
         del count_rows
         info: dict[str, Any] = {"type": type(frame).__name__}
@@ -146,7 +146,7 @@ class VerboseRecorder:
         *,
         count_rows: bool = False,
     ) -> dict[str, Any]:
-        """Describe every split in ``datasets`` without Spark actions."""
+        """Описывает каждую выборку в ``datasets`` без запуска действий Spark."""
         del count_rows
         return {
             name: self.snapshot_frame(frame)
@@ -154,7 +154,7 @@ class VerboseRecorder:
         }
 
     def to_dict(self: VerboseRecorder) -> dict[str, Any]:
-        """Serialize the recorder for ``verbose_log.json`` and ``result.verbose_log``."""
+        """Сериализует журнал для ``verbose_log.json`` и ``result.verbose_log``."""
         verbose_payload: Any
         try:
             verbose_payload = asdict(self.verbose)
@@ -169,7 +169,7 @@ class VerboseRecorder:
         }
 
     def save(self: VerboseRecorder, path: Path) -> Path:
-        """Write the verbose log as JSON to ``path``."""
+        """Записывает подробный журнал в формате JSON по пути ``path``."""
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(
             json.dumps(self.to_dict(), ensure_ascii=False, indent=2, default=str) + "\n",
@@ -185,9 +185,9 @@ def verbose_span(
     method: str,
     **start_payload: Any,
 ) -> Iterator[dict[str, Any] | None]:
-    """Emit start/end (or error) events around a method body.
+    """Регистрирует события начала и завершения (или ошибки) при выполнении тела метода.
 
-    Yields a mutable dict for end-event fields when verbose, otherwise ``None``.
+    Выдаёт изменяемый словарь полей события завершения при подробном журналировании, иначе ``None``.
     """
     if not recorder.enabled(method):
         yield None
@@ -221,7 +221,7 @@ def _recorder(context: Any) -> VerboseRecorder | None:
 
 
 def emit(context: Any, method: str, stage: str, **payload: Any) -> None:
-    """Emit an event from a selector when that method is verbose."""
+    """Регистрирует событие метода отбора, если для него включено подробное журналирование."""
     recorder = _recorder(context)
     if recorder is None:
         return
@@ -229,7 +229,7 @@ def emit(context: Any, method: str, stage: str, **payload: Any) -> None:
 
 
 def enabled(context: Any, method: str) -> bool:
-    """Return whether ``method`` is verbose on ``context``."""
+    """Возвращает, включено ли подробное журналирование для ``method`` в ``context``."""
     recorder = _recorder(context)
     if recorder is None:
         return False
@@ -241,7 +241,7 @@ def run_selector_logged(
     context: Any,
     candidates: Sequence[str],
 ) -> list[Any]:
-    """Run ``selector.select`` and record timing / size events when verbose."""
+    """Выполняет ``selector.select`` и регистрирует время и размеры при подробном журналировании."""
     method = selector.method_name
     recorder = _recorder(context)
     if recorder is None or not recorder.enabled(method):
@@ -260,7 +260,7 @@ def run_selector_logged(
 
 
 def _decision_summary(decisions: Sequence[Any], n_candidates_in: int) -> dict[str, Any]:
-    """Summarize keep/drop decisions without listing feature names."""
+    """Формирует сводку решений о сохранении или исключении без перечисления имён признаков."""
     n_drop = 0
     n_keep = 0
     reasons: dict[str, int] = {}
@@ -292,7 +292,7 @@ def _decision_summary(decisions: Sequence[Any], n_candidates_in: int) -> dict[st
 
 
 def _sanitize(payload: Mapping[str, Any]) -> dict[str, Any]:
-    """Drop feature-name lists and coerce values to JSON-friendly types."""
+    """Удаляет списки имён признаков и приводит значения к типам, совместимым с JSON."""
     return {
         key: _jsonable(value)
         for key, value in payload.items()
@@ -301,7 +301,7 @@ def _sanitize(payload: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _jsonable(value: Any) -> Any:
-    """Convert a value to a JSON-serializable form."""
+    """Преобразует значение в форму, пригодную для сериализации в JSON."""
     if value is None or isinstance(value, (bool, str)):
         return value
     if isinstance(value, int) and not isinstance(value, bool):
@@ -330,7 +330,7 @@ def _jsonable(value: Any) -> Any:
 
 
 def _compact(payload: Mapping[str, Any]) -> str:
-    """Render a short logger-friendly summary of an event payload."""
+    """Формирует краткую сводку содержимого события для логгера."""
     parts: list[str] = []
     for key, value in payload.items():
         if isinstance(value, dict):
@@ -343,7 +343,7 @@ def _compact(payload: Mapping[str, Any]) -> str:
 
 
 def _n_cols(frame: Any) -> int | None:
-    """Return the number of columns when cheaply available."""
+    """Возвращает число столбцов, если его можно получить без существенных затрат."""
     try:
         return len(get_columns(frame))
     except Exception:  # noqa: BLE001 - verbose logging must never fail the run
@@ -363,7 +363,7 @@ def _n_cols(frame: Any) -> int | None:
 
 
 def _n_rows(frame: Any) -> int | None:
-    """Return a cheap local row count. Never runs Spark ``count()``."""
+    """Возвращает число строк локально без существенных затрат. Никогда не запускает Spark ``count()``."""
     if type(frame).__module__.startswith("pyspark"):
         return None
     shape = getattr(frame, "shape", None)
@@ -382,7 +382,7 @@ def _n_rows(frame: Any) -> int | None:
 
 
 def _memory_mb(frame: Any) -> float | None:
-    """Return pandas/numpy memory usage in MiB when available."""
+    """Возвращает объём памяти pandas/numpy в МиБ, если он доступен."""
     memory_usage = getattr(frame, "memory_usage", None)
     if callable(memory_usage):
         try:

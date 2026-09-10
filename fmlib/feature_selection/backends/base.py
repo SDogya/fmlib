@@ -1,4 +1,4 @@
-"""Backend capability contracts."""
+"""Контракты возможностей бэкендов."""
 
 from __future__ import annotations
 
@@ -8,12 +8,12 @@ from typing import Protocol
 
 @dataclass(frozen=True)
 class BackendCapabilities:
-    """Declarative capabilities of a dataframe backend.
+    """Декларативное описание возможностей бэкенда для работы с DataFrame.
 
     Args:
-        name: Backend identifier (``spark``, ``pandas``, ``polars``).
-        supports_distributed: Whether computation can stay distributed.
-        requires_local_materialization: Whether data must be collected locally.
+        name: Идентификатор бэкенда (``spark``, ``pandas``, ``polars``).
+        supports_distributed: Поддерживает ли бэкенд распределённые вычисления без сбора данных.
+        requires_local_materialization: Требуется ли собирать данные локально.
     """
 
     name: str
@@ -22,14 +22,14 @@ class BackendCapabilities:
 
 
 class BackendAdapter(Protocol):
-    """Minimal protocol for dataframe adapters used by stages."""
+    """Минимальный протокол адаптеров DataFrame, используемых на этапах отбора."""
 
     capabilities: BackendCapabilities
 
     def get_columns(self: BackendAdapter, data: object) -> list[str]:
-        """Return column names for ``data``."""
+        """Возвращает имена столбцов ``data``."""
         ...
 
     def project_columns(self: BackendAdapter, data: object, columns: list[str]) -> object:
-        """Return a projection of ``data`` onto ``columns``."""
+        """Возвращает проекцию ``data`` на столбцы ``columns``."""
         ...

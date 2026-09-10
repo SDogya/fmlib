@@ -1,4 +1,4 @@
-"""Spark-free tests for load-time model parameter validation."""
+"""Тесты проверки параметров модели при загрузке без Spark."""
 
 from __future__ import annotations
 

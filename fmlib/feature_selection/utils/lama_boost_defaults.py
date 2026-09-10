@@ -1,12 +1,12 @@
-"""LightAutoML-style learning rate, tree cap and early stopping.
+"""Скорость обучения, лимит деревьев и ранняя остановка по правилам LightAutoML.
 
-Copied from LightAutoML ``boost_lgbm.py`` / ``boost_cb.py``.
-Optuna does not sample these keys: selectors fill missing ones after ``n_rows``
-of the materialized train is known. A YAML scalar is kept. Real tree count
-comes from early stopping; ``n_estimators`` / ``iterations`` is only a ceiling.
+Скопировано из LightAutoML ``boost_lgbm.py`` / ``boost_cb.py``.
+Optuna не подбирает эти параметры: методы отбора заполняют отсутствующие значения, когда ``n_rows``
+загруженной обучающей выборки уже известно. Скаляр YAML сохраняется. Фактическое число деревьев
+определяется ранней остановкой; ``n_estimators`` / ``iterations`` задаёт лишь верхнюю границу.
 
-LightGBM uses one row-count table for every task (as in LightAutoML). CatBoost
-uses the binary table, a multiclass table, or a regression table.
+LightGBM использует одну таблицу зависимости от числа строк для всех задач (как в LightAutoML). CatBoost
+использует отдельные таблицы для бинарной классификации, многоклассовой классификации и регрессии.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ _CB_TREE_CAP_KEYS = (
 
 
 def _has_any_key(mapping: Mapping[str, Any], keys: frozenset[str] | tuple[str, ...]) -> bool:
-    """Return whether ``mapping`` already pins any name from ``keys``."""
+    """Возвращает, задано ли уже в ``mapping`` фиксированное значение для любого имени из ``keys``."""
     return any(key in mapping for key in keys)
 
 
@@ -46,21 +46,21 @@ def boost_fixed_params(
     library: BoostLibrary,
     task_type: str = "binary_classification",
 ) -> dict[str, Any]:
-    """Return table ``learning_rate``, tree cap and early-stopping patience.
+    """Возвращает табличные ``learning_rate``, лимит деревьев и число раундов ожидания до ранней остановки.
 
     Args:
-        n_rows: Row count of the materialized train actually used for fit
-            (CatBoost RFE out-of-time fit part; LightGBM/Boruta local sample).
-        library: ``lightgbm`` or ``catboost``.
-        task_type: ``binary_classification``, ``classification`` or
-            ``regression``. LightGBM ignores this (one table). CatBoost picks
-            the matching LightAutoML row table.
+        n_rows: Число строк загруженной выборки train, фактически используемых для обучения
+            (обучающая часть временного разбиения CatBoost RFE; локальная выборка LightGBM/Boruta).
+        library: ``lightgbm`` или ``catboost``.
+        task_type: ``binary_classification``, ``classification`` или
+            ``regression``. LightGBM игнорирует значение (одна таблица). CatBoost выбирает
+            соответствующую таблицу LightAutoML по числу строк.
 
     Returns:
-        Parameter dict to merge into the selector's fixed block.
+        Словарь параметров для объединения с блоком фиксированных значений метода отбора.
 
     Raises:
-        ValueError: When ``library`` is not a supported boosting backend.
+        ValueError: Если ``library`` не является поддерживаемым бэкендом бустинга.
     """
     rows = max(0, int(n_rows))
     if library == "lightgbm":
@@ -79,24 +79,24 @@ def apply_boost_heuristics(
     library: BoostLibrary,
     task_type: str = "binary_classification",
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Fill missing lr/patience/cap from the table; keep YAML scalars.
+    """Заполняет отсутствующие lr/patience/cap по таблице; сохраняет скаляры YAML.
 
-    Optuna never samples ``learning_rate`` / ``eta`` / ``early_stopping_rounds``
-    / ``od_wait``: those mappings are stripped from ``search_space``. A scalar
-    already in ``fixed`` (including aliases) is left alone. Missing keys are
-    taken from the LightAutoML row-count table. Tree cap and CatBoost
-    ``use_best_model`` follow the same fill-if-missing rule. A mapping of the
-    tree cap stays legal and is left in ``search_space``.
+    Optuna никогда не подбирает ``learning_rate`` / ``eta`` / ``early_stopping_rounds``
+    / ``od_wait``: эти словари удаляются из ``search_space``. Скаляр,
+    уже заданный в ``fixed`` (включая псевдонимы), не меняется. Отсутствующие ключи
+    берутся из таблицы LightAutoML по числу строк. Лимит деревьев и параметр CatBoost
+    ``use_best_model`` заполняются по тому же правилу: только если отсутствуют. Словарь для
+    лимита деревьев допустим и остаётся в ``search_space``.
 
     Args:
-        fixed: Scalar parameters from ``resolve_tuning_space``.
-        search_space: Optuna specs from ``resolve_tuning_space``.
-        n_rows: Materialized train size for the table lookup.
-        library: ``lightgbm`` or ``catboost``.
-        task_type: Modelling task; only CatBoost tables differ by task.
+        fixed: Скалярные параметры из ``resolve_tuning_space``.
+        search_space: Спецификации Optuna из ``resolve_tuning_space``.
+        n_rows: Размер загруженной выборки train для поиска в таблице.
+        library: ``lightgbm`` или ``catboost``.
+        task_type: Задача моделирования; только таблицы CatBoost зависят от задачи.
 
     Returns:
-        Tuple of ``(fixed, search_space)`` after the LightAutoML overlay.
+        Кортеж ``(fixed, search_space)`` после применения настроек LightAutoML.
     """
     table = boost_fixed_params(n_rows, library=library, task_type=task_type)
     new_space = {
@@ -125,10 +125,10 @@ def apply_boost_heuristics(
 def split_lgbm_early_stopping(
     parameters: Mapping[str, Any],
 ) -> tuple[dict[str, Any], int | None]:
-    """Drop patience keys that do not belong on the LightGBM constructor.
+    """Удаляет параметры ожидания ранней остановки, не предназначенные для конструктора LightGBM.
 
-    ``early_stopping_rounds <= 0`` means train to the tree cap with no
-    patience callback.
+    ``early_stopping_rounds <= 0`` означает обучение до лимита деревьев без
+    обработчика ранней остановки.
     """
     params = dict(parameters)
     raw = params.pop("early_stopping_rounds", None)
@@ -149,21 +149,21 @@ def fit_lgbm_with_early_stopping(
     eval_set: Any,
     early_stopping_rounds: int | None,
 ) -> Any:
-    """Fit a LightGBM estimator with patience when an eval set is present.
+    """Обучает модель LightGBM с ранней остановкой при наличии eval.
 
-    Uses ``callbacks=[early_stopping(...)]`` on LightGBM 4+, and falls back to
-    the ``early_stopping_rounds=`` fit argument on older releases.
+    Использует ``callbacks=[early_stopping(...)]`` в LightGBM 4+, а в более ранних версиях
+    передаёт аргумент ``early_stopping_rounds=`` в fit.
 
     Args:
-        model: Constructed ``LGBMClassifier`` (patience already removed).
-        features: Train feature matrix.
-        target: Train labels.
-        eval_set: LightGBM ``eval_set`` argument, or ``None``.
-        early_stopping_rounds: Patience, ``None``, or ``<= 0`` to train to the
-            cap without a stopping callback.
+        model: Созданный ``LGBMClassifier`` (параметры ожидания ранней остановки уже удалены).
+        features: Матрица обучающих признаков.
+        target: Обучающие метки.
+        eval_set: Аргумент ``eval_set`` для LightGBM или ``None``.
+        early_stopping_rounds: Число раундов ожидания, ``None`` или ``<= 0`` для обучения до
+            лимита без обработчика остановки.
 
     Returns:
-        The fitted ``model``.
+        Обученная ``model``.
     """
     if (
         early_stopping_rounds is None
@@ -196,7 +196,7 @@ def fit_lgbm_with_early_stopping(
 
 
 def _lightgbm_table(n_rows: int) -> dict[str, Any]:
-    """LightAutoML ``init_params_on_input`` row table (all tasks)."""
+    """Таблица LightAutoML ``init_params_on_input`` по числу строк (все задачи)."""
     if n_rows <= 10_000:
         lr, trees, patience = 0.01, 3000, 200
     elif n_rows <= 20_000:
@@ -219,7 +219,7 @@ def _catboost_table(
     *,
     task_type: str = "binary_classification",
 ) -> dict[str, Any]:
-    """LightAutoML CatBoost ``num_trees`` / ``learning_rate`` table."""
+    """Таблица LightAutoML CatBoost ``num_trees`` / ``learning_rate``."""
     if task_type == "classification":
         lr = 0.03
         trees = 3000 if n_rows <= 100_000 else 4000

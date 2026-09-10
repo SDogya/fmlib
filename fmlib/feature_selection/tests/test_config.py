@@ -1,4 +1,4 @@
-"""Tests for FeatureSelectionConfig."""
+"""Тесты FeatureSelectionConfig."""
 
 from pathlib import Path
 

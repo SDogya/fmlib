@@ -1,4 +1,4 @@
-"""Spark-free tests for params.seed resolution and LightGBM seed knobs."""
+"""Тесты разрешения params.seed и параметров seed в LightGBM без Spark."""
 
 from __future__ import annotations
 

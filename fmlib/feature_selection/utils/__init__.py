@@ -1,4 +1,4 @@
-"""Pre-statistics helpers: drop, sample, and driver-local materialization."""
+"""Функции перед статистическим этапом: исключение, формирование выборки и загрузка в память драйвера."""
 
 from fmlib.feature_selection.utils.optuna_space import (
     PARAMETER_TYPES,

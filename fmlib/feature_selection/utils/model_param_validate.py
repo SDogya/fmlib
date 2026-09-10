@@ -1,10 +1,10 @@
-"""Load-time checks for model ``params.parameters`` keys and Optuna specs.
+"""Проверки ключей модели ``params.parameters`` и спецификаций Optuna при загрузке.
 
-CatBoost, LightGBM and sklearn RandomForest accept overlapping aliases
-(``iterations`` / ``n_estimators``, ``eta`` / ``learning_rate``, …). Setting two
-names from the same group, or a typo, used to fail only when the model was
-constructed — often hours into a run. These helpers reject that while the
-YAML is parsed.
+CatBoost, LightGBM и sklearn RandomForest принимают пересекающиеся псевдонимы
+(``iterations`` / ``n_estimators``, ``eta`` / ``learning_rate``, …). Указание двух
+имён из одной группы или опечатка раньше вызывали ошибку только при
+создании модели — зачастую через несколько часов после запуска. Эти функции отклоняют такие настройки при
+парсинге YAML.
 """
 
 from __future__ import annotations
@@ -202,18 +202,18 @@ def validate_model_parameters(
     require_non_empty: bool = False,
     ignore_keys: frozenset[str] = frozenset(),
 ) -> None:
-    """Reject alias clashes, forced keys, unknown names and bad Optuna specs.
+    """Отклоняет конфликты псевдонимов, принудительно задаваемые ключи, неизвестные имена и некорректные спецификации Optuna.
 
     Args:
-        parameters: Raw ``params.parameters`` mapping (scalars and/or specs).
-        library: ``catboost``, ``lightgbm`` or ``random_forest``.
-        method_name: Selector name used in error messages.
-        require_non_empty: When true, an empty mapping is a config error.
-        ignore_keys: Keys skipped entirely (legacy leftovers such as
-            ``bootstrap_type`` on Boruta LightGBM).
+        parameters: Исходный словарь ``params.parameters`` (скаляры и/или спецификации).
+        library: ``catboost``, ``lightgbm`` или ``random_forest``.
+        method_name: Имя метода отбора для сообщений об ошибках.
+        require_non_empty: При true пустой словарь считается ошибкой конфигурации.
+        ignore_keys: Полностью пропускаемые ключи (устаревшие настройки, например
+            ``bootstrap_type`` в Boruta LightGBM).
 
     Raises:
-        ConfigError: When the block cannot be handed to the model as written.
+        ConfigError: Если блок нельзя передать модели в текущем виде.
     """
     if not isinstance(parameters, Mapping):
         msg = f"{method_name}: params.parameters must be a mapping."
@@ -259,7 +259,7 @@ def validate_optuna_parameter_block(
     *,
     method_name: str,
 ) -> None:
-    """Validate Optuna specs in a parameters mapping without library checks."""
+    """Проверяет спецификации Optuna в словаре параметров без проверок конкретной библиотеки."""
     if not isinstance(parameters, Mapping):
         msg = f"{method_name}: params.parameters must be a mapping."
         raise ConfigError(msg)
@@ -269,7 +269,7 @@ def validate_optuna_parameter_block(
 
 
 def _reject_forced_keys(keys: list[str], *, method_name: str) -> None:
-    """Reject LightGBM keys the selector always overwrites."""
+    """Отклоняет ключи LightGBM, которые метод отбора всегда перезаписывает."""
     present = {key.lower(): key for key in keys}
     collisions = [
         present[forced]
@@ -293,7 +293,7 @@ def _reject_alias_clashes(
     groups: tuple[frozenset[str], ...],
     method_name: str,
 ) -> None:
-    """Reject two names that the library treats as the same parameter."""
+    """Отклоняет два имени, которые библиотека считает одним параметром."""
     lowered = {key.lower(): key for key in keys}
     seen_groups: set[frozenset[str]] = set()
     for group in groups:
@@ -318,7 +318,7 @@ def _reject_unknown_keys(
     known: set[str],
     method_name: str,
 ) -> None:
-    """Reject names the target library / allowlist does not recognise."""
+    """Отклоняет имена, неизвестные целевой библиотеке или отсутствующие в списке разрешённых."""
     known_lower = {name.lower(): name for name in known}
     for key in keys:
         if key.lower() in known_lower:
@@ -338,7 +338,7 @@ def _reject_unknown_keys(
 
 
 def _lightgbm_known_names() -> set[str]:
-    """Union of the fallback allowlist and, when installed, library names."""
+    """Возвращает объединение резервного списка разрешённых имён и имён библиотеки, если она установлена."""
     names = set(_LIGHTGBM_FALLBACK)
     try:
         from lightgbm import LGBMClassifier
@@ -357,7 +357,7 @@ def _lightgbm_known_names() -> set[str]:
 
 
 def _lightgbm_library_alias_groups() -> tuple[frozenset[str], ...]:
-    """Alias groups advertised by LightGBM, if the extra is installed."""
+    """Возвращает группы псевдонимов LightGBM, если дополнительная зависимость установлена."""
     try:
         from lightgbm.basic import _ConfigAliases
     except ImportError:
@@ -370,7 +370,7 @@ def _lightgbm_library_alias_groups() -> tuple[frozenset[str], ...]:
 
 
 def _catboost_known_names() -> set[str]:
-    """Union of the fallback allowlist and CatBoost names when installed."""
+    """Возвращает объединение резервного списка разрешённых имён и имён CatBoost, если он установлен."""
     names = set(_CATBOOST_FALLBACK)
     for group in CATBOOST_ALIAS_GROUPS:
         names.update(group)
@@ -394,7 +394,7 @@ def _catboost_known_names() -> set[str]:
 
 
 def _random_forest_known_names() -> set[str]:
-    """sklearn RandomForest names when installed, otherwise the fallback."""
+    """Возвращает имена параметров sklearn RandomForest, если он установлен, иначе резервный список."""
     names = set(_RF_FALLBACK)
     try:
         from sklearn.ensemble import RandomForestClassifier
@@ -408,7 +408,7 @@ def _random_forest_known_names() -> set[str]:
 
 
 def _flatten_config_aliases(config_aliases: Any) -> set[str]:
-    """Collect every alias string LightGBM knows about."""
+    """Собирает все строки псевдонимов, известные LightGBM."""
     names: set[str] = set()
     for aliases in _config_alias_sets(config_aliases):
         names.update(aliases)
@@ -416,7 +416,7 @@ def _flatten_config_aliases(config_aliases: Any) -> set[str]:
 
 
 def _config_alias_sets(config_aliases: Any) -> list[set[str]]:
-    """Read LightGBM ``_ConfigAliases`` in whichever shape this version uses."""
+    """Читает LightGBM ``_ConfigAliases`` в формате, используемом установленной версией."""
     sets: list[set[str]] = []
     mapping = getattr(config_aliases, "aliases", None)
     if isinstance(mapping, Mapping):

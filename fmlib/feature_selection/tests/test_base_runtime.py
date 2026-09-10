@@ -1,4 +1,4 @@
-"""Tests for shared step runtime helpers."""
+"""Тесты общих вспомогательных функций выполнения шагов."""
 
 import random
 

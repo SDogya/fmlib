@@ -1,9 +1,9 @@
-"""Shared test helpers for feature selection.
+"""Общие вспомогательные функции тестирования отбора признаков.
 
-Pytest picks this up for ``utils/tests``. Other test packages import the
-session ``spark`` fixture from here via their own ``tests/conftest.py``.
-Spark tests use a real local ``SparkSession``; if pyspark or the JVM is
-missing the run fails immediately instead of substituting a fake session.
+Pytest автоматически использует этот модуль для ``utils/tests``. Другие тестовые пакеты импортируют
+отсюда фикстуру ``spark`` с областью session через собственный ``tests/conftest.py``.
+Тесты Spark используют реальную локальную ``SparkSession``; если pyspark или JVM
+отсутствуют, запуск немедленно завершается ошибкой, а не подменяет сессию заглушкой.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ _PYSPARK_MISSING = (
 
 
 def require_spark_session() -> Any:
-    """Return a real local SparkSession, or fail the test if Spark cannot start."""
+    """Возвращает реальную локальную SparkSession или завершает тест ошибкой, если Spark не запускается."""
     global _SPARK_SESSION
     if _SPARK_SESSION is not None:
         return _SPARK_SESSION
@@ -59,11 +59,11 @@ def _shutdown_spark_session() -> None:
 
 @pytest.fixture(scope="session", autouse=True)
 def spark() -> Iterator[Any]:
-    """Start one real local SparkSession for the whole test run.
+    """Запускает одну реальную локальную SparkSession на весь тестовый запуск.
 
-    Autouse so pandas-path tests still get a real session in ``StageContext``,
-    and so later pyspark stubs cannot prevent Spark from starting.
-    Missing pyspark or JVM fails the run immediately.
+    Автоматически используется через autouse, чтобы тесты варианта pandas также получали реальную сессию в ``StageContext``,
+    а последующие заглушки pyspark не могли помешать запуску Spark.
+    Отсутствие pyspark или JVM немедленно завершает запуск ошибкой.
     """
     session = require_spark_session()
     try:
@@ -73,7 +73,7 @@ def spark() -> Iterator[Any]:
 
 
 def make_wide_schema_columns(n_features: int = 40) -> tuple[list[str], list[str], list[str]]:
-    """Build categorical/continuous names and full column list for tests."""
+    """Формирует имена категориальных и непрерывных признаков и полный список столбцов для тестов."""
     categorical = [f"cat_{i}" for i in range(n_features // 4)]
     continuous = [f"num_{i}" for i in range(n_features - len(categorical))]
     service = ["response", "event_date", "dataset_split", "client_id"]
@@ -87,20 +87,20 @@ def make_pandas_frame(
     n_rows: int = 200,
     seed: int = 0,
 ) -> pd.DataFrame:
-    """Build a small pandas DataFrame with random float data.
+    """Создаёт небольшой pandas DataFrame со случайными числами с плавающей точкой.
 
-    Categorical columns (prefixed ``cat_``) get integer codes; all others get
-    standard-normal floats. Service columns get constant sentinel values.
-    The result is suitable for integration tests that go through the real
-    CorrelationSelector implementation.
+    Категориальные столбцы (с префиксом ``cat_``) получают целочисленные коды; остальные —
+    числа из стандартного нормального распределения. Служебные столбцы получают постоянные значения-маркеры.
+    Результат подходит для интеграционных тестов, использующих реальную
+    реализацию CorrelationSelector.
 
     Args:
-        columns: Column names to populate.
-        n_rows: Number of rows.
-        seed: Random seed for reproducibility.
+        columns: Имена заполняемых столбцов.
+        n_rows: Число строк.
+        seed: Seed для воспроизводимости.
 
     Returns:
-        pandas DataFrame with ``n_rows`` rows and one column per name.
+        pandas DataFrame с ``n_rows`` строками и одним столбцом на каждое имя.
     """
     rng = random.Random(seed)  # noqa: S311 - test data generation, not cryptographic use
     data: dict[str, list] = {}
@@ -115,7 +115,7 @@ def make_pandas_frame(
 
 
 def pytest_report_header(config: object) -> list[str]:
-    """Show pyspark presence in the pytest header before any test runs."""
+    """Показывает наличие pyspark в заголовке pytest до запуска тестов."""
     del config
     try:
         import pyspark

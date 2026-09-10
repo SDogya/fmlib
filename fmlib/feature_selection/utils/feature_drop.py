@@ -1,4 +1,4 @@
-"""Manual feature exclusions applied before selection stages."""
+"""Ручное исключение признаков перед этапами отбора."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from fmlib.feature_selection.schema import FeatureSchema
 
 @dataclass(frozen=True)
 class FeatureDropReport:
-    """Summary of exclusions loaded from a text file or SelectionResult JSON."""
+    """Сводка исключений из текстового файла или JSON с SelectionResult."""
 
     path: str
     requested: tuple[str, ...]
@@ -25,13 +25,13 @@ class FeatureDropReport:
 
 
 def load_feature_names(path: Union[str, Path]) -> list[str]:
-    """Load unique feature names to drop from a text file or result JSON.
+    """Загружает уникальные имена исключаемых признаков из текстового файла или JSON с результатом.
 
-    Text files are line-oriented: empty lines and ``#`` comments are ignored.
+    Текстовые файлы читаются построчно: пустые строки и комментарии ``#`` игнорируются.
 
-    JSON files use the same artifact that ``SelectionResult.save`` writes
-    (``final_results.json`` or ``{step}_{stage}_{method}_results.json``). Names are
-    taken from ``dropped_features`` in save order.
+    JSON-файлы используют тот же артефакт, который записывает ``SelectionResult.save``
+    (``final_results.json`` или ``{step}_{stage}_{method}_results.json``). Имена
+    берутся из ``dropped_features`` в порядке сохранения.
     """
     file_path = Path(path).expanduser()
     try:
@@ -53,7 +53,7 @@ def load_feature_names(path: Union[str, Path]) -> list[str]:
 
 
 def _names_from_text_lines(text: str) -> list[str]:
-    """Parse a line-oriented drop list."""
+    """Выполняет парсинг построчного списка исключений."""
     names: list[str] = []
     seen: set[str] = set()
     for line in text.splitlines():
@@ -66,7 +66,7 @@ def _names_from_text_lines(text: str) -> list[str]:
 
 
 def _names_from_result_json(text: str, file_path: Path) -> list[str]:
-    """Parse ``dropped_features`` from a SelectionResult JSON artifact."""
+    """Выполняет парсинг ``dropped_features`` из JSON-артефакта SelectionResult."""
     try:
         payload = json.loads(text)
     except json.JSONDecodeError as exc:
@@ -123,7 +123,7 @@ def apply_feature_drop_file(
     *,
     strict: bool = False,
 ) -> tuple[dict[str, Any], FeatureSchema, FeatureDropReport]:
-    """Drop listed candidates from every dataset and rebuild the schema."""
+    """Удаляет перечисленных кандидатов из всех наборов данных и перестраивает схему."""
     requested = load_feature_names(path)
     return apply_feature_drop_names(
         datasets,
@@ -142,7 +142,7 @@ def apply_feature_drop_names(
     source: str,
     strict: bool = False,
 ) -> tuple[dict[str, Any], FeatureSchema, FeatureDropReport]:
-    """Drop supplied candidate names from every dataset and rebuild schema."""
+    """Удаляет кандидатов с переданными именами из всех наборов данных и перестраивает схему."""
     requested = list(dict.fromkeys(str(name) for name in requested))
     candidates = set(schema.candidate_features())
     service = set(schema.service_columns())
@@ -200,7 +200,7 @@ def _drop_frame_columns(
     columns: Sequence[str],
     split: str,
 ) -> Any:
-    """Return a new frame without the requested columns."""
+    """Возвращает новый DataFrame без указанных столбцов."""
     if not columns:
         return frame
     if isinstance(frame, pd.DataFrame):

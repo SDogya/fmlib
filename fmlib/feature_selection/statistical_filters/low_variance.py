@@ -1,4 +1,4 @@
-"""Low-variance statistical filter for continuous features."""
+"""Статистический фильтр низкой дисперсии для непрерывных признаков."""
 
 from __future__ import annotations
 
@@ -27,19 +27,19 @@ _NUMERIC_SPARK_TYPE_NAMES = frozenset(
 
 
 class LowVarianceSelector:
-    """Exclude continuous features with low variance after scaling.
+    """Исключает непрерывные признаки с низкой дисперсией после масштабирования.
 
-    Scaling:
+    Масштабирование:
 
-    - ``standard`` gives every non-constant feature a scaled variance of 1;
-    - ``minmax`` divides variance by the squared value range;
-    - ``robust`` divides variance by the squared interquartile range.
+    - ``standard`` приводит дисперсию каждого неконстантного признака к 1;
+    - ``minmax`` делит дисперсию на квадрат размаха значений;
+    - ``robust`` делит дисперсию на квадрат межквартильного размаха.
 
-    Features with undefined or zero variance, or a degenerate scaling range, are
-    always dropped.
+    Признаки с неопределённой или нулевой дисперсией либо вырожденным диапазоном масштабирования
+    всегда исключаются.
 
     Args:
-        config: Low-variance filter settings.
+        config: Настройки фильтра низкой дисперсии.
     """
 
     method_name = "low_variance"
@@ -53,7 +53,7 @@ class LowVarianceSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Compute scaled variances and return decisions for low-variance features."""
+        """Вычисляет масштабированные дисперсии и возвращает решения для признаков с низкой дисперсией."""
         continuous = set(context.schema.continuous)
         columns = [column for column in candidates if column in continuous]
         if not columns:
@@ -66,7 +66,7 @@ class LowVarianceSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> dict[str, Any]:
-        """Return scaled variances keyed by continuous feature name."""
+        """Возвращает масштабированные дисперсии по именам непрерывных признаков."""
         continuous = set(context.schema.continuous)
         columns = [column for column in candidates if column in continuous]
         if not columns:
@@ -122,7 +122,7 @@ class LowVarianceSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Drop remaining continuous features below the variance threshold."""
+        """Исключает оставшиеся непрерывные признаки с дисперсией ниже порога."""
         del context
         values = metrics.get("values", metrics)
         if not isinstance(values, Mapping):
@@ -152,7 +152,7 @@ class LowVarianceSelector:
         train: Any,
         columns: list[str],
     ) -> dict[str, float | None]:
-        """Compute scaled variance statistics in one Spark aggregation."""
+        """Вычисляет статистики масштабированной дисперсии одной агрегацией Spark."""
         try:
             from pyspark.sql import functions as F  # noqa: N812
         except ImportError as exc:
@@ -202,7 +202,7 @@ class LowVarianceSelector:
         frame: pd.DataFrame,
         columns: list[str],
     ) -> dict[str, float | None]:
-        """Compute scaled variance statistics for an already-local pandas frame."""
+        """Вычисляет статистики масштабированной дисперсии для уже локального pandas DataFrame."""
         missing = [column for column in columns if column not in frame.columns]
         if missing:
             msg = f"low_variance: columns missing from train DataFrame: {missing}."
@@ -233,7 +233,7 @@ class LowVarianceSelector:
         q25: Any,
         q75: Any,
     ) -> float | None:
-        """Apply the configured scaling formula to one feature variance."""
+        """Применяет заданную формулу масштабирования к дисперсии одного признака."""
         if variance is None or pd.isna(variance) or float(variance) == 0.0:
             return None
         variance_value = float(variance)
@@ -252,7 +252,7 @@ class LowVarianceSelector:
 
     @staticmethod
     def _validate_spark_columns(fields: dict[str, Any], columns: list[str]) -> None:
-        """Validate that requested Spark columns exist and are numeric."""
+        """Проверяет, что запрошенные столбцы Spark существуют и имеют числовой тип."""
         missing = [column for column in columns if column not in fields]
         if missing:
             msg = f"low_variance: columns missing from train schema: {missing}."
@@ -268,7 +268,7 @@ class LowVarianceSelector:
 
 
 def _quoted_col(name: str) -> Any:
-    """Build a Spark column reference that tolerates dots and spaces in names."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов в имени."""
     from pyspark.sql import functions as F  # noqa: N812
 
     escaped = name.replace("`", "")
@@ -276,7 +276,7 @@ def _quoted_col(name: str) -> Any:
 
 
 def _root_cause(exc: BaseException) -> str:
-    """Extract a concise root cause from Spark/Py4J exceptions."""
+    """Извлекает краткое описание первопричины из исключений Spark/Py4J."""
     java_exc = getattr(exc, "java_exception", None)
     if java_exc is not None:
         return str(java_exc).splitlines()[0]
@@ -287,6 +287,6 @@ def _root_cause(exc: BaseException) -> str:
 
 
 def _is_spark_dataframe(data: Any) -> bool:
-    """Return whether data looks like a pyspark DataFrame."""
+    """Возвращает, соответствуют ли данные интерфейсу pyspark DataFrame."""
     module_name = type(data).__module__
     return module_name.startswith("pyspark") and hasattr(data, "select") and hasattr(data, "agg")

@@ -1,4 +1,4 @@
-"""Single-loop pipeline runner driven by ``FeatureSelectionConfig.order``."""
+"""Исполнитель пайплайна с одним циклом, управляемый ``FeatureSelectionConfig.order``."""
 
 from __future__ import annotations
 
@@ -71,14 +71,14 @@ def run_order(
     context: StageContext,
     candidates: Sequence[str],
 ) -> tuple[list[str], list[FeatureDecision]]:
-    """Execute every step in ``context.config.order``.
+    """Выполняет каждый шаг из ``context.config.order``.
 
     Args:
-        context: Shared pipeline context.
-        candidates: Current candidate feature names.
+        context: Общий контекст пайплайна.
+        candidates: Текущие имена признаков-кандидатов.
 
     Returns:
-        Remaining candidates and this run's drop decisions.
+        Оставшиеся кандидаты и решения об исключении за этот запуск.
     """
     remaining = list(candidates)
     decisions: list[FeatureDecision] = []
@@ -100,10 +100,10 @@ def run_order(
 
 
 def validate_order_prerequisites(context: StageContext) -> None:
-    """Fail before any step if schema, extras or parameters cannot run.
+    """Вызывает ошибку до выполнения шагов, если схема, дополнительные зависимости или параметры не позволяют запуск.
 
-    Walks the whole ``order`` so a missing target or SHAP extra surfaces at
-    ``fit_select`` start instead of after hours of statistics.
+    Проверяет весь ``order``, чтобы отсутствие целевой переменной или зависимости SHAP обнаружилось при
+    запуске ``fit_select``, а не после нескольких часов вычисления статистик.
     """
     _require_matching_task_type(context)
     for index, step in enumerate(context.config.order):
@@ -135,7 +135,7 @@ def _run_step(
     *,
     cache: StatisticsMetricsCache | None = None,
 ) -> list[str]:
-    """Build and execute one order step."""
+    """Создаёт и выполняет один шаг из order."""
     context.run_seed = resolve_step_seed(step.params, context)
     bind_process_rng(context.run_seed)
     if step.method in _PREPROCESSING_METHODS:
@@ -193,7 +193,7 @@ def _run_step(
 
 
 def _build_preprocessing_step(step: PipelineStepConfig) -> Any:
-    """Instantiate a preprocessing helper from an order step."""
+    """Создаёт вспомогательный объект предобработки из шага order."""
     if step.method == "feature_drop":
         return FeatureDropStep(
             _build_section(FeatureDropConfig, step.params, "order.feature_drop"),
@@ -212,7 +212,7 @@ def _build_preprocessing_step(step: PipelineStepConfig) -> Any:
 
 
 def _build_model_selector(step: PipelineStepConfig) -> Any:
-    """Instantiate a model selector from an order step."""
+    """Создаёт метод отбора на основе модели из шага order."""
     model_params, selection_raw, cv_raw = split_model_step_params(step.params)
     config = ModelConfig(
         enabled=True,
@@ -244,14 +244,14 @@ def _relocate_step_scores(
     method_name: str,
     step_index: int,
 ) -> None:
-    """Keep repeated methods from overwriting each other's scores."""
+    """Предотвращает перезапись оценок при повторном использовании методов."""
     if method_name not in context.scores:
         return
     context.scores[f"{method_name}#{step_index}"] = context.scores.pop(method_name)
 
 
 def _validate_psi(context: StageContext, settings: PsiConfig) -> None:
-    """Require schema/data needed by the PSI mode of this step."""
+    """Проверяет наличие схемы и данных, необходимых для режима PSI на этом шаге."""
     mode = settings.mode
     if mode == "month_over_month" and context.schema.time is None:
         msg = (
@@ -285,7 +285,7 @@ def _validate_psi(context: StageContext, settings: PsiConfig) -> None:
 
 
 def _validate_iv(context: StageContext) -> None:
-    """Require a binary target for Information Value."""
+    """Проверяет наличие бинарной целевой переменной для информационной ценности (IV)."""
     if not context.schema.target:
         msg = "iv requires FeatureSchema.target. Remove iv from order or set target."
         raise ConfigError(msg)
@@ -298,7 +298,7 @@ def _validate_iv(context: StageContext) -> None:
 
 
 def _open_stats_cache(context: StageContext) -> StatisticsMetricsCache | None:
-    """Open the statistics metrics cache when ``statistics.cache.enabled``."""
+    """Открывает кэш статистических метрик при включённом ``statistics.cache.enabled``."""
     settings = context.config.statistics.cache
     if not settings.enabled:
         return None
@@ -315,7 +315,7 @@ def _run_cached_statistics(
     remaining: Sequence[str],
     cache: StatisticsMetricsCache,
 ) -> list[FeatureDecision]:
-    """Lookup or compute metrics on the full candidate set, then apply thresholds."""
+    """Находит в кэше или вычисляет метрики по всем кандидатам, затем применяет пороги."""
     method = selector.method_name
     fingerprint = compute_fingerprint(
         method,
@@ -334,7 +334,7 @@ def _run_cached_statistics(
 
 
 class _CachedStatisticsSelector:
-    """Adapter so cached compute/apply still goes through verbose logging."""
+    """Адаптер, сохраняющий подробное журналирование при вычислении и применении метрик с кэшем."""
 
     def __init__(
         self: _CachedStatisticsSelector,
@@ -359,7 +359,7 @@ class _CachedStatisticsSelector:
 
 
 def _require_matching_task_type(context: StageContext) -> None:
-    """Require YAML ``execution.task_type`` to match ``FeatureSchema.task_type``."""
+    """Проверяет совпадение YAML-параметра ``execution.task_type`` с ``FeatureSchema.task_type``."""
     yaml_task = context.config.execution.task_type
     schema_task = context.schema.task_type
     if yaml_task == schema_task:
@@ -372,7 +372,7 @@ def _require_matching_task_type(context: StageContext) -> None:
 
 
 def _revalidate_model_parameters(method: str, params: Mapping[str, Any]) -> None:
-    """Re-check aliases and unknown names for configs built without ``from_dict``."""
+    """Повторно проверяет псевдонимы и неизвестные имена для конфигураций, созданных без ``from_dict``."""
     parameters = params.get("parameters", {})
     if method == "lightgbm":
         validate_model_parameters(
@@ -405,7 +405,7 @@ def _revalidate_model_parameters(method: str, params: Mapping[str, Any]) -> None
 
 
 def _require_method_extras(method: str, params: Mapping[str, Any]) -> None:
-    """Import optional extras for a step before any fold or trial runs."""
+    """Импортирует дополнительные зависимости шага до запуска фолдов или испытаний."""
     optuna_needed = _optuna_enabled(params)
     if method == "lightgbm":
         _import_or_fail("lightgbm", "lightgbm: LightGBM is required. Install the lightgbm optional dependency.")
@@ -448,7 +448,7 @@ def _require_method_extras(method: str, params: Mapping[str, Any]) -> None:
 
 
 def _optuna_enabled(params: Mapping[str, Any]) -> bool:
-    """Whether this step will run Optuna (default true, matching selectors)."""
+    """Будет ли шаг запускать Optuna (по умолчанию true, как в методах отбора)."""
     optuna_params = params.get("optuna_params", {})
     if not isinstance(optuna_params, Mapping):
         return True
@@ -456,7 +456,7 @@ def _optuna_enabled(params: Mapping[str, Any]) -> bool:
 
 
 def _import_or_fail(module: str, message: str) -> None:
-    """Import ``module`` or raise ``BackendError`` with ``message``."""
+    """Импортирует ``module`` или вызывает ``BackendError`` с ``message``."""
     try:
         __import__(module)
     except ImportError as exc:

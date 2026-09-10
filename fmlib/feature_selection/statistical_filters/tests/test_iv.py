@@ -1,6 +1,6 @@
-"""Production-grade tests for Information Value selection.
+"""Тесты отбора по информационной ценности (IV) для промышленного использования.
 
-Pandas paths run on real frames. Spark paths use the shared real SparkSession.
+Варианты pandas работают с реальными DataFrame. Варианты Spark используют общую реальную SparkSession.
 """
 
 from __future__ import annotations

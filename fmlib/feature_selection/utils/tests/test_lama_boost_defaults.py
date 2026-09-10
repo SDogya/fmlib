@@ -1,4 +1,4 @@
-"""Spark-free tests for LightAutoML boost heuristics."""
+"""Тесты эвристик бустинга LightAutoML без Spark."""
 
 from __future__ import annotations
 

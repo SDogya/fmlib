@@ -1,8 +1,8 @@
-"""Shared Optuna search-space helpers for model-based selectors.
+"""Общие функции работы с пространством поиска Optuna для методов отбора на основе моделей.
 
-Parameter blocks are polymorphic: a scalar value is used as-is, a mapping
-describes a search space entry. This mirrors the convention already used by
-``model.params.parameters`` in the BorutaSHAP selector.
+Блоки параметров полиморфны: скалярное значение используется как есть, а словарь
+описывает элемент пространства поиска. Это соответствует соглашению, уже используемому в
+``model.params.parameters`` метода отбора BorutaSHAP.
 """
 
 from __future__ import annotations
@@ -20,18 +20,18 @@ def split_parameters(
     *,
     method_name: str,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Split a parameter block into fixed values and a search space.
+    """Разделяет блок параметров на фиксированные значения и пространство поиска.
 
     Args:
-        parameters: Mapping of parameter name to a scalar or a specification.
-        method_name: Selector name used in error messages.
+        parameters: Словарь имён параметров и соответствующих скаляров или спецификаций.
+        method_name: Имя метода отбора для сообщений об ошибках.
 
     Returns:
-        Tuple of ``(fixed, search_space)``. ``fixed`` holds scalars passed to the
-        model unchanged, ``search_space`` holds mappings tuned by Optuna.
+        Кортеж ``(fixed, search_space)``. ``fixed`` содержит скаляры, передаваемые в
+        модель без изменений, а ``search_space`` — словари параметров, подбираемых Optuna.
 
     Raises:
-        ExecutionError: When the block is not a mapping.
+        ExecutionError: Если блок не является словарём.
     """
     if not isinstance(parameters, Mapping):
         msg = f"{method_name}: params.parameters must be a mapping."
@@ -54,20 +54,20 @@ def build_search_space(
     overrides: Mapping[str, Mapping[str, Any]],
     fixed: Mapping[str, Any],
 ) -> dict[str, dict[str, Any]]:
-    """Copy ``defaults``, overlay ``overrides``, and drop pinned scalars.
+    """Копирует ``defaults``, применяет ``overrides`` и удаляет параметры с фиксированными скалярными значениями.
 
-    Used when the config has no mapping entries: the fallback file is the
-    whole space, minus keys the user pinned to a constant. Callers that
-    received any YAML mapping must not use this helper — they already have
-    the complete user grid.
+    Используется, если в конфигурации нет значений-словарей: файл настроек по умолчанию задаёт
+    всё пространство, кроме ключей, зафиксированных пользователем как константы. Вызывающий код,
+    получивший хотя бы один словарь YAML, не должен использовать эту функцию — у него уже есть
+    полная пользовательская сетка.
 
     Args:
-        defaults: Built-in search space of the selector.
-        overrides: Search-space entries coming from ``params.parameters``.
-        fixed: Scalar entries coming from ``params.parameters``.
+        defaults: Встроенное пространство поиска метода отбора.
+        overrides: Элементы пространства поиска из ``params.parameters``.
+        fixed: Скалярные значения из ``params.parameters``.
 
     Returns:
-        Search space to hand to Optuna.
+        Пространство поиска для передачи в Optuna.
     """
     space = {str(name): dict(spec) for name, spec in defaults.items()}
     space.update({str(name): dict(spec) for name, spec in overrides.items()})
@@ -83,21 +83,21 @@ def resolve_tuning_space(
     enabled: bool,
     method_name: str,
 ) -> tuple[dict[str, Any], dict[str, dict[str, Any]]]:
-    """Choose the Optuna search space from YAML and the fallback file.
+    """Выбирает пространство поиска Optuna из YAML и файла настроек по умолчанию.
 
-    YAML mappings fully replace the fallback: a single mapping means none of
-    the default keys are mixed in. With no mappings and tuning enabled, the
-    fallback is used minus pinned scalars. With tuning disabled the space is
-    empty and only scalars are returned.
+    Словари YAML полностью заменяют пространство поиска по умолчанию: даже один словарь означает, что ни один
+    ключ по умолчанию не добавляется. При отсутствии словарей и включённом подборе
+    используется пространство поиска по умолчанию без фиксированных скаляров. При отключённом подборе пространство
+    пусто и возвращаются только скаляры.
 
     Args:
-        parameters: Raw ``params.parameters`` mapping.
-        defaults: Fallback search space for this selector.
+        parameters: Исходный словарь ``params.parameters``.
+        defaults: Пространство поиска по умолчанию для этого метода отбора.
         enabled: ``params.optuna_params.enabled``.
-        method_name: Selector name used in error messages.
+        method_name: Имя метода отбора для сообщений об ошибках.
 
     Returns:
-        Tuple of ``(fixed, search_space)``.
+        Кортеж ``(fixed, search_space)``.
     """
     fixed, overrides = split_parameters(parameters, method_name=method_name)
     if not enabled:
@@ -108,7 +108,7 @@ def resolve_tuning_space(
 
 
 def _bounds(specification: Mapping[str, Any], name: str, method_name: str) -> tuple[Any, Any]:
-    """Read the low/high bounds of a specification, accepting both dialects."""
+    """Читает нижнюю и верхнюю границы спецификации, поддерживая оба варианта записи."""
     low = specification.get("min", specification.get("low"))
     high = specification.get("max", specification.get("high"))
     if low is None or high is None:
@@ -126,9 +126,9 @@ def validate_parameter_spec(
     *,
     method_name: str,
 ) -> None:
-    """Reject a malformed Optuna search-space entry.
+    """Отклоняет некорректный элемент пространства поиска Optuna.
 
-    Supported forms::
+    Поддерживаемые формы::
 
         {"type": "int", "min": 4, "max": 8}
         {"type": "float", "min": 0.01, "max": 0.3, "log": true}
@@ -136,12 +136,12 @@ def validate_parameter_spec(
         {"values": ["a", "b"]}
 
     Args:
-        name: Parameter name.
-        specification: Search space entry.
-        method_name: Selector name used in error messages.
+        name: Имя параметра.
+        specification: Элемент пространства поиска.
+        method_name: Имя метода отбора для сообщений об ошибках.
 
     Raises:
-        ConfigError: When the specification cannot be sampled.
+        ConfigError: Если из спецификации невозможно выбрать значение.
     """
     if not isinstance(specification, Mapping):
         msg = f"{method_name}: parameter {name!r} search space must be a mapping."
@@ -202,9 +202,9 @@ def suggest_parameter(
     *,
     method_name: str,
 ) -> Any:
-    """Generate one Optuna suggestion from a parameter specification.
+    """Предлагает одно значение Optuna по спецификации параметра.
 
-    Supported forms::
+    Поддерживаемые формы::
 
         {"type": "int", "min": 4, "max": 8}
         {"type": "float", "min": 0.01, "max": 0.3, "log": true}
@@ -212,16 +212,16 @@ def suggest_parameter(
         {"values": ["a", "b"]}
 
     Args:
-        trial: Active Optuna trial.
-        name: Parameter name.
-        specification: Search space entry.
-        method_name: Selector name used in error messages.
+        trial: Активное испытание Optuna.
+        name: Имя параметра.
+        specification: Элемент пространства поиска.
+        method_name: Имя метода отбора для сообщений об ошибках.
 
     Returns:
-        Suggested value for this trial.
+        Значение, предложенное для этого испытания.
 
     Raises:
-        ExecutionError: When the specification is malformed.
+        ExecutionError: Если спецификация некорректна.
     """
     try:
         validate_parameter_spec(name, specification, method_name=method_name)
@@ -263,26 +263,26 @@ def resolve_optuna_settings(
     sampler: str = "TPE",
     timeout: Optional[int] = None,
 ) -> dict[str, Any]:
-    """Read the shared ``params.optuna_params`` block.
+    """Читает общий блок ``params.optuna_params``.
 
-    Every selector that tunes with Optuna accepts the same keys, so a new
-    method only has to call this and hand the result to :func:`build_sampler`
-    and ``study.optimize``.
+    Все методы отбора с подбором через Optuna принимают одни и те же ключи, поэтому новому
+    методу достаточно вызвать эту функцию и передать результат в :func:`build_sampler`
+    и ``study.optimize``.
 
     Args:
-        optuna_params: Raw ``params.optuna_params`` mapping from the config.
-        method_name: Selector name used in error messages.
-        n_trials: Fallback trial count for this selector.
-        n_startup_trials: Fallback random startup trials for ``TPE``.
-        sampler: Fallback sampler name.
-        timeout: Fallback wall-clock limit in seconds, ``None`` for unlimited.
+        optuna_params: Исходный словарь ``params.optuna_params`` из конфигурации.
+        method_name: Имя метода отбора для сообщений об ошибках.
+        n_trials: Число испытаний по умолчанию для этого метода отбора.
+        n_startup_trials: Число начальных случайных испытаний по умолчанию для ``TPE``.
+        sampler: Имя сэмплера по умолчанию.
+        timeout: Лимит фактического времени по умолчанию в секундах; ``None`` — без ограничения.
 
     Returns:
-        Mapping with ``enabled``, ``n_trials``, ``n_startup_trials``,
+        Словарь с ``enabled``, ``n_trials``, ``n_startup_trials``,
         ``sampler``, ``timeout``.
 
     Raises:
-        ExecutionError: When the block or one of its values is invalid.
+        ExecutionError: Если блок или одно из его значений некорректны.
     """
     if not isinstance(optuna_params, Mapping):
         msg = f"{method_name}: params.optuna_params must be a mapping."
@@ -333,21 +333,21 @@ def build_sampler(
     n_startup_trials: int,
     method_name: str,
 ) -> Any:
-    """Build an Optuna sampler seeded for reproducibility.
+    """Создаёт сэмплер Optuna с заданным seed для воспроизводимости.
 
     Args:
-        optuna_module: Imported ``optuna`` module.
-        sampler_name: ``TPE``, ``RANDOM``, or ``GRID``.
-        search_space: Parsed search space, required for ``GRID``.
-        seed: Deterministic sampler seed.
-        n_startup_trials: Random startup trials for ``TPE``.
-        method_name: Selector name used in error messages.
+        optuna_module: Импортированный модуль ``optuna``.
+        sampler_name: ``TPE``, ``RANDOM`` или ``GRID``.
+        search_space: Пространство поиска после парсинга; обязательно для ``GRID``.
+        seed: Детерминированный seed сэмплера.
+        n_startup_trials: Число начальных случайных испытаний для ``TPE``.
+        method_name: Имя метода отбора для сообщений об ошибках.
 
     Returns:
-        Configured Optuna sampler.
+        Настроенный сэмплер Optuna.
 
     Raises:
-        ExecutionError: When the sampler is unsupported or ``GRID`` is not finite.
+        ExecutionError: Если сэмплер не поддерживается или ``GRID`` не является конечным.
     """
     normalized = str(sampler_name).upper()
     if normalized not in SAMPLERS:

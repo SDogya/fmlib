@@ -1,4 +1,4 @@
-"""Feature selection pipeline facade."""
+"""Фасад пайплайна отбора признаков."""
 
 from __future__ import annotations
 
@@ -36,13 +36,13 @@ logger = logging.getLogger(__name__)
 
 
 class FeatureSelectionPipeline:
-    """Configurable feature selection pipeline.
+    """Настраиваемый пайплайн отбора признаков.
 
-    Steps run in ``config.order``. Each step may come from any stage
-    (preprocessing, statistics, model); repeats are allowed.
+    Шаги выполняются в порядке ``config.order``. Каждый шаг может относиться к любому этапу
+    (preprocessing, statistics, model); повторения допустимы.
 
     Args:
-        config: Validated pipeline configuration.
+        config: Проверенная конфигурация пайплайна.
     """
 
     def __init__(self: FeatureSelectionPipeline, config: FeatureSelectionConfig) -> None:
@@ -58,26 +58,26 @@ class FeatureSelectionPipeline:
         datasets: Optional[Mapping[str, Any]] = None,
         output_dir: Optional[Union[str, Path]] = None,
     ) -> SelectionResult:
-        """Fit selection steps and return an artifact.
+        """Выполняет шаги отбора и возвращает артефакт.
 
-        Pass either a single ``data`` DataFrame (with ``schema.split``) or a
-        ``datasets`` mapping with a required ``train`` key. Inputs are not mutated.
+        Принимает либо один DataFrame ``data`` (с ``schema.split``), либо
+        словарь ``datasets`` с обязательным ключом ``train``. Входные данные не изменяются.
 
         Args:
-            spark: Active Spark session (duck-typed in the skeleton).
-            schema: Feature role description.
-            data: Single Spark DataFrame with an optional split column.
-            datasets: Mapping of ``train`` / ``valid`` / ``test`` DataFrames.
-            output_dir: Optional directory for collision-safe intermediate
-                artifacts and ``final_results.json``.
+            spark: Активная сессия Spark (в каркасе используется утиная типизация).
+            schema: Описание ролей признаков.
+            data: Один Spark DataFrame с необязательным столбцом разбиения.
+            datasets: Словарь DataFrame для ``train`` / ``valid`` / ``test``.
+            output_dir: Необязательный каталог для промежуточных артефактов с защитой от коллизий имён
+                и ``final_results.json``.
 
         Returns:
-            ``SelectionResult`` with selected/dropped features and metadata.
+            ``SelectionResult`` с отобранными и исключёнными признаками и метаданными.
 
         Raises:
-            ConfigError: On mutually exclusive or incomplete input forms.
-            SchemaError: On invalid schema or missing columns.
-            BackendError: When ``spark`` / DataFrames are not usable.
+            ConfigError: При взаимоисключающих или неполных вариантах входных данных.
+            SchemaError: При некорректной схеме или отсутствии столбцов.
+            BackendError: Если ``spark`` или DataFrame непригодны для работы.
         """
         ensure_spark_session(spark)
         resolved, datasets_mode = self._resolve_datasets(
@@ -201,14 +201,14 @@ class FeatureSelectionPipeline:
                     announce_save_failed(save_exc)
 
     def transform(self: FeatureSelectionPipeline, data: Any, result: SelectionResult) -> Any:
-        """Apply a fitted ``SelectionResult`` to a DataFrame-like object.
+        """Применяет полученный при отборе ``SelectionResult`` к объекту с интерфейсом DataFrame.
 
         Args:
-            data: Input DataFrame-like object.
-            result: Previously fitted selection artifact.
+            data: Входной объект с интерфейсом DataFrame.
+            result: Ранее полученный артефакт отбора.
 
         Returns:
-            Projection onto selected and service columns.
+            Проекция на отобранные и служебные столбцы.
         """
         return result.apply(data)
 

@@ -1,8 +1,8 @@
-"""Task-type helpers shared by LightGBM, CatBoost RFE and BorutaSHAP.
+"""Общие функции работы с типами задач для LightGBM, CatBoost RFE и BorutaSHAP.
 
-``FeatureSchema.task_type`` / ``execution.task_type`` is one of
-``binary_classification``, ``classification`` (multiclass) or ``regression``.
-Binary scoring and SHAP stay the historical positive-class path.
+``FeatureSchema.task_type`` / ``execution.task_type`` принимает одно из значений:
+``binary_classification``, ``classification`` (многоклассовая классификация) или ``regression``.
+Для бинарной задачи оценка и SHAP сохраняют прежний расчёт по положительному классу.
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ from fmlib.feature_selection.schema import TASK_TYPES
 
 @dataclass(frozen=True)
 class TaskRuntime:
-    """Resolved modelling task plus the encoded target vector."""
+    """Определённая задача моделирования и закодированный вектор целевой переменной."""
 
     task_type: str
     n_classes: int | None
@@ -28,22 +28,22 @@ class TaskRuntime:
 
     @property
     def is_regression(self: TaskRuntime) -> bool:
-        """Return whether the task is numeric regression."""
+        """Возвращает, является ли задача числовой регрессией."""
         return self.task_type == "regression"
 
     @property
     def is_binary(self: TaskRuntime) -> bool:
-        """Return whether the task is two-class classification."""
+        """Возвращает, является ли задача классификацией на два класса."""
         return self.task_type == "binary_classification"
 
     @property
     def stratify(self: TaskRuntime) -> bool:
-        """Return whether splits should be stratified by the target."""
+        """Возвращает, нужно ли стратифицировать разбиения по целевой переменной."""
         return not self.is_regression
 
 
 def binary_task() -> TaskRuntime:
-    """Binary defaults for helpers that finalize parameters without labels."""
+    """Возвращает бинарные настройки по умолчанию для функций, формирующих итоговые параметры без меток."""
     return TaskRuntime(
         task_type="binary_classification",
         n_classes=2,
@@ -60,12 +60,12 @@ def resolve_task(
     method_name: str,
     encode_labels: bool = True,
 ) -> TaskRuntime:
-    """Validate labels and encode them for the given ``task_type``.
+    """Проверяет метки и кодирует их для заданного ``task_type``.
 
-    Binary labels are left unchanged so LightGBM's positive class stays at
-    index 1. Multiclass labels are mapped to ``0 .. K-1`` when
-    ``encode_labels`` is true (LightGBM / Boruta). CatBoost keeps the original
-    labels. Regression targets become ``float64``.
+    Бинарные метки не меняются, чтобы положительный класс LightGBM оставался под
+    индексом 1. Многоклассовые метки отображаются в ``0 .. K-1``, если
+    ``encode_labels`` равно true (LightGBM / Boruta). CatBoost сохраняет исходные
+    метки. Целевые значения регрессии приводятся к ``float64``.
     """
     if task_type not in TASK_TYPES:
         msg = (
@@ -145,7 +145,7 @@ def lgbm_objective_params(
     *,
     n_classes: int | None = None,
 ) -> dict[str, Any]:
-    """Return LightGBM ``objective`` / ``metric`` (and ``num_class``) for a task."""
+    """Возвращает LightGBM ``objective`` / ``metric`` (и ``num_class``) для задачи."""
     task_type, classes = _task_fields(task, n_classes)
     if task_type == "regression":
         return {"objective": "regression", "metric": "rmse"}
@@ -162,10 +162,10 @@ def lgbm_objective_params(
 
 
 def catboost_loss_params(task: TaskRuntime | str) -> dict[str, Any]:
-    """Return CatBoost ``loss_function`` when it is not the binary default.
+    """Возвращает CatBoost ``loss_function``, если она отличается от бинарной по умолчанию.
 
-    Binary ``CatBoostClassifier`` already uses Logloss; adding the key would
-    change the historical parameter dict.
+    Бинарный ``CatBoostClassifier`` уже использует Logloss; добавление ключа
+    изменило бы прежний словарь параметров.
     """
     task_type, _n_classes = _task_fields(task, None)
     if task_type == "regression":
@@ -176,7 +176,7 @@ def catboost_loss_params(task: TaskRuntime | str) -> dict[str, Any]:
 
 
 def optuna_direction(task: TaskRuntime | str) -> str:
-    """Return Optuna study direction for the task metric."""
+    """Возвращает направление оптимизации исследования Optuna для метрики задачи."""
     task_type, _n_classes = _task_fields(task, None)
     if task_type == "regression":
         return "minimize"
@@ -184,7 +184,7 @@ def optuna_direction(task: TaskRuntime | str) -> str:
 
 
 def make_folds(task: TaskRuntime, *, n_folds: int, seed: int) -> Any:
-    """Return a shuffled ``KFold`` or ``StratifiedKFold`` splitter."""
+    """Возвращает объект разбиения ``KFold`` или ``StratifiedKFold`` с перемешиванием."""
     try:
         from sklearn.model_selection import KFold, StratifiedKFold
     except ImportError as exc:
@@ -199,7 +199,7 @@ def make_folds(task: TaskRuntime, *, n_folds: int, seed: int) -> Any:
 
 
 def lgbm_estimator_class(task: TaskRuntime | str) -> Any:
-    """Return ``LGBMClassifier`` or ``LGBMRegressor``."""
+    """Возвращает ``LGBMClassifier`` или ``LGBMRegressor``."""
     try:
         import lightgbm as lgb
     except ImportError as exc:
@@ -212,7 +212,7 @@ def lgbm_estimator_class(task: TaskRuntime | str) -> Any:
 
 
 def catboost_estimator_class(task: TaskRuntime | str) -> Any:
-    """Return ``CatBoostClassifier`` or ``CatBoostRegressor``."""
+    """Возвращает ``CatBoostClassifier`` или ``CatBoostRegressor``."""
     try:
         from catboost import CatBoostClassifier, CatBoostRegressor
     except ImportError as exc:
@@ -225,7 +225,7 @@ def catboost_estimator_class(task: TaskRuntime | str) -> Any:
 
 
 def rf_estimator_class(task: TaskRuntime | str) -> Any:
-    """Return ``RandomForestClassifier`` or ``RandomForestRegressor``."""
+    """Возвращает ``RandomForestClassifier`` или ``RandomForestRegressor``."""
     try:
         from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
     except ImportError as exc:
@@ -241,7 +241,7 @@ def rf_estimator_class(task: TaskRuntime | str) -> Any:
 
 
 def score_model(task: TaskRuntime, model: Any, features: Any, target: Any) -> float:
-    """Score a fitted estimator with the task metric."""
+    """Оценивает обученную модель с помощью метрики задачи."""
     labels = np.asarray(target)
     if task.is_regression:
         predictions = np.asarray(model.predict(features)).reshape(-1)
@@ -254,7 +254,7 @@ def score_model(task: TaskRuntime, model: Any, features: Any, target: Any) -> fl
 
 
 def normalize_binary_shap_values(shap_values: Any) -> np.ndarray:
-    """Normalize SHAP outputs from supported versions for positive class."""
+    """Нормализует выходы поддерживаемых версий SHAP для положительного класса."""
     if isinstance(shap_values, list):
         values = shap_values[1] if len(shap_values) > 1 else shap_values[0]
     else:
@@ -275,10 +275,10 @@ def normalize_binary_shap_values(shap_values: Any) -> np.ndarray:
 
 
 def shap_mean_abs(task: TaskRuntime | str, shap_values: Any) -> np.ndarray:
-    """Return per-feature mean |SHAP| for the current task.
+    """Возвращает среднее |SHAP| по каждому признаку для текущей задачи.
 
-    Binary keeps the positive-class slice. Multiclass averages |SHAP| over
-    classes, then over rows. Regression is already ``(n_samples, n_features)``.
+    Для бинарной задачи сохраняет срез положительного класса. Для многоклассовой усредняет |SHAP| по
+    классам, затем по строкам. Для регрессии форма уже равна ``(n_samples, n_features)``.
     """
     task_type, _n_classes = _task_fields(task, None)
     if task_type == "binary_classification":
@@ -290,7 +290,7 @@ def shap_mean_abs(task: TaskRuntime | str, shap_values: Any) -> np.ndarray:
 
 
 def _shap_row_matrix(shap_values: Any) -> np.ndarray:
-    """Reduce SHAP output to ``(n_samples, n_features)``."""
+    """Приводит результат SHAP к форме ``(n_samples, n_features)``."""
     if isinstance(shap_values, list):
         stacked = np.stack(
             [_as_shap_array(item) for item in shap_values],
@@ -310,7 +310,7 @@ def _shap_row_matrix(shap_values: Any) -> np.ndarray:
 
 
 def _as_shap_array(values: Any) -> np.ndarray:
-    """Unwrap a SHAP Explanation or array-like to ``ndarray``."""
+    """Извлекает ``ndarray`` из SHAP Explanation или объекта с интерфейсом массива."""
     raw = values.values if hasattr(values, "values") else values
     return np.asarray(raw)
 
@@ -319,14 +319,14 @@ def _task_fields(
     task: TaskRuntime | str,
     n_classes: int | None,
 ) -> tuple[str, int | None]:
-    """Accept either a ``TaskRuntime`` or a ``task_type`` string."""
+    """Принимает ``TaskRuntime`` или строку ``task_type``."""
     if isinstance(task, TaskRuntime):
         return task.task_type, task.n_classes if n_classes is None else n_classes
     return str(task), n_classes
 
 
 def _binary_auc(labels: np.ndarray, scores: np.ndarray) -> float:
-    """ROC-AUC on positive-class scores."""
+    """Вычисляет ROC-AUC по оценкам положительного класса."""
     try:
         from sklearn.metrics import roc_auc_score
     except ImportError as exc:
@@ -343,7 +343,7 @@ def _multiclass_auc(
     probabilities: np.ndarray,
     class_order: Any | None = None,
 ) -> float:
-    """Macro one-vs-rest ROC-AUC on a full probability matrix."""
+    """Вычисляет макроусреднённый ROC-AUC «один против остальных» по полной матрице вероятностей."""
     try:
         from sklearn.metrics import roc_auc_score
     except ImportError as exc:
@@ -359,7 +359,7 @@ def _multiclass_auc(
 
 
 def _regression_rmse(labels: np.ndarray, predictions: np.ndarray) -> float:
-    """Root mean squared error."""
+    """Вычисляет корень из среднеквадратичной ошибки."""
     try:
         from sklearn.metrics import root_mean_squared_error
     except ImportError:
@@ -381,7 +381,7 @@ def require_min_class_count(
     min_count: int,
     method_name: str,
 ) -> None:
-    """Fail when a classification class is thinner than ``min_count``."""
+    """Вызывает ошибку, если в классе задачи классификации меньше ``min_count`` объектов."""
     if task.is_regression or task.class_counts is None:
         return
     if int(task.class_counts.min()) < min_count:

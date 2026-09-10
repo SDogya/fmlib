@@ -1,4 +1,4 @@
-"""Shared session Spark fixture for tests in this package."""
+"""Общая фикстура Spark с областью действия session для тестов этого пакета."""
 
 from fmlib.feature_selection.utils.conftest import spark as spark
 

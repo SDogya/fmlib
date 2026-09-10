@@ -1,4 +1,4 @@
-"""Null-rate statistical filter."""
+"""Статистический фильтр по доле пропусков."""
 
 from __future__ import annotations
 
@@ -14,13 +14,13 @@ from fmlib.feature_selection.utils.verbose import enabled as verbose_enabled
 
 
 class NullRateSelector:
-    """Exclude features whose missing-value share exceeds the configured threshold.
+    """Исключает признаки, у которых доля пропусков превышает заданный порог.
 
-    Spark inputs are processed with aggregate expressions only. In addition to
-    nulls, NaN values are treated as missing for float and double columns.
+    Входные данные Spark обрабатываются только агрегатными выражениями. Помимо
+    null, пропусками считаются значения NaN в столбцах float и double.
 
     Args:
-        config: Null-rate filter settings.
+        config: Настройки фильтра по доле пропусков.
     """
 
     method_name = "null_rate"
@@ -34,18 +34,18 @@ class NullRateSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Compute null rates on the train split and drop high-null candidates.
+        """Вычисляет доли пропусков на train и исключает кандидатов с высокой долей пропусков.
 
         Args:
-            context: Shared stage context.
-            candidates: Current candidate features.
+            context: Общий контекст этапа.
+            candidates: Текущие признаки-кандидаты.
 
         Returns:
-            Drop decisions for features above the configured threshold.
+            Решения об исключении признаков, превышающих заданный порог.
 
         Raises:
-            BackendError: When Spark APIs are required but pyspark is missing.
-            ExecutionError: When statistics cannot be computed for the train split.
+            BackendError: Если требуется API Spark, но pyspark отсутствует.
+            ExecutionError: Если статистики невозможно вычислить для train.
         """
         if not candidates:
             return []
@@ -57,7 +57,7 @@ class NullRateSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> dict[str, Any]:
-        """Return ``{feature: null_share}`` for ``candidates``."""
+        """Возвращает ``{feature: null_share}`` для ``candidates``."""
         columns = list(candidates)
         if not columns:
             return {}
@@ -100,7 +100,7 @@ class NullRateSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Drop remaining features whose cached null share exceeds the threshold."""
+        """Исключает оставшиеся признаки, у которых кэшированная доля пропусков превышает порог."""
         del context
         values = metrics.get("values", metrics)
         if not isinstance(values, Mapping):
@@ -125,7 +125,7 @@ class NullRateSelector:
         train: Any,
         columns: list[str],
     ) -> dict[str, float]:
-        """Compute null rates with a single Spark aggregation."""
+        """Вычисляет доли пропусков одной агрегацией Spark."""
         try:
             from pyspark.sql import functions as F  # noqa: N812
         except ImportError as exc:
@@ -178,7 +178,7 @@ class NullRateSelector:
         frame: pd.DataFrame,
         columns: list[str],
     ) -> dict[str, float]:
-        """Compute null rates for an already-local pandas DataFrame."""
+        """Вычисляет доли пропусков для уже локального pandas DataFrame."""
         missing = [column for column in columns if column not in frame.columns]
         if missing:
             msg = f"null_rate: columns missing from train DataFrame: {missing}."
@@ -189,7 +189,7 @@ class NullRateSelector:
 
 
 def _quoted_col(name: str) -> Any:
-    """Build a Spark column reference that tolerates dots and spaces in names."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов в имени."""
     from pyspark.sql import functions as F  # noqa: N812
 
     escaped = name.replace("`", "")
@@ -197,7 +197,7 @@ def _quoted_col(name: str) -> Any:
 
 
 def _root_cause(exc: BaseException) -> str:
-    """Extract a concise root cause from Spark/Py4J exceptions."""
+    """Извлекает краткое описание первопричины из исключений Spark/Py4J."""
     java_exc = getattr(exc, "java_exception", None)
     if java_exc is not None:
         return str(java_exc).splitlines()[0]
@@ -208,6 +208,6 @@ def _root_cause(exc: BaseException) -> str:
 
 
 def _is_spark_dataframe(data: Any) -> bool:
-    """Return whether data looks like a pyspark DataFrame."""
+    """Возвращает, соответствуют ли данные интерфейсу pyspark DataFrame."""
     module_name = type(data).__module__
     return module_name.startswith("pyspark") and hasattr(data, "select") and hasattr(data, "agg")

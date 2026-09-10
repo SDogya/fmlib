@@ -1,4 +1,4 @@
-"""Lightweight Spark-oriented adapter without a hard pyspark dependency."""
+"""Легковесный адаптер для Spark без обязательной зависимости от pyspark."""
 
 from __future__ import annotations
 
@@ -15,18 +15,18 @@ SPARK_CAPABILITIES = BackendCapabilities(
 
 
 def ensure_spark_session(spark: Any) -> Any:
-    """Validate that ``spark`` looks like an active SparkSession.
+    """Проверяет, что ``spark`` соответствует интерфейсу активной SparkSession.
 
-    The skeleton uses duck typing so core imports do not require pyspark.
+    В каркасе используется утиная типизация, поэтому импорт основных модулей не требует pyspark.
 
     Args:
-        spark: Candidate Spark session.
+        spark: Проверяемая сессия Spark.
 
     Returns:
-        The same ``spark`` object.
+        Тот же объект ``spark``.
 
     Raises:
-        BackendError: If the object does not look like a Spark session.
+        BackendError: Если объект не соответствует интерфейсу сессии Spark.
     """
     if spark is None:
         msg = "An active SparkSession is required. Pass spark=spark to fit_select."
@@ -45,17 +45,17 @@ def ensure_spark_session(spark: Any) -> Any:
 
 
 def ensure_dataframe(data: Any, *, name: str = "data") -> Any:
-    """Validate that ``data`` looks like a Spark DataFrame or test double.
+    """Проверяет, что ``data`` соответствует интерфейсу Spark DataFrame или его тестового аналога.
 
     Args:
-        data: Candidate DataFrame.
-        name: Argument name used in error messages.
+        data: Проверяемый DataFrame.
+        name: Имя аргумента для сообщений об ошибках.
 
     Returns:
-        The same ``data`` object.
+        Тот же объект ``data``.
 
     Raises:
-        BackendError: If the object has no usable columns interface.
+        BackendError: Если объект не предоставляет пригодный для работы интерфейс столбцов.
     """
     if data is None:
         msg = f"{name} must be a Spark DataFrame, got None."
@@ -69,31 +69,31 @@ def ensure_dataframe(data: Any, *, name: str = "data") -> Any:
 
 
 def get_columns(data: Any) -> list[str]:
-    """Return column names from a DataFrame-like object.
+    """Возвращает имена столбцов объекта с интерфейсом DataFrame.
 
     Args:
-        data: DataFrame-like object.
+        data: Объект с интерфейсом DataFrame.
 
     Returns:
-        List of column names.
+        Список имён столбцов.
     """
     ensure_dataframe(data)
     return list(data.columns)
 
 
 def project_columns(data: Any, columns: Sequence[str]) -> Any:
-    """Project columns from a DataFrame-like object.
+    """Выбирает столбцы из объекта с интерфейсом DataFrame.
 
     Args:
-        data: Input DataFrame-like object.
-        columns: Columns to keep.
+        data: Входной объект с интерфейсом DataFrame.
+        columns: Столбцы, которые нужно оставить.
 
     Returns:
-        Projected object via ``select`` when available, otherwise a shallow copy
-        with updated ``columns`` for test doubles.
+        Объект с выбранными столбцами, полученный через ``select``, если метод доступен; иначе — поверхностная копия
+        с обновлённым атрибутом ``columns`` для тестовых аналогов.
 
     Raises:
-        SchemaError: If requested columns are missing.
+        SchemaError: Если запрошенные столбцы отсутствуют.
     """
     ensure_dataframe(data)
     available = set(get_columns(data))
@@ -121,19 +121,19 @@ def estimate_local_materialization(
     max_local_rows: int,
     local_memory_limit_gb: float,
 ) -> dict[str, Any]:
-    """Skeleton capacity check before a Spark → local transition.
+    """Выполняет предварительную проверку ресурсов перед переносом данных из Spark в локальную память.
 
     Args:
-        n_rows: Estimated row count, if known.
-        n_columns: Number of columns to materialize.
-        max_local_rows: Configured row limit.
-        local_memory_limit_gb: Configured memory limit in GB.
+        n_rows: Оценка числа строк, если известна.
+        n_columns: Число столбцов для загрузки в память.
+        max_local_rows: Заданный лимит числа строк.
+        local_memory_limit_gb: Заданный лимит памяти в ГБ.
 
     Returns:
-        Diagnostic dictionary describing the planned transition.
+        Словарь с диагностикой планируемого переноса данных.
 
     Raises:
-        NotImplementedError: Full materialization is out of scope for the skeleton.
+        NotImplementedError: Полная загрузка данных в память выходит за рамки каркаса.
     """
     del n_columns, local_memory_limit_gb
     if n_rows is not None and n_rows > max_local_rows:

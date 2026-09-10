@@ -1,4 +1,4 @@
-"""Selection result artifact and serialization."""
+"""Артефакт результата отбора и его сериализация."""
 
 from __future__ import annotations
 
@@ -19,15 +19,15 @@ FORMAT_VERSION = 1
 
 @dataclass(frozen=True)
 class DroppedFeature:
-    """Record of a feature excluded by the pipeline.
+    """Запись о признаке, исключённом пайплайном.
 
     Args:
-        feature: Feature name.
-        stage: Stage that dropped the feature, including preprocessing.
-        method: Method within the stage.
-        reason: Machine-readable reason.
-        value: Measured metric, if any.
-        threshold: Threshold used for the decision, if any.
+        feature: Имя признака.
+        stage: Этап, исключивший признак, включая предобработку.
+        method: Метод внутри этапа.
+        reason: Машиночитаемая причина.
+        value: Измеренная метрика, если есть.
+        threshold: Порог, использованный для принятия решения, если есть.
     """
 
     feature: str
@@ -38,12 +38,12 @@ class DroppedFeature:
     threshold: Optional[float] = None
 
     def to_dict(self: DroppedFeature) -> dict[str, Any]:
-        """Serialize to a plain dictionary."""
+        """Сериализует в обычный словарь."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls: type[DroppedFeature], payload: dict[str, Any]) -> DroppedFeature:
-        """Build from a dictionary."""
+        """Создаёт объект из словаря."""
         return cls(
             feature=payload["feature"],
             stage=payload["stage"],
@@ -56,22 +56,22 @@ class DroppedFeature:
 
 @dataclass
 class SelectionResult:
-    """Artifact produced by ``FeatureSelectionPipeline.fit_select``.
+    """Артефакт, созданный ``FeatureSelectionPipeline.fit_select``.
 
     Args:
-        selected_features: Features kept after all stages, in stable order.
-        dropped_features: Dropped features with stage/method/reason metadata.
-        schema: Input feature schema.
-        config: Normalized config snapshot as a dictionary.
-        seed: Root reproducibility seed.
-        stage_backends: Backend name used per stage.
-        warnings: Non-fatal diagnostics.
-        format_version: Artifact format version.
-        datasets_mode: ``single`` or ``mapping`` input mode.
-        scores: Optional feature scores/importances by method.
-        verbose_log: In-memory verbose events when ``execution.verbose`` is on.
-            Not written into ``final_results.json``; dumped as ``verbose_log.json``
-            when ``output_dir`` is set.
+        selected_features: Признаки, сохранённые после всех этапов, в стабильном порядке.
+        dropped_features: Исключённые признаки с метаданными об этапе, методе и причине.
+        schema: Входная схема признаков.
+        config: Снимок нормализованной конфигурации в виде словаря.
+        seed: Базовый seed для воспроизводимости.
+        stage_backends: Имя бэкенда, использованного на каждом этапе.
+        warnings: Диагностика некритичных проблем.
+        format_version: Версия формата артефакта.
+        datasets_mode: Режим входных данных ``single`` или ``mapping``.
+        scores: Необязательные оценки признаков или их важности по методам.
+        verbose_log: События подробного журнала в памяти при включённом ``execution.verbose``.
+            Не записываются в ``final_results.json``; сохраняются в ``verbose_log.json``,
+            если задан ``output_dir``.
     """
 
     selected_features: list[str]
@@ -87,10 +87,10 @@ class SelectionResult:
     verbose_log: Optional[dict[str, Any]] = None
 
     def to_dict(self: SelectionResult) -> dict[str, Any]:
-        """Serialize the artifact to a JSON-compatible dictionary.
+        """Сериализует артефакт в словарь, совместимый с JSON.
 
         Returns:
-            Dictionary including ``format_version``.
+            Словарь, включающий ``format_version``.
         """
         return {
             "format_version": self.format_version,
@@ -106,14 +106,14 @@ class SelectionResult:
         }
 
     def save(self: SelectionResult, path: Union[str, Path]) -> Path:
-        """Save the artifact as JSON.
+        """Сохраняет артефакт в формате JSON.
 
         Args:
-            path: Destination file path.
+            path: Путь к выходному файлу.
 
         Returns:
-            Actual path used. Existing files are preserved by appending
-            ``_1``, ``_2``, and so on.
+            Фактически использованный путь. Существующие файлы сохраняются за счёт добавления
+            ``_1``, ``_2`` и так далее.
         """
         file_path = _next_available_path(Path(path))
         file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -124,16 +124,16 @@ class SelectionResult:
 
     @classmethod
     def load(cls: type[SelectionResult], path: Union[str, Path]) -> SelectionResult:
-        """Load an artifact from JSON.
+        """Загружает артефакт из JSON.
 
         Args:
-            path: Source file path.
+            path: Путь к исходному файлу.
 
         Returns:
-            Restored ``SelectionResult``.
+            Восстановленный ``SelectionResult``.
 
         Raises:
-            SchemaError: If ``format_version`` is unsupported.
+            SchemaError: Если ``format_version`` не поддерживается.
         """
         file_path = Path(path)
         with file_path.open("r", encoding="utf-8") as handle:
@@ -142,13 +142,13 @@ class SelectionResult:
 
     @classmethod
     def from_dict(cls: type[SelectionResult], payload: dict[str, Any]) -> SelectionResult:
-        """Build result from a dictionary.
+        """Создаёт результат из словаря.
 
         Args:
-            payload: Serialized artifact.
+            payload: Сериализованный артефакт.
 
         Returns:
-            ``SelectionResult`` instance.
+            Экземпляр ``SelectionResult``.
         """
         version = payload.get("format_version", FORMAT_VERSION)
         if version != FORMAT_VERSION:
@@ -168,10 +168,10 @@ class SelectionResult:
         )
 
     def columns_to_keep(self: SelectionResult) -> list[str]:
-        """Return selected features plus schema service columns.
+        """Возвращает отобранные признаки и служебные столбцы схемы.
 
         Returns:
-            Ordered unique column names to project on apply.
+            Упорядоченные уникальные имена столбцов для проекции при применении.
         """
         seen: set[str] = set()
         ordered: list[str] = []
@@ -182,19 +182,19 @@ class SelectionResult:
         return ordered
 
     def apply(self: SelectionResult, data: Any) -> Any:
-        """Project ``data`` to selected and service columns.
+        """Проецирует ``data`` на отобранные и служебные столбцы.
 
-        Supports Spark-like objects with ``select`` / ``columns`` and simple
-        testing doubles that expose ``columns`` as a mutable sequence.
+        Поддерживает объекты с интерфейсом Spark и атрибутами ``select`` / ``columns``, а также простые
+        тестовые аналоги, предоставляющие ``columns`` как изменяемую последовательность.
 
         Args:
-            data: Input DataFrame-like object.
+            data: Входной объект с интерфейсом DataFrame.
 
         Returns:
-            Projected DataFrame-like object.
+            Объект с интерфейсом DataFrame и выбранными столбцами.
 
         Raises:
-            SchemaError: If a selected feature is missing from ``data``.
+            SchemaError: Если отобранный признак отсутствует в ``data``.
         """
         keep = self.columns_to_keep()
         available = _get_columns(data)
@@ -233,7 +233,7 @@ class SelectionResult:
 
 
 def stage_backends_for_config(config: Any) -> dict[str, str]:
-    """Spark backend tag for every stage that will run."""
+    """Метка бэкенда Spark для каждого выполняемого этапа."""
     from fmlib.feature_selection.backends.spark import SPARK_CAPABILITIES
     from fmlib.feature_selection.config import METHOD_STAGE
 
@@ -252,16 +252,16 @@ def _save_intermediate_result(
     context: Any,
     step_index: int = 0,
 ) -> None:
-    """Save partial selection result after a selector.
+    """Сохраняет частичный результат после метода отбора.
 
     Args:
-        remaining: Current candidate features after selection.
-        decisions: All decisions collected so far.
-        stage_name: Stage tag (preprocessing/statistics/model).
-        method_name: Selector method name (null_rate/constants/etc).
-        output_dir: Directory to save results.
-        context: Stage context with schema and config.
-        step_index: 0-based position of this step in the pipeline order.
+        remaining: Текущие признаки-кандидаты после отбора.
+        decisions: Все решения, накопленные к этому моменту.
+        stage_name: Метка этапа (preprocessing/statistics/model).
+        method_name: Имя метода отбора (null_rate/constants/и т. д.).
+        output_dir: Каталог для сохранения результатов.
+        context: Контекст этапа со схемой и конфигурацией.
+        step_index: Позиция этого шага в порядке пайплайна, начиная с 0.
     """
     stage_backends = stage_backends_for_config(context.config)
     result = SelectionResult(
@@ -309,7 +309,7 @@ def _accepts_columns_kwarg(data: Any) -> bool:
 
 
 def _next_available_path(path: Path) -> Path:
-    """Return ``path`` or the first free ``stem_i`` sibling."""
+    """Возвращает ``path`` или первый свободный путь ``stem_i`` в том же каталоге."""
     if not path.exists():
         return path
     index = 1

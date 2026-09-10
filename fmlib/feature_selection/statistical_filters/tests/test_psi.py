@@ -1,4 +1,4 @@
-"""Tests for PSI selector with stratified sampling functionality."""
+"""Тесты метода отбора PSI со стратифицированной выборкой."""
 
 from __future__ import annotations
 
@@ -16,7 +16,7 @@ from fmlib.feature_selection.statistical_filters.psi import PsiSelector
 
 
 def _make_psi_selector(subsample_rows: int | None = None) -> PsiSelector:
-    """Create a PSI selector with optional subsampling."""
+    """Создаёт метод отбора PSI с необязательным формированием подвыборки."""
     config = FeatureSelectionConfig(
         statistics=StatisticsConfig(
             psi=PsiConfig(
@@ -35,7 +35,7 @@ def _make_context(
     target_col: str = "target",
     seed: int = 42,
 ) -> StageContext:
-    """Create a StageContext for testing."""
+    """Создаёт StageContext для тестирования."""
     schema = FeatureSchema(
         categorical=(),
         continuous=tuple([c for c in train_df.columns if c != target_col]),
@@ -53,10 +53,10 @@ def _make_context(
 
 
 class TestPsiStratifiedSampling:
-    """Tests for stratified sampling in PSI selector."""
+    """Тесты стратифицированной выборки в методе отбора PSI."""
 
     def test_pandas_subsample_applied_when_configured(self) -> None:
-        """Test that stratified sampling reduces row count when configured."""
+        """Проверяет, что стратифицированная выборка уменьшает число строк, если включена в настройках."""
         # Create a larger dataset with imbalance
         random.seed(42)
         n_rows = 200
@@ -90,7 +90,7 @@ class TestPsiStratifiedSampling:
         assert len(result_train) > 0
 
     def test_no_subsample_when_not_configured(self) -> None:
-        """Test that no subsampling occurs when subsample_rows is None."""
+        """Проверяет, что подвыборка не формируется при subsample_rows, равном None."""
         train_df = pd.DataFrame({
             "target": [0, 1, 0, 1, 0],
             "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
@@ -119,7 +119,7 @@ class TestPsiStratifiedSampling:
         assert len(result_test) == len(test_df)
 
     def test_no_subsample_when_below_limit(self) -> None:
-        """Test that no subsampling occurs when data is already below limit."""
+        """Проверяет, что подвыборка не формируется, если размер данных уже ниже лимита."""
         train_df = pd.DataFrame({
             "target": [0, 1, 0, 1, 0],
             "feature1": [1.0, 2.0, 3.0, 4.0, 5.0],
@@ -148,7 +148,7 @@ class TestPsiStratifiedSampling:
         assert len(result_test) == len(test_df)
 
     def test_stratification_preserves_class_distribution(self) -> None:
-        """Test that stratified sampling preserves class distribution."""
+        """Проверяет, что стратифицированная выборка сохраняет распределение классов."""
         random.seed(42)
 
         # Create imbalanced dataset (80/20 split)
@@ -174,7 +174,7 @@ class TestPsiStratifiedSampling:
         assert result_class_1 >= 10  # At least ~20% class 1
 
     def test_psi_with_subsample(self) -> None:
-        """Test that PSI selector works correctly with subsampling enabled."""
+        """Проверяет корректность работы метода отбора PSI при включённом формировании подвыборки."""
         random.seed(42)
 
         # Create datasets with stable features (low PSI expected)
@@ -207,7 +207,7 @@ class TestPsiStratifiedSampling:
         assert all(d.feature in ["feature1", "feature2"] for d in decisions)
 
     def test_psi_with_subsample_very_small(self) -> None:
-        """Test PSI selector with very small subsample size."""
+        """Проверяет метод отбора PSI на подвыборке очень малого размера."""
         random.seed(42)
 
         n_rows = 100

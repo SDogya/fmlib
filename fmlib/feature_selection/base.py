@@ -1,4 +1,4 @@
-"""Shared contracts and stub helpers for feature selection stages."""
+"""Общие контракты и вспомогательные заглушки для этапов отбора признаков."""
 
 from __future__ import annotations
 
@@ -14,17 +14,17 @@ from fmlib.feature_selection.utils.verbose import VerboseRecorder, default_verbo
 
 @dataclass(frozen=True)
 class FeatureDecision:
-    """Decision about a single feature produced by a selection stage.
+    """Решение по отдельному признаку, принятое на этапе отбора.
 
     Args:
-        feature: Feature name.
-        stage: Pipeline stage name (``preprocessing``, ``statistics``, or
+        feature: Имя признака.
+        stage: Имя этапа пайплайна (``preprocessing``, ``statistics`` или
             ``model``).
-        method: Selector method name within the stage.
-        reason: Machine-readable reason code.
-        value: Measured metric value, if any.
-        threshold: Threshold used for the decision, if any.
-        keep: Whether the feature remains a candidate after this decision.
+        method: Имя метода отбора внутри этапа.
+        reason: Машиночитаемый код причины.
+        value: Измеренное значение метрики, если есть.
+        threshold: Порог, использованный для принятия решения, если есть.
+        keep: Остаётся ли признак кандидатом после этого решения.
     """
 
     feature: str
@@ -36,7 +36,7 @@ class FeatureDecision:
     keep: bool = False
 
     def to_dict(self: "FeatureDecision") -> dict[str, Any]:
-        """Serialize to a plain dictionary."""
+        """Сериализует в обычный словарь."""
         return {
             "feature": self.feature,
             "stage": self.stage,
@@ -49,7 +49,7 @@ class FeatureDecision:
 
     @classmethod
     def from_dict(cls: type["FeatureDecision"], payload: dict[str, Any]) -> "FeatureDecision":
-        """Build from a dictionary."""
+        """Создаёт объект из словаря."""
         return cls(
             feature=payload["feature"],
             stage=payload["stage"],
@@ -63,24 +63,24 @@ class FeatureDecision:
 
 @dataclass
 class StageContext:
-    """Runtime context passed to selectors.
+    """Контекст выполнения, передаваемый методам отбора.
 
     Args:
-        spark: Active Spark session (duck-typed in the skeleton).
-        datasets: Mapping of split name to DataFrame-like objects.
-        schema: Validated feature schema.
-        config: Validated pipeline configuration.
-        seed: Root reproducibility seed.
-        candidates: Current candidate feature names.
-        scores: Mapping of selector method names to their importance scores.
-        datasets_mode: Whether input was a single frame or split mapping.
-        decisions: Decisions accumulated across completed pipeline stages.
-        verbose_log: Per-method verbose recorder. Silent unless ``execution.verbose``.
-        step_index: 0-based position of the current pipeline step.
-        run_seed: Seed for this step. ``None`` uses ``seed``.
-        output_dir: Optional directory for per-method intermediate artifacts.
-        local_numeric_sample: Cached driver-local numeric frame shared by
-            LightGBM and BorutaSHAP when sample knobs match.
+        spark: Активная сессия Spark (в каркасе используется утиная типизация).
+        datasets: Словарь имён выборок и соответствующих объектов с интерфейсом DataFrame.
+        schema: Проверенная схема признаков.
+        config: Проверенная конфигурация пайплайна.
+        seed: Базовый seed для воспроизводимости.
+        candidates: Текущие имена признаков-кандидатов.
+        scores: Словарь имён методов отбора и рассчитанных ими оценок важности.
+        datasets_mode: Передан ли на вход один DataFrame или словарь выборок.
+        decisions: Решения, накопленные на завершённых этапах пайплайна.
+        verbose_log: Средство подробного журналирования по методам. Активно только при ``execution.verbose``.
+        step_index: Позиция текущего шага пайплайна, начиная с 0.
+        run_seed: Seed для этого шага. При ``None`` используется ``seed``.
+        output_dir: Необязательный каталог промежуточных артефактов для каждого метода.
+        local_numeric_sample: Кэшированный числовой DataFrame в памяти драйвера, совместно используемый
+            LightGBM и BorutaSHAP при совпадении параметров выборки.
     """
 
     spark: Any
@@ -100,7 +100,7 @@ class StageContext:
 
 
 def step_seed(context: StageContext) -> int:
-    """Seed for the current pipeline step."""
+    """Seed для текущего шага пайплайна."""
     if context.run_seed is None:
         return context.seed
     return context.run_seed
@@ -110,14 +110,14 @@ def resolve_step_seed(
     params: Mapping[str, Any] | None,
     context: StageContext,
 ) -> int:
-    """Return ``params.seed`` when set, otherwise ``execution.seed``.
+    """Возвращает ``params.seed``, если задано, иначе ``execution.seed``.
 
-    Looks at the step mapping first, then at a nested ``params`` block so
-    ``- lightgbm: ${model}`` (where seed lives in ``model.params``) works
-    the same as a flat ``- lightgbm: {seed: 17}``.
+    Сначала проверяет словарь шага, затем вложенный блок ``params``, чтобы
+    ``- lightgbm: ${model}`` (где seed задан в ``model.params``) работал
+    так же, как плоская запись ``- lightgbm: {seed: 17}``.
 
-    Does not fall back to ``context.run_seed``: a previous step's override
-    must not leak into a later step that omitted ``seed``.
+    Не использует ``context.run_seed`` как запасное значение: переопределение на предыдущем шаге
+    не должно влиять на последующий шаг, в котором ``seed`` не указан.
     """
     if params is None:
         return context.seed
@@ -130,10 +130,10 @@ def resolve_step_seed(
 
 
 def bind_process_rng(seed: int) -> None:
-    """Bind the process-wide ``random`` and NumPy RNGs to ``seed``.
+    """Инициализирует общие для процесса генераторы ``random`` и NumPy значением ``seed``.
 
-    ``PYTHONHASHSEED`` is left unchanged. Bit-identical results are not
-    guaranteed when a model uses ``n_jobs != 1`` or CatBoost GPU.
+    ``PYTHONHASHSEED`` остаётся без изменений. Побитовая идентичность результатов не
+    гарантируется, если модель использует ``n_jobs != 1`` или CatBoost на GPU.
     """
     import numpy as np
 
@@ -148,9 +148,9 @@ def persist_step_artifact(
     stage_name: str,
     method_name: str,
 ) -> None:
-    """Write a per-method artifact when ``context.output_dir`` is set.
+    """Записывает артефакт метода, если задан ``context.output_dir``.
 
-    The file name is ``{step_index:02d}_{stage}_{method}_results.json``.
+    Имя файла — ``{step_index:02d}_{stage}_{method}_results.json``.
     """
     output_dir = context.output_dir
     if output_dir is None:
@@ -169,7 +169,7 @@ def persist_step_artifact(
 
 
 class Selector(Protocol):
-    """Protocol for a single feature selection method."""
+    """Протокол отдельного метода отбора признаков."""
 
     method_name: str
 
@@ -178,28 +178,28 @@ class Selector(Protocol):
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Evaluate candidates and return keep/drop decisions.
+        """Оценивает кандидатов и возвращает решения о сохранении или исключении.
 
         Args:
-            context: Shared stage context.
-            candidates: Features still under consideration.
+            context: Общий контекст этапа.
+            candidates: Признаки, которые ещё рассматриваются для отбора.
 
         Returns:
-            Decisions for dropped (and optionally kept) features. Dropped features
-            must have ``keep=False`` and are removed before the next selector.
+            Решения по исключённым и, при необходимости, сохранённым признакам. Исключённые признаки
+            должны иметь ``keep=False`` и удаляются перед следующим методом отбора.
         """
         ...
 
 
 def derive_seed(root_seed: int, *parts: str) -> int:
-    """Derive a stable integer seed from a root seed and stage identifiers.
+    """Вычисляет стабильный целочисленный seed из базового seed и идентификаторов этапа.
 
     Args:
-        root_seed: Root reproducibility seed from execution config.
-        *parts: Stage/method identifiers mixed into the seed.
+        root_seed: Базовый seed из конфигурации выполнения.
+        *parts: Идентификаторы этапа/метода, учитываемые при вычислении seed.
 
     Returns:
-        Deterministic 32-bit integer seed.
+        Детерминированный 32-битный целочисленный seed.
     """
     payload = f"{root_seed}:" + ":".join(parts)
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()
@@ -210,14 +210,14 @@ def apply_drop_decisions(
     candidates: Sequence[str],
     decisions: Sequence[FeatureDecision],
 ) -> list[str]:
-    """Remove dropped features from candidates while preserving order.
+    """Удаляет исключённые признаки из кандидатов, сохраняя порядок.
 
     Args:
-        candidates: Current candidate names.
-        decisions: Decisions from a selector; only ``keep=False`` entries drop.
+        candidates: Имена текущих кандидатов.
+        decisions: Решения метода отбора; исключаются только записи с ``keep=False``.
 
     Returns:
-        Remaining candidates in original order.
+        Оставшиеся кандидаты в исходном порядке.
     """
     dropped = {decision.feature for decision in decisions if not decision.keep}
     return [name for name in candidates if name not in dropped]

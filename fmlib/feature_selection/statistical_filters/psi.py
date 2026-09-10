@@ -1,4 +1,4 @@
-"""Population Stability Index filter (Production Ready & Scalable)."""
+"""Фильтр индекса стабильности популяции (масштабируемый и готовый к промышленному использованию)."""
 
 from __future__ import annotations
 
@@ -18,13 +18,13 @@ logger = logging.getLogger(__name__)
 
 
 class PsiSelector:
-    """Exclude unstable features via Population Stability Index (PSI).
+    """Исключает нестабильные признаки по индексу стабильности популяции (PSI).
 
-    Optimized for large-scale PySpark DataFrames (Feature Batching, Managed Persist, 
-    Approximate Quantiles) and Pandas DataFrames (C-API Vectorized).
+    Оптимизирован для больших PySpark DataFrame (пакетная обработка признаков, управляемое сохранение в памяти,
+    приближённые квантили) и Pandas DataFrame (векторизация через C-API).
 
     Args:
-        config: PSI filter settings.
+        config: Настройки фильтра PSI.
     """
 
     method_name = "psi"
@@ -40,16 +40,16 @@ class PsiSelector:
         max_rows: int,
         seed: int,
     ) -> Any:
-        """Применяет стратифицированную выборку на основе целевой колонки для PySpark.
+        """Формирует стратифицированную выборку по целевому столбцу для PySpark.
 
         Args:
             df: Исходный PySpark DataFrame.
-            target_col: Целевая колонка для стратификации.
+            target_col: Целевой столбец для стратификации.
             max_rows: Максимальное количество строк после выборки.
-            seed: Сид для репродуцируемости.
+            seed: Seed для воспроизводимости.
 
         Returns:
-            DataFrame с отсемплированными данными.
+            DataFrame с выбранными строками.
         """
         import pyspark.sql.functions as F
 
@@ -101,16 +101,16 @@ class PsiSelector:
         max_rows: int,
         seed: int,
     ) -> Any:
-        """Применяет стратифицированную выборку на основе целевой колонки для Pandas.
+        """Формирует стратифицированную выборку по целевому столбцу для Pandas.
 
         Args:
             df: Исходный Pandas DataFrame.
-            target_col: Целевая колонка для стратификации.
+            target_col: Целевой столбец для стратификации.
             max_rows: Максимальное количество строк после выборки.
-            seed: Сид для репродуцируемости.
+            seed: Seed для воспроизводимости.
 
         Returns:
-            DataFrame с отсемплированными данными.
+            DataFrame с выбранными строками.
         """
         import pandas as pd
 
@@ -165,16 +165,16 @@ class PsiSelector:
         max_rows: int,
         seed: int,
     ) -> Any:
-        """Применяет стратифицированную выборку на основе целевой колонки.
+        """Формирует стратифицированную выборку по целевому столбцу.
 
         Args:
             df: Исходный DataFrame (PySpark или Pandas).
-            target_col: Целевая колонка для стратификации.
+            target_col: Целевой столбец для стратификации.
             max_rows: Максимальное количество строк после выборки.
-            seed: Сид для репродуцируемости.
+            seed: Seed для воспроизводимости.
 
         Returns:
-            DataFrame с отсемплированными данными.
+            DataFrame с выбранными строками.
         """
         # Check if PySpark DataFrame
         if hasattr(df, "stat") and hasattr(df, "agg"):
@@ -188,7 +188,7 @@ class PsiSelector:
         max_rows: int,
         seed: int,
     ) -> Any:
-        """Take a uniform random Spark subsample."""
+        """Формирует равномерную случайную подвыборку Spark."""
         import pyspark.sql.functions as F  # noqa: N812
 
         data_len = df.count()
@@ -202,7 +202,7 @@ class PsiSelector:
         max_rows: int,
         seed: int,
     ) -> Any:
-        """Take a uniform random pandas subsample."""
+        """Формирует равномерную случайную подвыборку pandas."""
         data_len = len(df)
         if data_len <= max_rows:
             return df
@@ -217,7 +217,7 @@ class PsiSelector:
         *,
         stratified: bool,
     ) -> Any:
-        """Subsample ``df``, stratifying by the target unless ``stratified`` is false."""
+        """Формирует подвыборку ``df`` со стратификацией по целевой переменной, если ``stratified`` не равно false."""
         if not stratified:
             if hasattr(df, "stat") and hasattr(df, "agg"):
                 return self._apply_random_sampling_pyspark(df, max_rows, seed)
@@ -240,7 +240,7 @@ class PsiSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> dict[str, Any]:
-        """Return ``{feature: psi}`` for ``candidates``."""
+        """Возвращает ``{feature: psi}`` для ``candidates``."""
         feature_cols = list(candidates)
         if not feature_cols:
             return {"values": {}}
@@ -294,7 +294,7 @@ class PsiSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Keep/drop remaining features by the current PSI threshold."""
+        """Сохраняет или исключает оставшиеся признаки по текущему порогу PSI."""
         del context
         values = metrics.get("values", metrics)
         if not isinstance(values, Mapping):
@@ -308,22 +308,22 @@ class PsiSelector:
         return decisions
 
     def _resolve_population_pair(self, context: StageContext) -> Tuple[Any, Any]:
-        """Return the (baseline, actual) pair selected by ``config.mode``.
+        """Возвращает пару (baseline, actual), выбранную по ``config.mode``.
 
-        ``datasets['test']`` is never read: the held-out split must stay
-        untouched so the resulting feature set can be judged on data that took
-        no part in selection. A missing population raises instead of skipping
-        the filter, because a silent skip is indistinguishable in the report
-        from "measured and stable".
+        ``datasets['test']`` никогда не читается: отложенная выборка должна оставаться
+        нетронутой, чтобы итоговый набор признаков можно было оценить на данных, которые
+        не участвовали в отборе. При отсутствии сравниваемой совокупности возникает ошибка вместо пропуска
+        фильтра, поскольку незаметный пропуск в отчёте неотличим
+        от «измерено и стабильно».
 
         Args:
-            context: Stage context holding datasets and schema.
+            context: Контекст этапа с наборами данных и схемой.
 
         Returns:
-            Tuple of (baseline, actual) DataFrames.
+            Кортеж DataFrame (baseline, actual).
 
         Raises:
-            ExecutionError: If the mode's required population is unavailable.
+            ExecutionError: Если требуемая для режима совокупность данных недоступна.
         """
         baseline = context.datasets.get("train")
         if baseline is None:
@@ -350,17 +350,17 @@ class PsiSelector:
 
     @staticmethod
     def _split_by_column(frame: Any, split_column: str) -> Tuple[Any, Any]:
-        """Split one frame into train/valid rows using a split column.
+        """Разделяет один DataFrame на строки train/valid по столбцу разбиения.
 
         Args:
-            frame: Frame carrying the split column.
-            split_column: Column holding ``train`` / ``valid`` / ``test`` labels.
+            frame: DataFrame со столбцом разбиения.
+            split_column: Столбец с метками ``train`` / ``valid`` / ``test``.
 
         Returns:
-            Tuple of (train rows, valid rows).
+            Кортеж (строки train, строки valid).
 
         Raises:
-            ExecutionError: If either side of the split is empty.
+            ExecutionError: Если любая из частей разбиения пуста.
         """
         is_spark = hasattr(frame, "stat") and hasattr(frame, "agg")
         if is_spark:
@@ -387,15 +387,15 @@ class PsiSelector:
         train_df: Any,
         test_df: Any,
     ) -> Tuple[Any, Any]:
-        """Apply stratified subsampling to train and test DataFrames if configured.
+        """Формирует стратифицированные подвыборки train и test, если это задано в конфигурации.
 
         Args:
-            context: Stage context with schema and seed.
-            train_df: Training DataFrame.
-            test_df: Test/Validation DataFrame.
+            context: Контекст этапа со схемой и seed.
+            train_df: Обучающий DataFrame.
+            test_df: Тестовый или валидационный DataFrame.
 
         Returns:
-            Tuple of (subsampled_train, subsampled_test) DataFrames.
+            Кортеж DataFrame (subsampled_train, subsampled_test).
         """
         subsample_rows = self.config.subsample_rows
         
@@ -443,22 +443,22 @@ class PsiSelector:
         return train_sampled, test_sampled
 
     def _split_by_month(self, context: StageContext, train_df: Any) -> Tuple[Any, Any]:
-        """Split train by ``month_column``: latest periods become the actual set.
+        """Разделяет train по ``month_column``: последние периоды образуют актуальную выборку.
 
-        Works on both Spark and pandas inputs. Failures are raised rather than
-        swallowed: the previous fallback returned an empty actual population,
-        which scores every feature at psi=0.0 and reads as "stable".
+        Работает с данными Spark и pandas. Ошибки вызывают исключения, а не
+        подавляются: прежний резервный вариант возвращал пустую актуальную совокупность,
+        из-за чего каждый признак получал psi=0.0 и считался «стабильным».
 
         Args:
-            context: Stage context, kept for signature compatibility.
-            train_df: Input train dataframe.
+            context: Контекст этапа, сохранённый для совместимости сигнатуры.
+            train_df: Входной обучающий DataFrame.
 
         Returns:
-            Tuple of (baseline = earlier periods, actual = latest periods).
+            Кортеж (baseline = более ранние периоды, actual = последние периоды).
 
         Raises:
-            ExecutionError: If the month column is missing or holds too few
-                distinct periods to split.
+            ExecutionError: Если столбец месяца отсутствует или содержит слишком мало
+                уникальных периодов для разбиения.
         """
         del context
         month_col = self.config.month_column
@@ -509,7 +509,7 @@ class PsiSelector:
     def _compute_pyspark_psi(
         self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int
     ) -> Dict[str, float]:
-        """Оптимизированный расчёт PSI на PySpark с пакетированием и безопасным кэшированием."""
+        """Вычисляет PSI в PySpark с пакетной обработкой и безопасным кэшированием."""
         import pyspark.sql.functions as F
 
         relative_error = self.config.relative_error
@@ -610,7 +610,7 @@ class PsiSelector:
     def _compute_pandas_psi(
         self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int, eps: float
     ) -> Dict[str, float]:
-        """Векторный расчёт PSI в Pandas через C-API np.histogram."""
+        """Вычисляет PSI в Pandas векторизованно через C-API np.histogram."""
         from joblib import Parallel, delayed
 
         def _calc_single(col: str) -> float:

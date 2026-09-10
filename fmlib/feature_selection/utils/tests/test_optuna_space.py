@@ -1,7 +1,7 @@
-"""Tests for the Optuna helpers shared by every tuning selector.
+"""Тесты функций Optuna, общих для всех методов отбора с подбором параметров.
 
-Config parsing stays local. ``suggest_parameter`` and ``build_sampler`` use a
-real Optuna trial/sampler; missing Optuna fails the run instead of skipping.
+Парсинг конфигурации выполняется локально. ``suggest_parameter`` и ``build_sampler`` используют
+реальные испытания и сэмплеры Optuna; отсутствие Optuna завершает запуск ошибкой, а не пропуском.
 """
 
 from __future__ import annotations

@@ -1,4 +1,4 @@
-"""Spark-free tests for task-type scoring and SHAP reduction."""
+"""Тесты оценки по типу задачи и приведения SHAP без Spark."""
 
 from __future__ import annotations
 

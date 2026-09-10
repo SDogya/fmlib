@@ -1,4 +1,4 @@
-"""Tests for bounded local numeric samples shared by LightGBM and Boruta."""
+"""Тесты локальных числовых выборок ограниченного размера, общих для LightGBM и Boruta."""
 
 from __future__ import annotations
 

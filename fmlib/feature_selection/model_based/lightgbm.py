@@ -1,11 +1,11 @@
-"""LightGBM model-based selector with SHAP importance.
+"""Метод отбора на основе LightGBM с оценкой важности SHAP.
 
-Outer folds run sequentially on the driver: the selector builds a bounded local
-numeric matrix, optionally tunes LightGBM with Optuna, then trains one model per
-fold. ``selection_mode="aggregated"`` averages split and SHAP importances and
-keeps their cumulative-threshold intersection. ``selection_mode="vote"`` cuts
-each fold's split and SHAP vectors separately and keeps features that appear
-in at least ``min_set_share`` of those ``2 * n_folds`` sets.
+Внешние фолды обрабатываются последовательно на драйвере: метод строит локальную числовую
+матрицу ограниченного размера, при необходимости подбирает параметры LightGBM через Optuna, затем обучает по модели на
+фолд. ``selection_mode="aggregated"`` усредняет важности по разбиениям и SHAP и
+сохраняет пересечение наборов, отобранных по накопленному порогу. ``selection_mode="vote"`` применяет порог
+к векторам важности по разбиениям и SHAP каждого фолда отдельно и сохраняет признаки, входящие
+как минимум в долю ``min_set_share`` из этих ``2 * n_folds`` наборов.
 """
 
 from __future__ import annotations
@@ -69,38 +69,38 @@ DEFAULT_SEARCH_SPACE: dict[str, dict[str, Any]] = LIGHTGBM_SEARCH_SPACE
 
 
 class LightGbmSelector:
-    """Select continuous features using LightGBM and SHAP importances.
+    """Отбирает непрерывные признаки по оценкам важности LightGBM и SHAP.
 
-    The model algorithm follows ``shap_lgbm_spark.py``: tune LightGBM on a
-    hold-out split (stratified unless the task is regression), execute outer folds
-    sequentially on the driver, then either average split and SHAP
-    importances and keep their cumulative-threshold intersection
-    (``selection_mode="aggregated"``) or cut each fold's split and SHAP
-    vectors separately and keep features that appear in at least
-    ``min_set_share`` of those ``2 * n_folds`` sets (``selection_mode="vote"``).
+    Алгоритм модели следует ``shap_lgbm_spark.py``: подбирает параметры LightGBM на
+    отложенном разбиении (стратифицированном, кроме задач регрессии), обрабатывает внешние фолды
+    последовательно на драйвере, затем либо усредняет важности по разбиениям и SHAP
+    и сохраняет пересечение наборов, отобранных по накопленному порогу
+    (``selection_mode="aggregated"``), либо применяет порог к векторам важности по разбиениям и SHAP каждого фолда
+    отдельно и сохраняет признаки, входящие как минимум в долю
+    ``min_set_share`` из этих ``2 * n_folds`` наборов (``selection_mode="vote"``).
     ``optuna_mode="global"``
-    tunes once on the driver; ``"per_fold"`` tunes independently for each
-    fold using only that fold's outer-train rows.
+    подбирает параметры один раз на драйвере; ``"per_fold"`` — независимо для каждого
+    фолда, используя только строки его внешней обучающей части.
 
-    Spark inputs are stratified before local materialization. Already-local
-    pandas inputs use equivalent bounded stratified sampling. Only current
-    candidates declared in ``FeatureSchema.continuous`` are evaluated;
-    categorical candidates pass through the model stage unchanged. Fold
-    training never ships code or packages to Spark executors.
+    Входные данные Spark стратифицируются до загрузки в локальную память. Для уже локальных
+    данных pandas используется аналогичная стратифицированная выборка ограниченного размера. Оцениваются только текущие
+    кандидаты, объявленные в ``FeatureSchema.continuous``;
+    категориальные кандидаты проходят этап модели без изменений. При обучении фолдов
+    код и пакеты никогда не отправляются исполнителям Spark.
 
-    The Optuna search space defaults to ``DEFAULT_SEARCH_SPACE`` when
-    ``params.parameters`` has no mapping entries. Any mapping in that block
-    fully replaces the fallback: unspecified default keys are not mixed in.
-    A scalar is passed to LightGBM unchanged instead of being tuned.
-    Missing ``learning_rate`` and ``early_stopping_rounds`` are filled from the
-    LightAutoML row-count table after the local sample is materialized; a YAML
-    scalar is kept. Optuna does not sample those keys.
-    ``early_stopping_rounds: 0`` trains to the tree cap with no patience.
-    ``params.optuna_params.enabled: false`` skips Optuna entirely.
+    Для Optuna по умолчанию используется пространство поиска ``DEFAULT_SEARCH_SPACE``, если
+    ``params.parameters`` не содержит словарей. Любой словарь в этом блоке
+    полностью заменяет пространство поиска по умолчанию: неуказанные ключи по умолчанию не добавляются.
+    Скаляр передаётся в LightGBM без изменений и не подбирается.
+    Отсутствующие ``learning_rate`` и ``early_stopping_rounds`` заполняются по
+    таблице LightAutoML в зависимости от числа строк после загрузки локальной выборки; скаляр из YAML
+    сохраняется. Optuna не подбирает эти параметры.
+    ``early_stopping_rounds: 0`` обучает модель до лимита деревьев без ранней остановки.
+    ``params.optuna_params.enabled: false`` полностью отключает Optuna.
 
     Args:
-        config: Model-stage settings. Method-specific ``params`` override the
-            corresponding tuning and cross-validation defaults.
+        config: Настройки этапа модели. Параметры ``params`` конкретного метода переопределяют
+            соответствующие настройки подбора и кросс-валидации по умолчанию.
     """
 
     method_name = "lightgbm"
@@ -114,20 +114,20 @@ class LightGbmSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Evaluate continuous candidates with LightGBM and SHAP.
+        """Оценивает непрерывные признаки-кандидаты с помощью LightGBM и SHAP.
 
         Args:
-            context: Shared stage context containing train data, schema, config,
-                and the reproducibility seed.
-            candidates: Features still under consideration.
+            context: Общий контекст этапа с обучающими данными, схемой, конфигурацией
+                и seed для воспроизводимости.
+            candidates: Признаки, которые ещё рассматриваются для отбора.
 
         Returns:
-            Keep/drop decisions for evaluated continuous features. Features
-            outside this selector's scope receive no decision and pass through.
+            Решения о сохранении или исключении оценённых непрерывных признаков. Признаки
+            вне области действия этого метода проходят без решения и изменений.
 
         Raises:
-            BackendError: When an optional ML dependency is unavailable.
-            ExecutionError: When the input or model execution is invalid.
+            BackendError: Если необязательная зависимость для машинного обучения недоступна.
+            ExecutionError: При некорректных входных данных или выполнении модели.
         """
         if not candidates:
             return []
@@ -264,7 +264,7 @@ class LightGbmSelector:
         *,
         require_optuna: bool = True,
     ) -> tuple[Any, Any, Any]:
-        """Load optional model dependencies."""
+        """Загружает необязательные зависимости модели."""
         try:
             import lightgbm as lgb
         except ImportError as exc:
@@ -289,7 +289,7 @@ class LightGbmSelector:
         self: LightGbmSelector,
         context: StageContext,
     ) -> dict[str, Any]:
-        """Resolve and validate method options without changing draft defaults."""
+        """Определяет и проверяет параметры метода, сохраняя значения по умолчанию из прототипа."""
         params = self.config.params
         try:
             legacy_n_trials = params.get("n_trials")
@@ -403,7 +403,7 @@ class LightGbmSelector:
         seed: int,
         context: Any | None = None,
     ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-        """Build the bounded local numeric matrix used by the draft algorithm."""
+        """Строит локальную числовую матрицу ограниченного размера для алгоритма прототипа."""
         local = prepare_numeric_frame(
             df,
             target_col=target_col,
@@ -446,7 +446,7 @@ class LightGbmSelector:
         return_importances: bool = False,
         context: Any | None = None,
     ) -> list[str] | dict[str, Any]:
-        """Tune parameters and execute every outer fold on the driver."""
+        """Подбирает параметры и обрабатывает каждый внешний фолд на драйвере."""
         feature_matrix, target, evaluated = self._extract_and_prep_data(
             df,
             target_col,
@@ -604,28 +604,28 @@ class LightGbmSelector:
         fixed_params: dict[str, Any] | None = None,
         task: TaskRuntime | None = None,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
-        """Tune if requested, train one fold, and compute LGBM/SHAP importances.
+        """При необходимости подбирает параметры, обучает один фолд и вычисляет важности LGBM/SHAP.
 
         Args:
-            feature_matrix: Full local feature matrix shared by every fold.
-            target: Full local target vector shared by every fold.
-            fold_index: One-based fold number, used in error messages.
-            valid_indices: Row positions held out as this fold's validation part.
-            seed: Deterministic seed for tuning, the model and SHAP sampling.
-            optuna_mode: ``"global"`` or ``"per_fold"``.
-            n_trials: Optuna trials, used only when ``optuna_mode="per_fold"``.
-            n_jobs: Thread count forced onto the model.
-            shap_max_rows: Upper bound on rows explained by SHAP.
-            global_params: Parameters tuned once, required unless tuning per fold.
-            search_space: Parameter specifications tuned by Optuna.
-            fixed_params: Scalar parameters passed through unchanged.
+            feature_matrix: Полная локальная матрица признаков, общая для всех фолдов.
+            target: Полный локальный вектор целевой переменной, общий для всех фолдов.
+            fold_index: Номер фолда, начиная с 1, для сообщений об ошибках.
+            valid_indices: Позиции строк, выделенных в валидационную часть этого фолда.
+            seed: Детерминированный seed для подбора параметров, модели и формирования выборки SHAP.
+            optuna_mode: ``"global"`` или ``"per_fold"``.
+            n_trials: Число испытаний Optuna; используется только при ``optuna_mode="per_fold"``.
+            n_jobs: Число потоков, принудительно задаваемое модели.
+            shap_max_rows: Верхняя граница числа строк для объяснения с помощью SHAP.
+            global_params: Параметры, подобранные один раз; обязательны, если подбор не выполняется по фолдам.
+            search_space: Спецификации параметров, подбираемых Optuna.
+            fixed_params: Скалярные параметры, передаваемые без изменений.
 
         Returns:
-            Tuple of ``(lgbm_importances, shap_importances, best_params)``.
+            Кортеж ``(lgbm_importances, shap_importances, best_params)``.
 
         Raises:
-            BackendError: When LightGBM or SHAP is unavailable.
-            ExecutionError: When tuning, training or SHAP fails for this fold.
+            BackendError: Если LightGBM или SHAP недоступны.
+            ExecutionError: При ошибке подбора, обучения или расчёта SHAP для этого фолда.
         """
         try:
             import shap
@@ -729,7 +729,7 @@ class LightGbmSelector:
         lgbm_threshold: float,
         shap_threshold: float,
     ) -> dict[str, Any]:
-        """Normalize importances and apply the draft cumulative intersection."""
+        """Нормализует важности и применяет пересечение по накопленному порогу из прототипа."""
         lgbm_selected, lgbm_norm, lgbm_cumsum = _cumulative_select(
             lgbm_importances,
             feature_cols,
@@ -788,7 +788,7 @@ class LightGbmSelector:
         shap_threshold: float,
         min_set_share: float,
     ) -> dict[str, Any]:
-        """Cut each fold's split and SHAP vectors, then keep by set presence."""
+        """Применяет порог к векторам важности по разбиениям и SHAP каждого фолда, затем отбирает по доле вхождений в наборы."""
         if len(fold_lgbm) != len(fold_shap):
             msg = "lightgbm: vote selection requires one SHAP vector per fold."
             raise ExecutionError(msg)
@@ -853,11 +853,11 @@ def _cumulative_select(
     *,
     empty_total_message: str,
 ) -> tuple[set[str], np.ndarray, np.ndarray]:
-    """Normalize one importance vector and keep the cumulative prefix.
+    """Нормализует вектор важности и сохраняет начальную часть по накопленной доле.
 
-    Features are ranked by descending share. A feature stays if its
-    running sum is ``<= threshold``. The crossing feature is excluded,
-    matching the historical LightGBM cutoff.
+    Признаки ранжируются по убыванию доли. Признак сохраняется, если
+    накопленная сумма ``<= threshold``. Признак, на котором порог превышается, исключается,
+    что соответствует прежнему правилу отсечения LightGBM.
     """
     total = float(np.sum(values))
     if not np.isfinite(total) or total <= 0.0:
@@ -893,7 +893,7 @@ def build_trial_parameters(
     fixed_params: Mapping[str, Any] | None = None,
     task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Build LightGBM parameters for one Optuna trial."""
+    """Формирует параметры LightGBM для одного испытания Optuna."""
     space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
     suggested = {
         name: suggest_parameter(trial, name, specification, method_name="lightgbm")
@@ -921,7 +921,7 @@ def tune_parameters(
     timeout: int | None = None,
     task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Tune one LightGBM parameter set on an 80/20 hold-out."""
+    """Подбирает один набор параметров LightGBM на отложенном разбиении 80/20."""
     try:
         import optuna
         from sklearn.model_selection import train_test_split
@@ -1000,7 +1000,7 @@ def tune_parameters(
 
 
 def _lightgbm_library_seeds(seed: int) -> dict[str, Any]:
-    """Internal LightGBM RNG knobs pinned to the step seed."""
+    """Внутренние параметры генераторов LightGBM, привязанные к seed шага."""
     return {
         "random_state": seed,
         "bagging_seed": seed,
@@ -1019,7 +1019,7 @@ def _finalize_parameters(
     n_jobs: int,
     task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Attach task-specific objective/metric and execution parameters."""
+    """Добавляет objective/metric для задачи и параметры выполнения."""
     resolved = task if task is not None else binary_task()
     finalized = {
         **dict(parameters),

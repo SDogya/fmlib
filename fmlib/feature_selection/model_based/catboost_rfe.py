@@ -1,8 +1,8 @@
-"""CatBoost recursive feature elimination with optional Optuna tuning.
+"""Рекурсивное исключение признаков CatBoost с необязательным подбором параметров Optuna.
 
-The selector materializes a bounded sample of the train split. Private helpers
-operate on that pandas frame only: they never touch Spark, read files, or inspect
-the validation and test splits.
+Метод отбора загружает ограниченную выборку из train в локальную память. Приватные функции
+работают только с этим pandas DataFrame: не обращаются к Spark, не читают файлы и не проверяют
+валидационную и тестовую выборки.
 """
 
 from __future__ import annotations
@@ -48,7 +48,7 @@ _DEFAULT_RFE_STEPS = 10
 
 @dataclass(frozen=True)
 class _Backends:
-    """Third-party CatBoost and Optuna objects used by the selector."""
+    """Объекты сторонних библиотек CatBoost и Optuna, используемые методом отбора."""
 
     estimator_class: Any
     pool_class: Any
@@ -60,10 +60,10 @@ def _constant_drop_targets(
     max_features: int,
     drop_per_step: int,
 ) -> list[int]:
-    """Return ``num_features_to_select`` after each constant-drop round.
+    """Возвращает ``num_features_to_select`` после каждого раунда исключения фиксированного числа признаков.
 
-    The last round may drop fewer than ``drop_per_step`` so the count never
-    goes below ``max_features``.
+    В последнем раунде может исключаться меньше ``drop_per_step`` признаков, чтобы их число
+    не опустилось ниже ``max_features``.
     """
     if drop_per_step < 1:
         msg = "feature_drop_per_step must be >= 1."
@@ -92,28 +92,28 @@ _DEFAULT_PARAMETERS: dict[str, Any] = {
 
 
 class CatBoostRfeSelector:
-    """Select features with CatBoost ``select_features`` on an out-of-time split.
+    """Отбирает признаки через CatBoost ``select_features`` с разделением по времени.
 
-    The train split is materialized as a bounded stratified sample, then divided
-    by ``FeatureSchema.time``: the latest ``eval_months`` periods become the eval
-    set used for early stopping and elimination importances, everything earlier
-    is used for fitting. External ``valid`` and ``test`` splits are never read,
-    so they stay usable as an unbiased check of the selected feature set.
+    Из train формируется стратифицированная выборка ограниченного размера, которая затем разделяется
+    по ``FeatureSchema.time``: последние ``eval_months`` периодов образуют eval
+    для ранней остановки и расчёта важности при исключении, а все более ранние данные
+    образуют train для обучения. Внешние выборки ``valid`` и ``test`` не читаются,
+    поэтому остаются пригодными для независимой проверки отобранного набора признаков.
 
-    Optuna runs when ``params.optuna_params.enabled`` is true (the default).
-    If ``params.parameters`` contains search-space mappings
-    (``{"type": "int", "min": 4, "max": 8}``), those mappings are the entire
-    grid. If it contains only scalars, the fallback in
-    ``CATBOOST_RFE_SEARCH_SPACE`` is used. ``enabled: false`` skips Optuna and
-    passes scalars to CatBoost unchanged. Missing ``learning_rate`` and
-    ``early_stopping_rounds`` are filled from the LightAutoML row-count table
-    after the out-of-time fit part is known; a YAML scalar is kept. Optuna
-    does not sample them. Both categorical and continuous
-    candidates are evaluated — categorical ones are handed to CatBoost as
+    Optuna запускается, если ``params.optuna_params.enabled`` равно true (по умолчанию).
+    Если ``params.parameters`` содержит словари пространства поиска
+    (``{"type": "int", "min": 4, "max": 8}``), они задают всю
+    сетку. Если блок содержит только скаляры, используется пространство поиска по умолчанию из
+    ``CATBOOST_RFE_SEARCH_SPACE``. ``enabled: false`` пропускает Optuna и
+    передаёт скаляры в CatBoost без изменений. Отсутствующие ``learning_rate`` и
+    ``early_stopping_rounds`` заполняются по таблице LightAutoML в зависимости от числа строк
+    после определения train-части временного разбиения; скаляр из YAML сохраняется. Optuna
+    не подбирает эти значения. Оцениваются и категориальные, и непрерывные
+    кандидаты — категориальные передаются в CatBoost как
     ``cat_features``.
 
     Args:
-        config: Model-stage settings.
+        config: Настройки этапа модели.
     """
 
     method_name = "catboost_rfe"
@@ -127,19 +127,19 @@ class CatBoostRfeSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Run recursive elimination and return keep/drop decisions.
+        """Выполняет рекурсивное исключение и возвращает решения о сохранении или исключении.
 
         Args:
-            context: Shared stage context with datasets, schema, config and seed.
-            candidates: Features still under consideration.
+            context: Общий контекст этапа с наборами данных, схемой, конфигурацией и seed.
+            candidates: Признаки, которые ещё рассматриваются для отбора.
 
         Returns:
-            Decisions for every evaluated candidate. Empty when the stage is a
-            no-op, for example when candidates already fit the target count.
+            Решения по каждому оценённому кандидату. Пустой список, если этап
+            ничего не меняет, например если число кандидатов уже не превышает целевое.
 
         Raises:
-            BackendError: When an optional ML dependency is unavailable.
-            ExecutionError: When the input, split, or model execution is invalid.
+            BackendError: Если необязательная зависимость для машинного обучения недоступна.
+            ExecutionError: При некорректных входных данных, разбиении или выполнении модели.
         """
         features = list(candidates)
         if not features:
@@ -275,7 +275,7 @@ class CatBoostRfeSelector:
         self: CatBoostRfeSelector,
         context: StageContext,
     ) -> dict[str, Any]:
-        """Resolve method options and execution capacity limits."""
+        """Определяет параметры метода и лимиты ресурсов выполнения."""
         params = self.config.params
         parameters = params.get("parameters")
         if not isinstance(parameters, Mapping) or not parameters:
@@ -355,25 +355,25 @@ def _split_out_of_time(
     method_name: str,
     task_type: str = "binary_classification",
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[str]]:
-    """Split a frame into fit and eval parts by the latest periods of the time column.
+    """Разделяет DataFrame на train и eval по последним периодам временного столбца.
 
-    The most recent ``eval_months`` distinct values of ``time_col`` form the eval
-    part; everything earlier forms the fit part. This keeps early stopping and
-    RFE importances out-of-time without consuming the external validation split.
+    Последние ``eval_months`` уникальных значений ``time_col`` образуют eval,
+    а все более ранние — train. Это позволяет выполнять раннюю остановку и
+    оценку важности RFE на будущих периодах, не используя внешнюю валидационную выборку.
 
     Args:
-        frame: Local frame containing ``time_col`` and ``target_col``.
-        time_col: Column holding the period identifier.
-        target_col: Target column, checked for class presence in both parts.
-        eval_months: Number of latest periods reserved for evaluation.
-        method_name: Selector name used in error messages.
-        task_type: Modelling task used to validate target classes.
+        frame: Локальный DataFrame со столбцами ``time_col`` и ``target_col``.
+        time_col: Столбец с идентификатором периода.
+        target_col: Целевой столбец; наличие классов проверяется в обеих частях.
+        eval_months: Число последних периодов, выделяемых в eval.
+        method_name: Имя метода отбора для сообщений об ошибках.
+        task_type: Задача моделирования, используемая при проверке целевых классов.
 
     Returns:
-        Tuple of ``(fit_frame, eval_frame, eval_periods)``.
+        Кортеж ``(fit_frame, eval_frame, eval_periods)``.
 
     Raises:
-        ExecutionError: When the split is impossible or degenerate.
+        ExecutionError: Если разбиение невозможно или вырождено.
     """
     if time_col not in frame.columns:
         msg = f"{method_name}: time column {time_col!r} is missing from the materialized sample."
@@ -421,7 +421,7 @@ def _load_backends(
     require_optuna: bool = True,
     task_type: str = "binary_classification",
 ) -> _Backends:
-    """Import CatBoost, Optuna and scikit-learn metrics lazily."""
+    """Лениво импортирует CatBoost, Optuna и метрики scikit-learn."""
     try:
         from catboost import Pool
     except ImportError as exc:
@@ -453,7 +453,7 @@ def _finalize_parameters(
     seed: int,
     task: TaskRuntime | None = None,
 ) -> dict[str, Any]:
-    """Apply library defaults, task loss, and the reproducibility seed."""
+    """Применяет настройки библиотеки по умолчанию, функцию потерь задачи и seed для воспроизводимости."""
     finalized = dict(_DEFAULT_PARAMETERS)
     finalized.update(parameters)
     finalized.update(catboost_loss_params(task if task is not None else binary_task()))
@@ -474,24 +474,24 @@ def _tune_parameters(
     backends: _Backends,
     task: TaskRuntime,
 ) -> tuple[dict[str, Any], float, int]:
-    """Tune CatBoost parameters with Optuna on the out-of-time eval part.
+    """Подбирает параметры CatBoost через Optuna на eval из временного разбиения.
 
     Args:
-        fit_pool: CatBoost ``Pool`` for training.
-        eval_pool: CatBoost ``Pool`` used for early stopping and scoring.
-        eval_labels: Ground-truth labels aligned with ``eval_pool``.
-        fixed: Scalar parameters passed through unchanged.
-        search_space: Parameter specifications tuned by Optuna.
+        fit_pool: CatBoost ``Pool`` с train для обучения.
+        eval_pool: CatBoost ``Pool`` с eval для ранней остановки и оценки.
+        eval_labels: Истинные метки, соответствующие ``eval_pool``.
+        fixed: Скалярные параметры, передаваемые без изменений.
+        search_space: Спецификации параметров, подбираемых Optuna.
         optuna_params: ``n_trials``, ``n_startup_trials``, ``sampler``, ``timeout``.
-        seed: Deterministic seed for the sampler and CatBoost.
-        method_name: Selector name used in error messages.
-        backends: Result of :func:`_load_backends`.
+        seed: Детерминированный seed для сэмплера и CatBoost.
+        method_name: Имя метода отбора для сообщений об ошибках.
+        backends: Результат :func:`_load_backends`.
 
     Returns:
-        Tuple of ``(best_params, best_metric, completed_trials)``.
+        Кортеж ``(best_params, best_metric, completed_trials)``.
 
     Raises:
-        ExecutionError: When tuning fails or produces no usable trial.
+        ExecutionError: Если подбор завершился ошибкой или не дал ни одного пригодного испытания.
     """
     settings = resolve_optuna_settings(optuna_params, method_name=method_name)
     sampler = build_sampler(
@@ -560,30 +560,30 @@ def _run_catboost_rfe(
     method_name: str = "catboost_rfe",
     task_type: str = "binary_classification",
 ) -> dict[str, Any]:
-    """Tune parameters when requested, then run CatBoost recursive elimination.
+    """При необходимости подбирает параметры, затем выполняет рекурсивное исключение признаков CatBoost.
 
     Args:
-        frame: Bounded local sample with features, target and the time column.
-        feature_cols: Candidate features evaluated by the selector.
-        categorical_cols: Subset of ``feature_cols`` passed as CatBoost ``cat_features``.
-        target_col: Target column name.
-        time_col: Column used for the out-of-time split.
-        eval_months: Number of latest periods reserved for evaluation.
-        fixed_params: Scalar CatBoost parameters passed through unchanged.
-        search_space: Parameter specifications tuned by Optuna.
-        optuna_params: Optuna settings, used when a search space is resolved.
-        feature_selection_params: ``algorithm``, ``steps`` and other ``select_features`` options.
-        num_features_to_select: Target feature count for elimination.
-        seed: Root reproducibility seed.
-        method_name: Selector name used in error messages.
-        task_type: Classification or regression task passed to CatBoost.
+        frame: Локальная выборка ограниченного размера с признаками, целевой переменной и временным столбцом.
+        feature_cols: Признаки-кандидаты, оцениваемые методом отбора.
+        categorical_cols: Подмножество ``feature_cols``, передаваемое в CatBoost как ``cat_features``.
+        target_col: Имя целевого столбца.
+        time_col: Столбец для разделения по времени.
+        eval_months: Число последних периодов, выделяемых в eval.
+        fixed_params: Скалярные параметры CatBoost, передаваемые без изменений.
+        search_space: Спецификации параметров, подбираемых Optuna.
+        optuna_params: Настройки Optuna, используемые при наличии пространства поиска.
+        feature_selection_params: ``algorithm``, ``steps`` и другие параметры ``select_features``.
+        num_features_to_select: Целевое число признаков после исключения.
+        seed: Базовый seed для воспроизводимости.
+        method_name: Имя метода отбора для сообщений об ошибках.
+        task_type: Задача классификации или регрессии, передаваемая в CatBoost.
 
     Returns:
-        Dictionary with selected/eliminated features, tuning details and split sizes.
+        Словарь с отобранными и исключёнными признаками, сведениями о подборе и размерами частей разбиения.
 
     Raises:
-        BackendError: When CatBoost, Optuna or scikit-learn is unavailable.
-        ExecutionError: When the split, tuning or elimination fails.
+        BackendError: Если CatBoost, Optuna или scikit-learn недоступны.
+        ExecutionError: При ошибке разбиения, подбора параметров или исключения признаков.
     """
     backends = _load_backends(require_optuna=False, task_type=task_type)
     estimator_class = backends.estimator_class
@@ -732,7 +732,7 @@ def _pop_elimination_schedule(
     *,
     method_name: str,
 ) -> tuple[str, int]:
-    """Return ``(mode, steps_or_drop)`` and strip those keys from ``selection_params``."""
+    """Возвращает ``(mode, steps_or_drop)`` и удаляет эти ключи из ``selection_params``."""
     has_steps = "steps" in selection_params
     has_drop = "feature_drop_per_step" in selection_params
     if has_steps and has_drop:
@@ -761,7 +761,7 @@ def _names_from_summary(
     names_key: str,
     index_key: str,
 ) -> list[str]:
-    """Prefer name lists from CatBoost; fall back to indices into ``remaining``."""
+    """Использует списки имён из CatBoost, а при их отсутствии — индексы в ``remaining``."""
     names = summary.get(names_key)
     if names:
         return [str(name) for name in names]
@@ -790,7 +790,7 @@ def _eliminate_constant_drop(
     num_features_to_select: int,
     method_name: str,
 ) -> tuple[list[str], list[str], Any, int]:
-    """Drop a fixed count per ``select_features(..., steps=1)`` round."""
+    """Исключает фиксированное число признаков за каждый раунд ``select_features(..., steps=1)``."""
     remaining = list(features)
     eliminated: list[str] = []
     graphs: list[Any] = []
@@ -859,7 +859,7 @@ def _stitch_constant_drop_loss(
     graphs: Sequence[Any],
     cumulative_removed: Sequence[int],
 ) -> dict[str, Any] | None:
-    """Rebuild a loss_graph whose x axis is features removed from the original set."""
+    """Перестраивает loss_graph, чтобы ось x отражала число признаков, удалённых из исходного набора."""
     if not graphs:
         return None
     removed_counts: list[int] = [0]

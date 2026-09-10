@@ -1,4 +1,4 @@
-"""Spark-free tests for the optional statistics metrics cache."""
+"""Тесты необязательного кэша статистических метрик без Spark."""
 
 from __future__ import annotations
 

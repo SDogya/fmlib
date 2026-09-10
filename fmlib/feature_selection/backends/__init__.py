@@ -1,4 +1,4 @@
-"""Backend adapters package."""
+"""Пакет адаптеров бэкендов."""
 
 from fmlib.feature_selection.backends.base import BackendCapabilities
 from fmlib.feature_selection.backends.spark import (

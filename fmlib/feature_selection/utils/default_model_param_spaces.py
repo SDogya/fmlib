@@ -1,12 +1,12 @@
-"""Fallback Optuna search spaces for selectors that tune.
+"""Пространства поиска Optuna по умолчанию для методов с подбором параметров.
 
-These ranges are used only when ``params.optuna_params.enabled`` is true and
-``params.parameters`` contains no mapping entries. Any mapping in the YAML
-block fully replaces this file: unspecified default keys are not mixed in.
+Эти диапазоны используются только при ``params.optuna_params.enabled``, равном true, и если
+``params.parameters`` не содержит словарей. Любой словарь в YAML-блоке
+полностью заменяет содержимое этого файла: неуказанные ключи по умолчанию не добавляются.
 
-``learning_rate``, ``early_stopping_rounds`` and the tree cap are not part of
-the grid. Selectors fill missing keys from ``lama_boost_defaults`` after
-``n_rows`` is known; YAML scalars are kept.
+``learning_rate``, ``early_stopping_rounds`` и лимит деревьев не входят в
+сетку. Методы отбора заполняют отсутствующие ключи из ``lama_boost_defaults``, когда
+``n_rows`` уже известно; скаляры YAML сохраняются.
 """
 
 from __future__ import annotations

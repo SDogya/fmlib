@@ -1,4 +1,4 @@
-"""Tests for LightGbmSelector."""
+"""Тесты LightGbmSelector."""
 
 from __future__ import annotations
 
@@ -110,7 +110,7 @@ def _mock_backends(selector: LightGbmSelector, monkeypatch: pytest.MonkeyPatch) 
 
 
 def _require_ml_backends() -> None:
-    """Fail immediately when the LightGBM extra is missing. Do not skip."""
+    """Немедленно вызывает ошибку при отсутствии дополнительной зависимости LightGBM. Не пропускает тест."""
     try:
         import lightgbm  # noqa: F401
         import optuna  # noqa: F401
@@ -1345,11 +1345,11 @@ _VOTE_CONTINUOUS = ("driver_a", "driver_b", "noise_0", "noise_1", "noise_2")
 
 
 def _vote_frame(n_rows: int = 240) -> pd.DataFrame:
-    """Frame whose target follows two drivers plus noise.
+    """DataFrame, в котором целевая переменная зависит от двух определяющих признаков и шума.
 
-    The signal is deliberately spread over two features: a single dominant
-    feature would exceed the cumulative threshold on its own and leave the
-    cut empty, which says nothing about ``selection_mode``.
+    Сигнал намеренно распределён между двумя признаками: один доминирующий
+    признак сам по себе превысил бы накопленный порог и оставил бы
+    отбор пустым, что ничего не говорит о ``selection_mode``.
     """
     rng = np.random.default_rng(0)
     driver_a = rng.normal(0.0, 1.0, n_rows)
@@ -1372,7 +1372,7 @@ def _run_selection_mode(
     min_set_share: float = 1.0,
     n_folds: int = 3,
 ) -> tuple[list[str], dict[str, Any], list[Any]]:
-    """Run a real LightGBM selection in ``mode`` and return kept/scores/decisions."""
+    """Выполняет реальный отбор LightGBM в режиме ``mode`` и возвращает kept/scores/decisions."""
     frame = _vote_frame()
     context = _context(
         frame,
@@ -1400,7 +1400,7 @@ def _run_selection_mode(
 
 
 def test_both_selection_modes_run_and_record_their_mode() -> None:
-    """Each mode reaches the scores payload and decides every continuous candidate."""
+    """Каждый режим отражается в scores и принимает решение по каждому непрерывному кандидату."""
     _require_ml_backends()
     for mode in ("aggregated", "vote"):
         kept, scores, decisions = _run_selection_mode(mode)
@@ -1412,7 +1412,7 @@ def test_both_selection_modes_run_and_record_their_mode() -> None:
 
 
 def test_vote_mode_reports_one_set_per_fold_and_channel() -> None:
-    """``vote`` cuts split and SHAP separately in every fold: ``2 * n_folds`` sets."""
+    """``vote`` применяет порог к важностям по разбиениям и SHAP отдельно в каждом фолде: ``2 * n_folds`` наборов."""
     _require_ml_backends()
     n_folds = 3
     _, scores, _ = _run_selection_mode("vote", n_folds=n_folds)
@@ -1426,7 +1426,7 @@ def test_vote_mode_reports_one_set_per_fold_and_channel() -> None:
 
 
 def test_aggregated_mode_reports_no_vote_payload() -> None:
-    """The vote-only keys stay out of the scores payload in ``aggregated``."""
+    """Ключи, специфичные для голосования, не попадают в scores в режиме ``aggregated``."""
     _require_ml_backends()
     _, scores, _ = _run_selection_mode("aggregated")
 
@@ -1436,11 +1436,11 @@ def test_aggregated_mode_reports_no_vote_payload() -> None:
 
 
 def test_lowering_min_set_share_admits_partially_present_features() -> None:
-    """``min_set_share`` is a real cut, not a value carried through unused.
+    """``min_set_share`` действительно задаёт порог отбора, а не просто передаётся без использования.
 
-    The relaxed threshold is derived from the observed presence values rather
-    than hard-coded: a feature that appears in some but not all sets must be
-    admitted once the share drops to its own presence.
+    Смягчённый порог определяется по наблюдаемым долям вхождений, а не
+    задаётся константой: признак, входящий в часть наборов, но не во все, должен
+    пройти отбор, когда порог доли опустится до его собственной доли вхождений.
     """
     _require_ml_backends()
     strict, scores, _ = _run_selection_mode("vote", min_set_share=1.0)
@@ -1459,7 +1459,7 @@ def test_lowering_min_set_share_admits_partially_present_features() -> None:
 
 
 def test_vote_decisions_carry_presence_against_the_share_threshold() -> None:
-    """In ``vote`` the reported value is set presence, not a cumulative ratio."""
+    """В режиме ``vote`` сообщается доля вхождений в наборы, а не накопленная доля важности."""
     _require_ml_backends()
     min_set_share = 0.5
     _, scores, decisions = _run_selection_mode("vote", min_set_share=min_set_share)

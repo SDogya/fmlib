@@ -1,4 +1,4 @@
-"""Tests for CorrelationSelector."""
+"""Тесты CorrelationSelector."""
 
 from __future__ import annotations
 
@@ -170,10 +170,10 @@ def test_requires_target_to_bound_rows() -> None:
 
 
 def test_stratified_sample_is_not_a_row_prefix() -> None:
-    """A prefix of one class is perfectly correlated; the other class is noise.
+    """В начальных строках одного класса признаки идеально коррелируют; в другом классе — шум.
 
-    Taking the first ``max_rows`` rows would drop ``second``. Stratified sampling
-    mixes classes, so the pair stays below the threshold.
+    Выбор первых ``max_rows`` строк привёл бы к исключению ``second``. Стратифицированная выборка
+    смешивает классы, поэтому корреляция пары остаётся ниже порога.
     """
     n_class = 20
     frame = pd.DataFrame(

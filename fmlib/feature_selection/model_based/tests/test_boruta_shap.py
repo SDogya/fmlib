@@ -1,4 +1,4 @@
-"""Tests for BorutaShapSelector."""
+"""Тесты BorutaShapSelector."""
 
 from __future__ import annotations
 
@@ -106,7 +106,7 @@ def _mock_selector_core(
 
 
 def _require_boruta_stack() -> None:
-    """Fail immediately when the Boruta extra is missing. Do not skip."""
+    """Немедленно вызывает ошибку при отсутствии дополнительной зависимости Boruta. Не пропускает тест."""
     try:
         import lightgbm  # noqa: F401
         import optuna  # noqa: F401

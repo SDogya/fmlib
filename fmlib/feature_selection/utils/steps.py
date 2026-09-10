@@ -1,4 +1,4 @@
-"""Pipeline steps for pre-statistics drop and sample helpers."""
+"""Шаги пайплайна для исключения и формирования выборок перед статистическим этапом."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ _PREPROCESSING_STAGE = "preprocessing"
 
 
 class FeatureDropStep:
-    """Drop columns listed in a text file and update schema."""
+    """Удаляет столбцы, перечисленные в текстовом файле, и обновляет схему."""
 
     method_name = "feature_drop"
 
@@ -93,7 +93,7 @@ class FeatureDropStep:
 
 
 class RandomFeatureDropStep:
-    """Drop a deterministic random subset of schema candidates."""
+    """Исключает воспроизводимое случайное подмножество кандидатов из схемы."""
 
     method_name = "random_feature_drop"
 
@@ -159,7 +159,7 @@ class RandomFeatureDropStep:
 
 
 class RowSampleStep:
-    """Cap row counts on every split; does not drop features."""
+    """Ограничивает число строк в каждой выборке; не исключает признаки."""
 
     method_name = "row_sample"
 

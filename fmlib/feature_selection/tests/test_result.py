@@ -1,4 +1,4 @@
-"""Tests for SelectionResult serialization and apply."""
+"""Тесты сериализации SelectionResult и метода apply."""
 
 from __future__ import annotations
 

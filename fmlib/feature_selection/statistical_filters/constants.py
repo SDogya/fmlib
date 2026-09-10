@@ -1,4 +1,4 @@
-"""Constant / quasi-constant statistical filter (Spark-native)."""
+"""Статистический фильтр константных и квазиконстантных признаков средствами Spark."""
 
 from __future__ import annotations
 
@@ -18,31 +18,31 @@ _UNSUPPORTED_SPARK_TYPE_NAMES = frozenset({"MapType", "VariantType"})
 
 
 class ConstantsSelector:
-    """Exclude constant and quasi-constant features.
+    """Исключает константные и квазиконстантные признаки.
 
-    For each candidate on the train split the selector computes:
+    Для каждого кандидата в train метод отбора вычисляет:
 
-    - ``max_frequency`` — share of the most frequent non-null value among non-null
-      rows.
+    - ``max_frequency`` — долю наиболее частого непустого значения среди строк
+      без пропусков.
 
-    ``n_unique`` is computed only when the optional ``min_unique`` rule is
-    configured. Otherwise, constant columns are identified by
-    ``max_frequency == 1`` without an expensive ``countDistinct`` aggregation.
+    ``n_unique`` вычисляется только при заданном необязательном правиле ``min_unique``
+    в конфигурации. В остальных случаях константные столбцы определяются по
+    ``max_frequency == 1`` без затратной агрегации ``countDistinct``.
 
-    A feature is dropped when any enabled rule fires:
+    Признак исключается при срабатывании любого включённого правила:
 
-    - ``n_unique <= 1`` → reason ``constant``;
-    - ``min_unique`` is set and ``n_unique < min_unique`` → reason ``too_few_unique``;
-    - ``max_frequency >= config.max_frequency`` → reason ``quasi_constant``.
+    - ``n_unique <= 1`` → причина ``constant``;
+    - задано ``min_unique`` и ``n_unique < min_unique`` → причина ``too_few_unique``;
+    - ``max_frequency >= config.max_frequency`` → причина ``quasi_constant``.
 
-    On Spark, candidate columns are aggregated in chunks to avoid oversized
-    Catalyst plans and code-generation limits on wide datasets. The selector
-    never materialises the train split to the driver; only compact mode and
-    count summaries are collected. A pandas path exists solely for already-local
-    DataFrames (unit tests / small local runs).
+    В Spark столбцы-кандидаты агрегируются пакетами, чтобы избежать чрезмерно больших
+    планов Catalyst и ограничений генерации кода на широких наборах данных. Метод отбора
+    никогда не загружает train целиком в память драйвера; собираются только компактные сводки по модам и
+    числу значений. Вариант для pandas предназначен исключительно для уже локальных
+    DataFrame (модульные тесты и небольшие локальные запуски).
 
     Args:
-        config: Constants filter settings.
+        config: Настройки фильтра константных признаков.
     """
 
     method_name = "constants"
@@ -56,18 +56,18 @@ class ConstantsSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Drop constant and quasi-constant candidates.
+        """Исключает константные и квазиконстантные признаки-кандидаты.
 
         Args:
-            context: Shared stage context containing datasets and execution config.
-            candidates: Feature names still under consideration.
+            context: Общий контекст этапа с наборами данных и конфигурацией выполнения.
+            candidates: Имена признаков, которые ещё рассматриваются для отбора.
 
         Returns:
-            Drop decisions with measured ``value`` and the threshold that fired.
+            Решения об исключении с измеренным ``value`` и сработавшим порогом.
 
         Raises:
-            BackendError: When Spark APIs are required but pyspark is missing.
-            ExecutionError: When stats cannot be computed for the train split type.
+            BackendError: Если требуется API Spark, но pyspark отсутствует.
+            ExecutionError: Если статистики невозможно вычислить для типа выборки train.
         """
         if not candidates:
             return []
@@ -79,7 +79,7 @@ class ConstantsSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> dict[str, Any]:
-        """Return ``{feature: {n_unique, max_frequency}}`` for ``candidates``."""
+        """Возвращает ``{feature: {n_unique, max_frequency}}`` для ``candidates``."""
         columns = list(candidates)
         if not columns:
             return {"values": {}}
@@ -133,7 +133,7 @@ class ConstantsSelector:
         candidates: Sequence[str],
         context: StageContext,
     ) -> list[FeatureDecision]:
-        """Drop remaining features that violate uniqueness / frequency rules."""
+        """Исключает оставшиеся признаки, нарушающие правила уникальности или частоты."""
         del context
         raw = metrics.get("values", metrics)
         if not isinstance(raw, Mapping):
@@ -157,18 +157,18 @@ class ConstantsSelector:
         train: Any,
         columns: list[str],
     ) -> dict[str, tuple[int, float]]:
-        """Compute ``(n_unique, max_frequency)`` with Spark aggregations only.
+        """Вычисляет ``(n_unique, max_frequency)`` только с помощью агрегаций Spark.
 
         Args:
             train: Spark DataFrame.
-            columns: Candidate column names.
+            columns: Имена столбцов-кандидатов.
 
         Returns:
-            Mapping of feature name to ``(n_unique, max_frequency)``.
+            Словарь имён признаков и значений ``(n_unique, max_frequency)``.
 
         Raises:
-            BackendError: If ``pyspark`` is not installed.
-            ExecutionError: If Spark aggregation fails or column types are unsupported.
+            BackendError: Если ``pyspark`` не установлен.
+            ExecutionError: При ошибке агрегации Spark или неподдерживаемых типах столбцов.
         """
         try:
             from pyspark.sql import functions as F  # noqa: N812
@@ -255,14 +255,14 @@ class ConstantsSelector:
         train: Any,
         columns: list[str],
     ) -> None:
-        """Reject Spark column types that break countDistinct/groupBy.
+        """Отклоняет типы столбцов Spark, несовместимые с countDistinct/groupBy.
 
         Args:
             train: Spark DataFrame.
-            columns: Candidate column names.
+            columns: Имена столбцов-кандидатов.
 
         Raises:
-            ExecutionError: When one or more columns have unsupported types.
+            ExecutionError: Если один или несколько столбцов имеют неподдерживаемые типы.
         """
         fields = {field.name: field.dataType for field in train.schema.fields}
         missing = [col for col in columns if col not in fields]
@@ -288,14 +288,14 @@ class ConstantsSelector:
         df: pd.DataFrame,
         columns: list[str],
     ) -> dict[str, tuple[int, float]]:
-        """Compute ``(n_unique, max_frequency)`` for an already-local pandas frame.
+        """Вычисляет ``(n_unique, max_frequency)`` для уже локального pandas DataFrame.
 
         Args:
-            df: Local pandas DataFrame (not produced via Spark ``toPandas`` here).
-            columns: Candidate column names.
+            df: Локальный pandas DataFrame (здесь не создаётся через Spark ``toPandas``).
+            columns: Имена столбцов-кандидатов.
 
         Returns:
-            Mapping of feature name to ``(n_unique, max_frequency)``.
+            Словарь имён признаков и значений ``(n_unique, max_frequency)``.
         """
         result: dict[str, tuple[int, float]] = {}
         for col in columns:
@@ -314,13 +314,13 @@ class ConstantsSelector:
         self: ConstantsSelector,
         stats: dict[str, tuple[int, float]],
     ) -> list[FeatureDecision]:
-        """Turn per-feature stats into drop decisions.
+        """Преобразует статистики отдельных признаков в решения об исключении.
 
         Args:
-            stats: Mapping of feature → ``(n_unique, max_frequency)``.
+            stats: Словарь признак → ``(n_unique, max_frequency)``.
 
         Returns:
-            Drop decisions for features that violate config thresholds.
+            Решения об исключении признаков, нарушающих заданные пороги.
         """
         decisions: list[FeatureDecision] = []
         min_unique = self.config.min_unique
@@ -347,7 +347,7 @@ class ConstantsSelector:
         min_unique: int | None,
         max_frequency_threshold: float,
     ) -> FeatureDecision | None:
-        """Return a drop decision for one feature, or ``None`` to keep it."""
+        """Возвращает решение об исключении одного признака или ``None``, если его нужно сохранить."""
         if n_unique == 0:
             # All-null columns are left to null-rate filtering.
             return None
@@ -385,7 +385,7 @@ class ConstantsSelector:
 
 
 def _quoted_col(name: str) -> Any:
-    """Build a Spark column reference that tolerates dots and spaces in names."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов в имени."""
     from pyspark.sql import functions as F  # noqa: N812
 
     escaped = name.replace("`", "")
@@ -393,7 +393,7 @@ def _quoted_col(name: str) -> Any:
 
 
 def _spark_root_cause(exc: BaseException) -> str:
-    """Extract a short root-cause string from Py4J / Spark errors."""
+    """Извлекает краткое описание первопричины из ошибок Py4J / Spark."""
     java_exc = getattr(exc, "java_exception", None)
     if java_exc is not None:
         return str(java_exc).splitlines()[0]
@@ -404,7 +404,7 @@ def _spark_root_cause(exc: BaseException) -> str:
 
 
 def _is_nan(value: Any) -> bool:
-    """Return whether a Spark mode value is NaN."""
+    """Возвращает, является ли значение моды Spark значением NaN."""
     try:
         return bool(math.isnan(value))
     except (TypeError, ValueError):
@@ -412,6 +412,6 @@ def _is_nan(value: Any) -> bool:
 
 
 def _is_spark_dataframe(data: Any) -> bool:
-    """Return True when ``data`` looks like a pyspark.sql.DataFrame."""
+    """Возвращает True, если ``data`` соответствует интерфейсу pyspark.sql.DataFrame."""
     module_name = type(data).__module__
     return module_name.startswith("pyspark") and hasattr(data, "groupBy") and hasattr(data, "agg")

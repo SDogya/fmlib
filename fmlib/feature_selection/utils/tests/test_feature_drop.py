@@ -1,4 +1,4 @@
-"""Tests for file-driven preprocessing feature exclusions."""
+"""Тесты исключения признаков на этапе предобработки по файлу."""
 
 from __future__ import annotations
 

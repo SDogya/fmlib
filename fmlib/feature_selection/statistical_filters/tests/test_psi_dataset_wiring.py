@@ -1,16 +1,16 @@
-"""Which populations PSI compares, and what happens when they are missing.
+"""Какие совокупности сравнивает PSI и что происходит при их отсутствии.
 
-``PsiSelector`` picks its baseline/actual pair from ``config.mode``:
+``PsiSelector`` выбирает пару baseline/actual по ``config.mode``:
 
-* ``train_valid`` compares ``datasets['train']`` against ``datasets['valid']``,
-  or against the ``valid`` rows of ``FeatureSchema.split``;
-* ``month_over_month`` splits ``train`` on ``month_column``.
+* ``train_valid`` сравнивает ``datasets['train']`` с ``datasets['valid']``
+  или со строками ``valid`` из ``FeatureSchema.split``;
+* ``month_over_month`` разделяет ``train`` по ``month_column``.
 
-``datasets['test']`` is never read in either mode: the held-out split has to
-stay out of selection so the resulting feature set can be judged on data that
-took no part in choosing it. A missing population raises instead of passing
-every feature, because a silent skip reads in the report exactly like
-"measured and stable".
+``datasets['test']`` не читается ни в одном режиме: отложенная выборка должна
+оставаться вне отбора, чтобы итоговый набор признаков можно было оценить на данных,
+не участвовавших в его выборе. При отсутствии совокупности возникает ошибка вместо сохранения
+всех признаков, поскольку незаметный пропуск в отчёте выглядит точно так же, как
+«измерено и стабильно».
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ _DRIFTED_PSI = 1.0
 
 
 def _frame(loc: float, months: tuple[int, ...], seed: int) -> pd.DataFrame:
-    """Build a frame whose single feature is centred on ``loc``."""
+    """Создаёт DataFrame с единственным признаком, распределённым вокруг ``loc``."""
     rng = np.random.default_rng(seed)
     return pd.DataFrame(
         {
@@ -52,7 +52,7 @@ def _context(
     *,
     split: str | None = None,
 ) -> StageContext:
-    """Build a context over pandas splits sharing one schema."""
+    """Создаёт контекст для выборок pandas с общей схемой."""
     schema = FeatureSchema(
         categorical=(),
         continuous=(_FEATURE,),
@@ -78,14 +78,14 @@ def _decide(
     *,
     split: str | None = None,
 ) -> Any:
-    """Run PSI over ``datasets`` and return the single feature's decision."""
+    """Выполняет PSI для ``datasets`` и возвращает решение по единственному признаку."""
     selector = PsiSelector(PsiConfig(mode=mode, threshold=0.1))
     return selector.select(_context(datasets, split=split), [_FEATURE])[0]
 
 
 @pytest.mark.parametrize("mode", ["train_valid", "month_over_month"])
 def test_held_out_test_split_never_reaches_selection(mode: str) -> None:
-    """A far-shifted ``test`` split must not change any decision."""
+    """Сильный сдвиг в выборке ``test`` не должен влиять на решения."""
     datasets = {
         "train": _frame(0.0, (1, 2, 3), seed=1),
         "valid": _frame(0.0, (1, 2, 3), seed=2),
@@ -98,7 +98,7 @@ def test_held_out_test_split_never_reaches_selection(mode: str) -> None:
 
 
 def test_train_valid_mode_detects_drift_between_train_and_valid() -> None:
-    """A drifted ``valid`` split is what ``train_valid`` is meant to catch."""
+    """Режим ``train_valid`` должен обнаруживать сдвиг в выборке ``valid``."""
     decision = _decide(
         {
             "train": _frame(0.0, (1, 2, 3), seed=1),
@@ -112,7 +112,7 @@ def test_train_valid_mode_detects_drift_between_train_and_valid() -> None:
 
 
 def test_train_valid_mode_keeps_a_stable_feature() -> None:
-    """Matching populations must score near zero rather than merely pass."""
+    """Совпадающие совокупности должны давать оценку около нуля, а не просто проходить отбор."""
     decision = _decide(
         {
             "train": _frame(0.0, (1, 2, 3), seed=1),
@@ -126,7 +126,7 @@ def test_train_valid_mode_keeps_a_stable_feature() -> None:
 
 
 def test_train_valid_mode_reads_valid_rows_from_the_split_column() -> None:
-    """With no ``valid`` dataset the split column supplies the actual set."""
+    """При отсутствии набора ``valid`` актуальная выборка определяется по столбцу разбиения."""
     frame = pd.concat(
         [
             _frame(0.0, (1, 2), seed=1).assign(part="train"),
@@ -141,7 +141,7 @@ def test_train_valid_mode_reads_valid_rows_from_the_split_column() -> None:
 
 
 def test_month_over_month_splits_a_pandas_frame_by_time() -> None:
-    """The month split must not depend on the Spark DataFrame API."""
+    """Разбиение по месяцам не должно зависеть от API Spark DataFrame."""
     frame = pd.concat(
         [_frame(0.0, (1, 2), seed=1), _frame(5.0, (3,), seed=2)],
         ignore_index=True,
@@ -153,19 +153,19 @@ def test_month_over_month_splits_a_pandas_frame_by_time() -> None:
 
 
 def test_missing_valid_population_is_reported_not_skipped() -> None:
-    """Without ``valid`` or a split column the run must fail loudly."""
+    """При отсутствии ``valid`` и столбца разбиения запуск должен завершаться явной ошибкой."""
     with pytest.raises(ExecutionError, match="requires datasets\\['valid'\\]"):
         _decide({"train": _frame(0.0, (1, 2, 3), seed=1)}, "train_valid")
 
 
 def test_too_few_periods_for_month_over_month_is_reported() -> None:
-    """One period cannot be split into earlier and latest halves."""
+    """Один период нельзя разделить на более раннюю и последнюю части."""
     with pytest.raises(ExecutionError, match="distinct periods"):
         _decide({"train": _frame(0.0, (1,), seed=1)}, "month_over_month")
 
 
 def test_missing_month_column_is_reported() -> None:
-    """A month column absent from the frame must name itself in the error."""
+    """Ошибка должна содержать имя отсутствующего в DataFrame столбца месяца."""
     frame = _frame(0.0, (1, 2, 3), seed=1).drop(columns=[_MONTH])
     selector = PsiSelector(PsiConfig(mode="month_over_month", threshold=0.1))
     schema = FeatureSchema(

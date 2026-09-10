@@ -1,7 +1,7 @@
-"""Exhaustive tests for NullRateSelector.
+"""Всесторонние тесты NullRateSelector.
 
-Spark cases use a real SparkSession (session fixture ``spark``). There is no
-FakeSparkDataFrame and no skip if pyspark is missing: the fixture fails the run.
+Сценарии Spark используют реальную SparkSession (фикстура ``spark`` с областью session). Здесь нет
+FakeSparkDataFrame и пропуска при отсутствии pyspark: фикстура завершает запуск ошибкой.
 """
 
 from __future__ import annotations
@@ -33,7 +33,7 @@ THRESHOLD = 0.5
 
 
 class ForbiddenDatasets(dict):
-    """Mapping that fails if the train split is read."""
+    """Словарь, вызывающий ошибку при чтении train."""
 
     def __getitem__(self: ForbiddenDatasets, key: Any) -> Any:
         message = f"datasets[{key!r}] must not be read for empty candidates"
@@ -41,7 +41,7 @@ class ForbiddenDatasets(dict):
 
 
 class JavaLikeError(RuntimeError):
-    """Py4J-style error with a multiline java_exception payload."""
+    """Ошибка в стиле Py4J с многострочным содержимым java_exception."""
 
     def __init__(self: JavaLikeError, java_exception: str, message: str = "py4j wrapper") -> None:
         super().__init__(message)

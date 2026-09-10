@@ -1,4 +1,4 @@
-"""Tests for FeatureSelectionPipeline skeleton."""
+"""Тесты каркаса FeatureSelectionPipeline."""
 
 from __future__ import annotations
 
@@ -323,7 +323,7 @@ def test_boruta_model_stage_produces_drops_and_scores(
 
 
 def test_correlation_drop_decisions_have_real_values() -> None:
-    """Correlation selector should produce numeric value in FeatureDecision."""
+    """Метод отбора по корреляции должен записывать числовое значение в FeatureDecision."""
     categorical, continuous, columns = make_wide_schema_columns(30)
     spark = require_spark_session()
     config = _config()
@@ -477,7 +477,7 @@ def test_model_enabled_false_does_not_run_lightgbm(
 
 
 def test_result_schema_apply_projection() -> None:
-    """SelectionResult.apply should keep only selected + service columns."""
+    """SelectionResult.apply должен сохранять только отобранные и служебные столбцы."""
     categorical, continuous, columns = make_wide_schema_columns(30)
     spark = require_spark_session()
     config = _config()
@@ -494,7 +494,7 @@ def test_result_schema_apply_projection() -> None:
 
 
 def test_no_service_columns_in_selected() -> None:
-    """target, split, time, id columns must never appear in selected_features."""
+    """Столбцы target, split, time, id никогда не должны попадать в selected_features."""
     categorical, continuous, columns = make_wide_schema_columns(30)
     spark = require_spark_session()
     schema = _schema(categorical, continuous)
@@ -508,7 +508,7 @@ def test_no_service_columns_in_selected() -> None:
 
 
 def test_apply_pandas_dataframe_selects_columns() -> None:
-    """SelectionResult.apply keeps selected columns on a pandas frame."""
+    """SelectionResult.apply сохраняет отобранные столбцы в pandas DataFrame."""
     categorical, continuous, columns = make_wide_schema_columns(30)
     spark = require_spark_session()
     result = FeatureSelectionPipeline(_config()).fit_select(
@@ -522,7 +522,7 @@ def test_apply_pandas_dataframe_selects_columns() -> None:
 
 
 def test_apply_spark_dataframe_selects_columns(spark: Any) -> None:
-    """SelectionResult.apply keeps selected columns on a real Spark frame."""
+    """SelectionResult.apply сохраняет отобранные столбцы в реальном Spark DataFrame."""
     categorical, continuous, columns = make_wide_schema_columns(16)
     result = FeatureSelectionPipeline(_config()).fit_select(
         spark,

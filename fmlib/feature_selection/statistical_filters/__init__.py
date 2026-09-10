@@ -1,1 +1,1 @@
-"""Statistical feature selection filters."""
+"""Статистические фильтры отбора признаков."""

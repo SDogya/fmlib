@@ -1,4 +1,4 @@
-"""Feature schema describing candidates and service columns."""
+"""Схема признаков, описывающая кандидатов и служебные столбцы."""
 
 from __future__ import annotations
 
@@ -13,21 +13,21 @@ SPLIT_VALUES = frozenset({"train", "valid", "test"})
 
 @dataclass(frozen=True)
 class FeatureSchema:
-    """Description of feature roles for the selection pipeline.
+    """Описание ролей признаков для пайплайна отбора.
 
-    Feature roles are separated from the physical DataFrame schema. Candidates
-    are ``categorical`` and ``continuous`` only; target and service columns are
-    never selection candidates.
+    Роли признаков отделены от физической схемы DataFrame. Кандидатами
+    могут быть только ``categorical`` и ``continuous``; целевой и служебные столбцы
+    никогда не участвуют в отборе как кандидаты.
 
     Args:
-        categorical: Categorical feature column names.
-        continuous: Continuous feature column names.
-        target: Target column name (required for model stages).
-        task_type: ``binary_classification``, ``classification``, or ``regression``.
-        time: Optional time column for month-over-month PSI / time-based CV.
-        split: Optional split column with values ``train`` / ``valid`` / ``test``.
-        fold: Optional CV fold column inside the train split.
-        id_columns: Identifier columns excluded from selection.
+        categorical: Имена столбцов категориальных признаков.
+        continuous: Имена столбцов непрерывных признаков.
+        target: Имя целевого столбца (обязательно для этапов модели).
+        task_type: ``binary_classification``, ``classification`` или ``regression``.
+        time: Необязательный временной столбец для помесячного PSI или кросс-валидации по времени.
+        split: Необязательный столбец разбиения со значениями ``train`` / ``valid`` / ``test``.
+        fold: Необязательный столбец фолда кросс-валидации внутри train.
+        id_columns: Столбцы-идентификаторы, не участвующие в отборе.
     """
 
     categorical: tuple[str, ...]
@@ -81,18 +81,18 @@ class FeatureSchema:
             raise SchemaError(message)
 
     def candidate_features(self: FeatureSchema) -> list[str]:
-        """Return selection candidates in stable order (categorical then continuous).
+        """Возвращает кандидатов для отбора в стабильном порядке: сначала категориальные, затем непрерывные.
 
         Returns:
-            Ordered list of candidate feature names.
+            Упорядоченный список имён признаков-кандидатов.
         """
         return list(self.categorical) + list(self.continuous)
 
     def service_columns(self: FeatureSchema) -> list[str]:
-        """Return non-candidate service columns that should be preserved on apply.
+        """Возвращает служебные столбцы вне списка кандидатов, которые нужно сохранить при применении.
 
         Returns:
-            Ordered unique service column names (target, time, split, fold, ids).
+            Упорядоченные уникальные имена служебных столбцов (target, time, split, fold, ids).
         """
         columns: list[str] = [self.target]
         for name in (self.time, self.split, self.fold):
@@ -108,10 +108,10 @@ class FeatureSchema:
         return ordered
 
     def all_declared_columns(self: FeatureSchema) -> list[str]:
-        """Return every column declared by the schema.
+        """Возвращает все столбцы, объявленные в схеме.
 
         Returns:
-            Ordered unique column names from candidates and service fields.
+            Упорядоченные уникальные имена столбцов из кандидатов и служебных полей.
         """
         seen: set[str] = set()
         ordered: list[str] = []
@@ -127,14 +127,14 @@ class FeatureSchema:
         *,
         require_split: bool = False,
     ) -> None:
-        """Validate that declared columns exist in a DataFrame column list.
+        """Проверяет наличие объявленных столбцов в списке столбцов DataFrame.
 
         Args:
-            columns: Physical column names available on the input.
-            require_split: When True, ``split`` must be set and present.
+            columns: Физические имена столбцов, доступных во входных данных.
+            require_split: При True ``split`` должен быть задан и присутствовать в данных.
 
         Raises:
-            SchemaError: If required columns are missing or split is required but absent.
+            SchemaError: Если обязательные столбцы отсутствуют или требуется split, но он отсутствует.
         """
         available = set(columns)
         missing = [name for name in self.all_declared_columns() if name not in available]
@@ -157,10 +157,10 @@ class FeatureSchema:
                 raise SchemaError(msg)
 
     def to_dict(self: FeatureSchema) -> dict:
-        """Serialize schema to a plain dictionary.
+        """Сериализует схему в обычный словарь.
 
         Returns:
-            JSON-compatible dictionary.
+            Словарь, совместимый с JSON.
         """
         return {
             "categorical": list(self.categorical),
@@ -175,13 +175,13 @@ class FeatureSchema:
 
     @classmethod
     def from_dict(cls: type[FeatureSchema], payload: dict) -> FeatureSchema:
-        """Build schema from a dictionary.
+        """Создаёт схему из словаря.
 
         Args:
-            payload: Mapping with schema fields.
+            payload: Словарь с полями схемы.
 
         Returns:
-            Validated ``FeatureSchema`` instance.
+            Проверенный экземпляр ``FeatureSchema``.
         """
         return cls(
             categorical=tuple(payload.get("categorical", ())),
@@ -199,14 +199,14 @@ def ensure_no_feature_leak(
     candidates: Iterable[str],
     schema: FeatureSchema,
 ) -> None:
-    """Assert candidates do not include target or service columns.
+    """Проверяет, что кандидаты не включают целевой и служебные столбцы.
 
     Args:
-        candidates: Candidate feature names.
-        schema: Feature schema.
+        candidates: Имена признаков-кандидатов.
+        schema: Схема признаков.
 
     Raises:
-        SchemaError: If a service/target column leaked into candidates.
+        SchemaError: Если служебный или целевой столбец попал в кандидаты.
     """
     forbidden = set(schema.service_columns())
     leaked = sorted(set(candidates) & forbidden)

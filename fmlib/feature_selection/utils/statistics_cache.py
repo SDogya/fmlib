@@ -1,8 +1,8 @@
-"""JSON cache of statistical metrics computed on the full candidate set.
+"""JSON-кэш статистических метрик, вычисленных по полному набору кандидатов.
 
-Thresholds are applied later, so a change of ``order`` or of a drop threshold
-reuses the same numbers. Compute-parameter changes (for example
-``low_variance.scale_method``) get their own entry beside the old one.
+Пороги применяются позже, поэтому при изменении ``order`` или порога исключения
+повторно используются те же значения. Изменения параметров вычисления (например,
+``low_variance.scale_method``) получают отдельную запись рядом с прежней.
 """
 
 from __future__ import annotations
@@ -36,10 +36,10 @@ def compute_fingerprint(
     seed: int | None = None,
     task_type: str | None = None,
 ) -> dict[str, Any]:
-    """Build the cache key for one statistics method.
+    """Формирует ключ кэша для одного статистического метода.
 
-    Thresholds are omitted: they are applied later. Only values that change
-    the stored numbers belong here.
+    Пороги не включаются: они применяются позже. Здесь нужны только значения, влияющие на
+    сохраняемые результаты вычислений.
     """
     if method == "null_rate":
         return {}
@@ -86,7 +86,7 @@ def compute_fingerprint(
 
 
 def resolve_cache_path(path: Optional[Union[str, Path]]) -> Path:
-    """Resolve the cache file path. ``None`` means ``statistics_metrics.json`` in cwd."""
+    """Определяет путь к файлу кэша. ``None`` означает ``statistics_metrics.json`` в рабочем каталоге."""
     if path is None or not str(path).strip():
         return Path.cwd() / DEFAULT_CACHE_FILENAME
     resolved = Path(str(path)).expanduser()
@@ -96,12 +96,12 @@ def resolve_cache_path(path: Optional[Union[str, Path]]) -> Path:
 
 
 def fingerprint_json(fingerprint: Mapping[str, Any]) -> str:
-    """Canonical JSON for an entry lookup key."""
+    """Возвращает канонический JSON для ключа поиска записи."""
     return json.dumps(_jsonable(dict(fingerprint)), sort_keys=True, separators=(",", ":"))
 
 
 class StatisticsMetricsCache:
-    """On-disk list of ``{method, fingerprint, metrics}`` entries."""
+    """Дисковый список записей ``{method, fingerprint, metrics}``."""
 
     def __init__(
         self: StatisticsMetricsCache,
@@ -121,10 +121,10 @@ class StatisticsMetricsCache:
         *,
         force_recompute: bool = False,
     ) -> StatisticsMetricsCache:
-        """Read an existing file, or start empty.
+        """Читает существующий файл или создаёт пустой кэш.
 
-        A corrupt file is an error unless ``force_recompute`` is set, in which
-        case the cache starts empty and will be rewritten on the first upsert.
+        Повреждённый файл вызывает ошибку, если не задан ``force_recompute``; при заданном флаге
+        кэш изначально пуст и будет перезаписан при первом upsert.
         """
         file_path = Path(path)
         if not file_path.exists():
@@ -166,7 +166,7 @@ class StatisticsMetricsCache:
         method: str,
         fingerprint: Mapping[str, Any],
     ) -> dict[str, Any] | None:
-        """Return cached metrics for ``method`` + fingerprint, or ``None``."""
+        """Возвращает кэшированные метрики для ``method`` и отпечатка параметров или ``None``."""
         key = fingerprint_json(fingerprint)
         for entry in self._entries:
             if entry.get("method") != method:
@@ -187,7 +187,7 @@ class StatisticsMetricsCache:
         fingerprint: Mapping[str, Any],
         metrics: Mapping[str, Any],
     ) -> None:
-        """Replace or append one entry and save immediately."""
+        """Заменяет или добавляет одну запись и сразу сохраняет её."""
         key = fingerprint_json(fingerprint)
         record = {
             "method": method,
@@ -213,7 +213,7 @@ class StatisticsMetricsCache:
         self.save()
 
     def save(self: StatisticsMetricsCache) -> None:
-        """Write the cache file, creating parent directories as needed."""
+        """Записывает файл кэша, при необходимости создавая родительские каталоги."""
         payload = {
             "format_version": FORMAT_VERSION,
             "entries": self._entries,
@@ -226,7 +226,7 @@ class StatisticsMetricsCache:
 
 
 def _jsonable(value: Any) -> Any:
-    """Convert numpy / non-finite numbers into JSON-friendly values."""
+    """Преобразует числа numpy и неконечные числа в значения, совместимые с JSON."""
     if isinstance(value, Mapping):
         return {str(key): _jsonable(item) for key, item in value.items()}
     if isinstance(value, (list, tuple)):

@@ -1,4 +1,4 @@
-"""BorutaSHAP model-based feature selector."""
+"""Метод отбора признаков на основе модели BorutaSHAP."""
 
 from __future__ import annotations
 
@@ -62,7 +62,7 @@ else:
 
 @dataclass(frozen=True)
 class _Backends:
-    """Loaded third-party classes and functions."""
+    """Загруженные классы и функции сторонних библиотек."""
 
     boruta_class: Any
     model_class: Any
@@ -71,15 +71,15 @@ class _Backends:
 
 
 class BorutaShapSelector:
-    """Run Optuna-tuned BorutaSHAP as the final continuous-feature selector.
+    """Выполняет окончательный отбор непрерывных признаков через BorutaSHAP с подбором параметров Optuna.
 
-    The ML flow follows ``BorutaSHAP_dep.py``: tune LightGBM or RandomForest on
-    a stratified hold-out split, pass the optimized model to BorutaShap, fit on
-    the full bounded sample, and optionally resolve tentative features with
+    Алгоритм моделирования следует ``BorutaSHAP_dep.py``: подбирает параметры LightGBM или RandomForest на
+    стратифицированном отложенном разбиении, передаёт оптимизированную модель в BorutaShap, обучает её на
+    полной выборке ограниченного размера и при необходимости уточняет статус неопределённых признаков через
     ``TentativeRoughFix``.
 
     Args:
-        config: Model-stage method and BorutaSHAP parameters.
+        config: Метод этапа модели и параметры BorutaSHAP.
     """
 
     method_name = "boruta_shap"
@@ -93,7 +93,7 @@ class BorutaShapSelector:
         context: StageContext,
         candidates: Sequence[str],
     ) -> list[FeatureDecision]:
-        """Evaluate current continuous candidates with BorutaSHAP."""
+        """Оценивает текущие непрерывные признаки-кандидаты с помощью BorutaSHAP."""
         if not candidates:
             return []
 
@@ -193,7 +193,7 @@ class BorutaShapSelector:
         self: BorutaShapSelector,
         context: StageContext,
     ) -> dict[str, Any]:
-        """Resolve legacy-compatible options and execution capacity limits."""
+        """Определяет параметры с сохранением совместимости и лимиты ресурсов выполнения."""
         params = self.config.params
         optuna_params = params.get("optuna_params", {})
         raw_parameters = params.get("parameters", {})
@@ -319,7 +319,7 @@ class BorutaShapSelector:
         require_optuna: bool = True,
         task_type: str = "binary_classification",
     ) -> _Backends:
-        """Load optional BorutaSHAP, Optuna, sklearn, and model dependencies."""
+        """Загружает необязательные зависимости BorutaSHAP, Optuna, sklearn и библиотек моделей."""
         if BorutaShap is None:
             msg = (
                 "boruta_shap: BorutaShap is required. Install the BorutaShap "
@@ -368,7 +368,7 @@ class BorutaShapSelector:
         backends: _Backends,
         context: Any | None = None,
     ) -> dict[str, Any]:
-        """Tune the model and execute the legacy BorutaSHAP flow."""
+        """Подбирает параметры модели и выполняет унаследованный алгоритм BorutaSHAP."""
         local = prepare_numeric_frame(
             train,
             target_col=target_col,
@@ -615,11 +615,11 @@ class BorutaShapSelector:
         *,
         enabled: bool = True,
     ) -> dict[str, dict[str, Any]]:
-        """Resolve the Optuna space: YAML mappings replace the fallback.
+        """Определяет пространство поиска Optuna: словари YAML заменяют настройки по умолчанию.
 
-        ``GRID`` enumerates an explicit product, so built-in ranges are not
-        used: only configured entries take part. ``bootstrap_type`` is dropped
-        for LightGBM because it is not a LightGBM constructor argument.
+        ``GRID`` перебирает явно заданное декартово произведение, поэтому встроенные диапазоны не
+        используются: участвуют только заданные параметры. ``bootstrap_type`` удаляется
+        для LightGBM, поскольку не является аргументом конструктора LightGBM.
         """
         clean_overrides = {
             name: specification
@@ -649,7 +649,7 @@ class BorutaShapSelector:
         seed: int,
         task: TaskRuntime | None = None,
     ) -> Any:
-        """Build the same model shape for Optuna and final Boruta fitting."""
+        """Создаёт модель одинаковой структуры для Optuna и итогового обучения Boruta."""
         resolved = task if task is not None else binary_task()
         common = {
             **dict(parameters),
@@ -676,7 +676,7 @@ class BorutaShapSelector:
 
 
 def _json_value(value: Any) -> Any:
-    """Recursively convert model parameters to JSON-compatible values."""
+    """Рекурсивно преобразует параметры модели в значения, совместимые с JSON."""
     if isinstance(value, np.generic):
         return value.item()
     if isinstance(value, Mapping):

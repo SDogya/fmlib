@@ -1,8 +1,8 @@
-"""Tests for the CatBoost RFE selector and its helpers.
+"""Тесты метода отбора CatBoost RFE и его вспомогательных функций.
 
-Guards, out-of-time split, mixed materialization and YAML stay local. The
-decision-building test trains a tiny real CatBoost RFE; missing CatBoost fails
-the run instead of skipping.
+Проверки условий, временное разбиение, загрузка смешанных данных в память и YAML выполняются локально. Тест
+формирования решений обучает небольшую реальную модель CatBoost RFE; отсутствие CatBoost приводит
+к ошибке запуска, а не к пропуску теста.
 """
 
 from __future__ import annotations
@@ -320,11 +320,11 @@ def test_select_builds_decisions_and_scores() -> None:
 
 
 def test_scores_carry_the_loss_curve() -> None:
-    """The eval loss per elimination step must reach the caller.
+    """Значение потерь на eval для каждого шага исключения должно возвращаться вызывающему коду.
 
-    Paired with ``elimination_order`` the curve is what lets
-    ``selection.max_features`` be read off a measured cutoff instead of
-    guessed, so it has to survive into ``scores`` and stay JSON-friendly.
+    Вместе с ``elimination_order`` эта кривая позволяет
+    определить ``selection.max_features`` по измеренному порогу вместо
+    догадки, поэтому она должна попадать в ``scores`` и оставаться совместимой с JSON.
     """
     _require_catboost()
     steps = 2
@@ -360,10 +360,10 @@ def test_scores_carry_the_loss_curve() -> None:
 
 
 def test_steps_default_leaves_more_than_one_measurement() -> None:
-    """Without an explicit ``steps`` CatBoost eliminates in one pass.
+    """Без явно заданного ``steps`` CatBoost исключает признаки за один проход.
 
-    That yields a two-point curve with no interior measurement, so the module
-    pins its own default rather than inheriting CatBoost's.
+    Получается кривая из двух точек без промежуточных измерений, поэтому модуль
+    задаёт собственное значение по умолчанию вместо наследования значения CatBoost.
     """
     _require_catboost()
     context = _context(
@@ -386,7 +386,7 @@ def test_steps_default_leaves_more_than_one_measurement() -> None:
 
 
 def test_non_positive_steps_are_rejected() -> None:
-    """``steps`` below one cannot describe an elimination schedule."""
+    """``steps`` меньше единицы не может описывать схему исключения."""
     with pytest.raises(ConfigError, match="feature_selection_params.steps"):
         FeatureSelectionConfig.from_dict(
             {
@@ -475,7 +475,7 @@ def test_config_accepts_steps_without_feature_drop_per_step() -> None:
 
 
 def test_feature_drop_per_step_drops_a_constant_count() -> None:
-    """Each round removes ``feature_drop_per_step`` names until max_features."""
+    """Каждый раунд удаляет ``feature_drop_per_step`` имён до достижения max_features."""
     _require_catboost()
     frame = _frame()
     frame["num_c"] = frame["num_a"] * 0.5
@@ -514,7 +514,7 @@ def test_feature_drop_per_step_drops_a_constant_count() -> None:
 
 
 def test_steps_mode_keeps_a_single_select_features_call() -> None:
-    """The geometric ``steps`` path still goes through one CatBoost elimination."""
+    """Геометрическая схема ``steps`` по-прежнему выполняется одним вызовом исключения CatBoost."""
     _require_catboost()
     details = _run_catboost_rfe(
         _frame(),

@@ -1,4 +1,4 @@
-"""Tests for LowVarianceSelector."""
+"""Тесты LowVarianceSelector."""
 
 from __future__ import annotations
 

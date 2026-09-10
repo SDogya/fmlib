@@ -1,4 +1,4 @@
-"""Tests for per-method verbose event logging."""
+"""Тесты подробного журналирования событий по методам."""
 
 from __future__ import annotations
 
@@ -270,7 +270,7 @@ def _assert_no_feature_name_lists(
     events: list[dict],
     feature_names: set[str],
 ) -> None:
-    """Verbose events may mention counts, but must not dump keep/drop name lists."""
+    """События подробного журнала могут содержать количества, но не списки имён сохранённых и исключённых признаков."""
     for event in events:
         _assert_no_feature_name_lists_in_value(event, feature_names)
 
