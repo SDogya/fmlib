@@ -458,7 +458,24 @@ def test_spark_fingerprint_uses_snapshot_without_reading_rows(tmp_path: Path) ->
     assert compute_data_fingerprint(context) != first
     second = compute_data_fingerprint(context)
     context.statistics_row_transforms.append({"method": "row_sample", "seed": 19, "max_rows": 100})
-    assert compute_data_fingerprint(context) != second
+    current = compute_data_fingerprint(context)
+    assert current != second
+    assert current["splits"]["train"]["sampling"] == "exact_hash_v1"
+    legacy = {**current, "splits": second["splits"]}
+    cache = StatisticsMetricsCache.load(tmp_path / "metrics.json")
+    cache.upsert("null_rate", legacy, {"values": {"keep": 1.0}})
+    assert cache.lookup("null_rate", current) is None
+
+
+def test_correlation_cache_invalidates_previous_sampling_algorithm(tmp_path: Path) -> None:
+    current = compute_fingerprint(
+        "correlation", CorrelationConfig(), max_local_rows=100, seed=7,
+    )
+    assert current["spark_sampling"] == "exact_hash_v1"
+    legacy = {key: value for key, value in current.items() if key != "spark_sampling"}
+    cache = StatisticsMetricsCache.load(tmp_path / "metrics.json")
+    cache.upsert("correlation", legacy, {"features": ["keep"]})
+    assert cache.lookup("correlation", current) is None
 
 
 def test_new_snapshot_version_recomputes_metrics(tmp_path: Path) -> None:

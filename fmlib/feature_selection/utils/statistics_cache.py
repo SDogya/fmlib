@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any, Mapping, Optional, Union
 
 from fmlib.feature_selection.exceptions import ConfigError
+from fmlib.feature_selection.utils.local_data import SPARK_SAMPLING_VERSION
 
 FORMAT_VERSION = 2
 DEFAULT_CACHE_FILENAME = "statistics_metrics.json"
@@ -60,6 +61,7 @@ def compute_fingerprint(
             "max_rows": max_rows,
             "seed": seed,
             "stratified": str(task_type or "") != "regression",
+            "spark_sampling": SPARK_SAMPLING_VERSION,
         }
     if method == "psi":
         fingerprint: dict[str, Any] = {
@@ -125,6 +127,9 @@ def compute_data_fingerprint(context: Any) -> dict[str, Any]:
             }
         elif type(frame).__module__.startswith("pyspark"):
             splits[name] = {"backend": "spark", "schema": frame.schema.jsonValue()}
+            if context.statistics_row_transforms:
+                # После row_sample состав строк изменился относительно старого алгоритма.
+                splits[name]["sampling"] = SPARK_SAMPLING_VERSION
         else:
             msg = f"statistics.cache: unsupported split type {type(frame)!r}. Disable the cache."
             raise ConfigError(msg)

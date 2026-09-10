@@ -10,6 +10,8 @@ import pandas as pd
 
 from fmlib.feature_selection.exceptions import BackendError, ExecutionError
 
+SPARK_SAMPLING_VERSION = "exact_hash_v1"
+
 _NUMERIC_SPARK_TYPE_NAMES = frozenset(
     {
         "ByteType",
@@ -416,22 +418,15 @@ def sample_frame_rows(
         total_rows = int(data.count())
         if total_rows <= max_rows:
             return data, total_rows, total_rows
-        if stratified:
-            sampled = _sample_spark(
-                data,
-                target_col=target_col,
-                max_rows=max_rows,
-                sample_fraction=None,
-                seed=seed,
-                method_name=method_name,
-            )
-        else:
-            try:
-                from pyspark.sql import functions
-            except ImportError as exc:
-                msg = f"{method_name}: pyspark is required for Spark sampling."
-                raise BackendError(msg) from exc
-            sampled = data.orderBy(functions.rand(seed)).limit(max_rows)
+        sampled = _sample_spark(
+            data,
+            target_col=target_col,
+            max_rows=max_rows,
+            sample_fraction=None,
+            seed=seed,
+            method_name=method_name,
+            stratified=stratified,
+        )
         sampled_rows = int(sampled.count())
         return sampled, total_rows, sampled_rows
     if isinstance(data, pd.DataFrame):
@@ -571,8 +566,15 @@ def _sample_spark(
     method_name: str,
     stratified: bool = True,
 ) -> Any:
-    """Формирует выборку Spark ограниченного размера со стратификацией по целевой переменной при необходимости."""
+    """Отбирает точно заданное число строк Spark независимо от разбиения на партиции.
+
+    Квоты классов пропорциональны их размерам и сохраняют минимум одну строку
+    каждого класса. Внутри класса строки ранжируются по хэшу содержимого и seed;
+    без стратификации тот же порядок используется для глобального отбора.
+    Bernoulli-сэмплирование не используется: оно не гарантирует заполнение квот.
+    """
     try:
+        from pyspark.sql import Window
         from pyspark.sql import functions
     except ImportError as exc:
         msg = (
@@ -586,16 +588,17 @@ def _sample_spark(
         target_rows = sample_size(total_rows, max_rows, sample_fraction)
         if target_rows >= total_rows:
             return frame
-        return frame.orderBy(functions.rand(seed)).limit(target_rows)
+        return frame.orderBy(*_spark_row_order(frame.columns, seed)).limit(target_rows)
 
-    escaped_target = target_col.replace("`", "")
+    stratum_col = _temporary_spark_column(frame.columns, "__fmlib_stratum__")
+    rank_col = _temporary_spark_column([*frame.columns, stratum_col], "__fmlib_rank__")
     with_stratum = frame.withColumn(
-        "__fmlib_stratum__",
-        functions.col(f"`{escaped_target}`").cast("string"),
+        stratum_col,
+        _quoted_col(target_col).cast("string"),
     )
     try:
-        counts = with_stratum.groupBy("__fmlib_stratum__").count().collect()
-        if any(row["__fmlib_stratum__"] is None for row in counts):
+        counts = with_stratum.groupBy(stratum_col).count().collect()
+        if any(row[stratum_col] is None for row in counts):
             msg = f"{method_name}: target column contains missing values."
             raise ExecutionError(msg)
         total_rows = sum(int(row["count"]) for row in counts)
@@ -607,16 +610,28 @@ def _sample_spark(
             )
             raise ExecutionError(msg)
         if target_rows >= total_rows:
-            return with_stratum.drop("__fmlib_stratum__")
+            return frame
 
-        fraction = target_rows / total_rows
-        fractions = {row["__fmlib_stratum__"]: fraction for row in counts}
-        sampled = with_stratum.sampleBy(
-            "__fmlib_stratum__",
-            fractions=fractions,
-            seed=seed,
-        ).drop("__fmlib_stratum__")
-        return sampled.limit(target_rows)
+        # Порядок collect не определён: фиксируем порядок классов до округления квот.
+        class_counts = pd.Series(
+            {row[stratum_col]: int(row["count"]) for row in counts},
+        ).sort_index()
+        sizes = _allocate_strata(class_counts, target_rows)
+        quotas = functions.create_map(
+            *[
+                item
+                for label, size in sizes.items()
+                for item in (functions.lit(label), functions.lit(int(size)))
+            ],
+        )
+        window = Window.partitionBy(stratum_col).orderBy(
+            *_spark_row_order(frame.columns, seed),
+        )
+        return (
+            with_stratum.withColumn(rank_col, functions.row_number().over(window))
+            .where(_quoted_col(rank_col) <= quotas[_quoted_col(stratum_col)])
+            .drop(stratum_col, rank_col)
+        )
     except ExecutionError:
         raise
     except Exception as exc:  # noqa: BLE001 - Spark/Py4J exception hierarchy
@@ -625,6 +640,36 @@ def _sample_spark(
             f"Root cause: {root_cause(exc)}."
         )
         raise ExecutionError(msg) from exc
+
+
+def _spark_row_order(columns: Sequence[str], seed: int) -> list[Any]:
+    """Задаёт порядок по seed и содержимому строки, разрешая коллизии хэша.
+
+    JSON сохраняет позиции пропусков и границы значений, поддерживает также
+    вложенные столбцы. Сама сериализованная строка служит вторичным ключом:
+    равные ключи означают одинаковое представление данных, а не только хэш.
+    """
+    from pyspark.sql import functions
+
+    payload = functions.to_json(
+        functions.struct(*[_quoted_col(column) for column in columns]),
+        options={
+            "ignoreNullFields": "false",
+            "timeZone": "UTC",
+            "timestampFormat": "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
+            "timestampNTZFormat": "yyyy-MM-dd'T'HH:mm:ss.SSSSSS",
+        },
+    )
+    return [functions.xxhash64(functions.lit(seed), payload), payload]
+
+
+def _temporary_spark_column(columns: Sequence[str], base: str) -> str:
+    """Выбирает служебное имя, не перезаписывающее входные столбцы Spark."""
+    occupied = {column.lower() for column in columns}
+    name = base
+    while name.lower() in occupied:
+        name += "_"
+    return name
 
 
 def _sample_pandas(
@@ -672,7 +717,7 @@ def _allocate_strata(counts: pd.Series, target_rows: int) -> pd.Series:
     remainder = target_rows - int(sizes.sum())
 
     if remainder > 0:
-        priorities = (ideal - np.floor(ideal)).sort_values(ascending=False)
+        priorities = (ideal - np.floor(ideal)).sort_values(ascending=False, kind="stable")
         while remainder:
             changed = False
             for class_value in priorities.index:
@@ -685,7 +730,7 @@ def _allocate_strata(counts: pd.Series, target_rows: int) -> pd.Series:
             if not changed:
                 break
     elif remainder < 0:
-        priorities = sizes.sort_values(ascending=False)
+        priorities = sizes.sort_values(ascending=False, kind="stable")
         while remainder:
             changed = False
             for class_value in priorities.index:
@@ -727,8 +772,8 @@ def _validate_spark_columns(
 
 
 def _quoted_col(name: str) -> Any:
-    """Создаёт ссылку на столбец Spark с поддержкой точек и пробелов."""
+    """Создаёт ссылку на столбец Spark с поддержкой точек, пробелов и обратных кавычек."""
     from pyspark.sql import functions as F  # noqa: N812
 
-    escaped = name.replace("`", "")
+    escaped = name.replace("`", "``")
     return F.col(f"`{escaped}`")
