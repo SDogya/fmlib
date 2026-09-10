@@ -729,7 +729,7 @@ class LightGbmSelector:
         lgbm_threshold: float,
         shap_threshold: float,
     ) -> dict[str, Any]:
-        """Нормализует важности и применяет пересечение по накопленному порогу из прототипа."""
+        """Нормализует важности и пересекает наборы, достигающие накопленного порога."""
         lgbm_selected, lgbm_norm, lgbm_cumsum = _cumulative_select(
             lgbm_importances,
             feature_cols,
@@ -855,9 +855,10 @@ def _cumulative_select(
 ) -> tuple[set[str], np.ndarray, np.ndarray]:
     """Нормализует вектор важности и сохраняет начальную часть по накопленной доле.
 
-    Признаки ранжируются по убыванию доли. Признак сохраняется, если
-    накопленная сумма ``<= threshold``. Признак, на котором порог превышается, исключается,
-    что соответствует прежнему правилу отсечения LightGBM.
+    Признаки ранжируются по убыванию доли. Сохраняется минимальный префикс,
+    накопленная сумма которого достигает ``threshold``, включая признак,
+    пересекающий порог. При положительной сумме важностей набор не пуст.
+    Равные важности сохраняют исходный порядок кандидатов.
     """
     total = float(np.sum(values))
     if not np.isfinite(total) or total <= 0.0:
@@ -872,9 +873,11 @@ def _cumulative_select(
     ranked["norm"] = ranked["importance"] / total
     ordered = ranked.sort_values("norm", ascending=False, kind="stable").copy()
     ordered["cumsum"] = ordered["norm"].cumsum()
-    selected = set(
-        ordered.loc[ordered["cumsum"] <= threshold, "feature"],
+    cutoff = min(
+        int(ordered["cumsum"].searchsorted(threshold, side="left")) + 1,
+        len(ordered),
     )
+    selected = set(ordered.iloc[:cutoff]["feature"])
     cumsum_by_feature = ordered.set_index("feature")["cumsum"]
     ranked["cumsum"] = ranked["feature"].map(cumsum_by_feature)
     return (

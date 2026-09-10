@@ -633,6 +633,60 @@ def test_preparation_rejects_unsupported_input_and_missing_target() -> None:
         )
 
 
+@pytest.mark.parametrize(
+    ("values", "threshold", "expected"),
+    [
+        ([90, 5, 5], 0.85, {"f0"}),
+        ([5, 90, 5], 0.85, {"f1"}),
+        ([1], 0.85, {"f0"}),
+        ([40, 30, 20, 10], 0.75, {"f0", "f1", "f2"}),
+        ([50, 25, 15, 10], 0.75, {"f0", "f1"}),
+        ([90, 5, 5], 1.0, {"f0", "f1", "f2"}),
+        ([1, 1, 1, 1], 0.5, {"f0", "f1"}),
+        ([0, 1, 0], 0.85, {"f1"}),
+        ([90, 5, 5], 0.01, {"f0"}),
+    ],
+)
+def test_cumulative_select_keeps_prefix_reaching_threshold(
+    values: list[float], threshold: float, expected: set[str],
+) -> None:
+    features = [f"f{index}" for index in range(len(values))]
+    selected, norm, cumulative = lightgbm_module._cumulative_select(
+        np.asarray(values, dtype=float), features, threshold,
+        empty_total_message="non-positive total",
+    )
+
+    assert selected == expected
+    np.testing.assert_allclose(norm, np.asarray(values) / sum(values))
+    order = np.argsort(-np.asarray(values), kind="stable")
+    np.testing.assert_allclose(cumulative[order], np.cumsum(norm[order]))
+
+
+@pytest.mark.parametrize("values", [[0, 0], [np.nan, 1], [np.inf, 1]])
+def test_cumulative_select_rejects_invalid_totals(values: list[float]) -> None:
+    with pytest.raises(ExecutionError, match="non-positive total"):
+        lightgbm_module._cumulative_select(
+            np.asarray(values), ["first", "second"], 0.85,
+            empty_total_message="non-positive total",
+        )
+
+
+@pytest.mark.parametrize(
+    ("split", "shap"),
+    [([90, 5, 5], [90, 5, 5]), ([90, 5, 5], [50, 30, 20]),
+     ([50, 30, 20], [90, 5, 5])],
+)
+def test_aggregate_importances_keeps_dominant_feature(
+    split: list[float], shap: list[float],
+) -> None:
+    details = LightGbmSelector._aggregate_importances(
+        ["first", "second", "third"], np.asarray(split), np.asarray(shap),
+        lgbm_threshold=0.85, shap_threshold=0.85,
+    )
+
+    assert details["selected_features"] == ["first"]
+
+
 def test_aggregate_importances_preserves_cumulative_intersection() -> None:
     details = LightGbmSelector._aggregate_importances(
         ["first", "second", "third", "fourth"],
@@ -642,15 +696,41 @@ def test_aggregate_importances_preserves_cumulative_intersection() -> None:
         shap_threshold=0.75,
     )
 
-    assert details["lgbm_selected"] == ["first", "second"]
+    assert details["lgbm_selected"] == ["first", "second", "third"]
     assert details["shap_selected"] == ["first", "second"]
     assert details["selected_features"] == ["first", "second"]
 
 
+def test_aggregate_importances_does_not_override_disjoint_sets() -> None:
+    details = LightGbmSelector._aggregate_importances(
+        ["first", "second"], np.array([90, 10]), np.array([10, 90]),
+        lgbm_threshold=0.85, shap_threshold=0.85,
+    )
+
+    assert details["lgbm_selected"] == ["first"]
+    assert details["shap_selected"] == ["second"]
+    assert details["selected_features"] == []
+
+
+def test_vote_importances_keeps_dominant_feature_in_every_set() -> None:
+    vote = LightGbmSelector._vote_importances(
+        ["first", "second", "third"],
+        [np.array([90, 5, 5]), np.array([95, 3, 2])],
+        [np.array([92, 4, 4]), np.array([91, 6, 3])],
+        lgbm_threshold=0.85, shap_threshold=0.85, min_set_share=1.0,
+    )
+
+    assert vote["selected_features"] == ["first"]
+    assert vote["set_presence"] == {"first": 1.0, "second": 0.0, "third": 0.0}
+    assert vote["fold_sets"] == {
+        "1": {"lgbm": ["first"], "shap": ["first"]},
+        "2": {"lgbm": ["first"], "shap": ["first"]},
+    }
+
+
 def test_vote_importances_requires_all_sets_when_share_is_one() -> None:
     features = ["first", "second", "third"]
-    # threshold 0.8 keeps the prefix whose cumsum is <= 0.8.
-    # [0.5, 0.3, 0.2] -> first+second; [0.6, 0.3, 0.1] -> first only.
+    # Порог 0.8: [0.5, 0.3, 0.2] -> first+second; [0.9, 0.05, 0.05] -> first.
     vote = LightGbmSelector._vote_importances(
         features,
         [
@@ -659,7 +739,7 @@ def test_vote_importances_requires_all_sets_when_share_is_one() -> None:
         ],
         [
             np.array([0.5, 0.3, 0.2]),
-            np.array([0.6, 0.3, 0.1]),
+            np.array([0.9, 0.05, 0.05]),
         ],
         lgbm_threshold=0.8,
         shap_threshold=0.8,
@@ -687,7 +767,7 @@ def test_vote_importances_keeps_features_that_hit_the_share() -> None:
         ],
         [
             np.array([0.5, 0.3, 0.2]),
-            np.array([0.6, 0.3, 0.1]),
+            np.array([0.9, 0.05, 0.05]),
         ],
         lgbm_threshold=0.8,
         shap_threshold=0.8,
@@ -1347,9 +1427,8 @@ _VOTE_CONTINUOUS = ("driver_a", "driver_b", "noise_0", "noise_1", "noise_2")
 def _vote_frame(n_rows: int = 240) -> pd.DataFrame:
     """DataFrame, в котором целевая переменная зависит от двух определяющих признаков и шума.
 
-    Сигнал намеренно распределён между двумя признаками: один доминирующий
-    признак сам по себе превысил бы накопленный порог и оставил бы
-    отбор пустым, что ничего не говорит о ``selection_mode``.
+    Сигнал распределён между двумя признаками, чтобы сравнить режимы отбора
+    на нескольких полезных кандидатах, а не только на одном доминирующем.
     """
     rng = np.random.default_rng(0)
     driver_a = rng.normal(0.0, 1.0, n_rows)
