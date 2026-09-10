@@ -21,6 +21,9 @@ lightgbm:
   seed: 42
   # Campaign передаёт один random_state всем fold, без seed + fold.
   shift_seed_per_fold: false
+  # Campaign ordinal-encodes categorical fields before fitting LightGBM.
+  categorical_handling:
+    mode: ordinal_campaign
   n_jobs: -1
 
   # Campaign обучает на всём подготовленном sample. При необходимости

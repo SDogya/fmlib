@@ -39,6 +39,11 @@ model:
     optuna_mode: global      # global — подбор один раз; per_fold — на каждом фолде
     n_jobs: -1
     seed: 17                 # иначе execution.seed
+    categorical_handling:
+      mode: native
+      # native | ordinal_campaign | max_cardinality | top_n |
+      # target_encoding | skip. max_cardinality/top_n require their N;
+      # target_encoding defaults to 5 OOF folds with smoothing=20.
     # true (дефолт): сид модели/Optuna/SHAP = seed + номер внешнего фолда.
     # false: на всех внешних фолдах используется один и тот же seed.
     shift_seed_per_fold: true

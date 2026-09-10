@@ -15,6 +15,16 @@ from fmlib.feature_selection.utils.model_param_validate import (
 
 PSI_MODES = frozenset({"month_over_month", "train_valid"})
 MODEL_METHODS = frozenset({"lasso", "random_forest", "catboost_rfe", "lightgbm"})
+CATEGORICAL_HANDLING_MODES = frozenset(
+    {
+        "ordinal_campaign",
+        "max_cardinality",
+        "top_n",
+        "target_encoding",
+        "skip",
+        "native",
+    },
+)
 PRECISE_METHODS = frozenset({"boruta_shap", "none"})
 BORUTA_MODEL_TYPES = frozenset({"lgbm", "rf"})
 BORUTA_SAMPLERS = frozenset({"TPE", "RANDOM", "GRID"})
@@ -348,6 +358,7 @@ def _validate_catboost_rfe_params(params: Mapping[str, Any]) -> None:
 
     _validate_optuna_params_block("model", params)
     _validate_optional_seed(params.get("seed"), "model.params.seed")
+    _validate_categorical_handling(params, "model.params")
 
     selection_params = params.get("feature_selection_params", {})
     if not isinstance(selection_params, Mapping):
@@ -386,6 +397,54 @@ def _validate_catboost_rfe_schedule(
     )
 
 
+def _validate_categorical_handling(params: Mapping[str, Any], section: str) -> None:
+    """Validate per-model categorical preprocessing settings."""
+    raw = params.get("categorical_handling")
+    if raw is None:
+        return
+    if not isinstance(raw, Mapping):
+        msg = f"{section}.categorical_handling must be a mapping."
+        raise ConfigError(msg)
+    mode = str(raw.get("mode", "native")).lower()
+    if mode not in CATEGORICAL_HANDLING_MODES:
+        msg = (
+            f"Unsupported {section}.categorical_handling.mode={mode!r}. "
+            f"Expected one of: {sorted(CATEGORICAL_HANDLING_MODES)}."
+        )
+        raise ConfigError(msg)
+    for name in ("max_cardinality", "top_n"):
+        value = raw.get(name)
+        if value is not None and (
+            isinstance(value, bool) or not isinstance(value, int) or value < 1
+        ):
+            msg = f"{section}.categorical_handling.{name} must be a positive integer."
+            raise ConfigError(msg)
+    if mode == "max_cardinality" and raw.get("max_cardinality") is None:
+        msg = f"{section}.categorical_handling.max_cardinality is required for mode='max_cardinality'."
+        raise ConfigError(msg)
+    if mode == "top_n" and raw.get("top_n") is None:
+        msg = f"{section}.categorical_handling.top_n is required for mode='top_n'."
+        raise ConfigError(msg)
+    te = raw.get("target_encoding", {})
+    if te is None:
+        te = {}
+    if not isinstance(te, Mapping):
+        msg = f"{section}.categorical_handling.target_encoding must be a mapping."
+        raise ConfigError(msg)
+    folds = te.get("folds", 5)
+    if isinstance(folds, bool) or not isinstance(folds, int) or folds < 2:
+        msg = f"{section}.categorical_handling.target_encoding.folds must be at least 2."
+        raise ConfigError(msg)
+    smoothing = te.get("smoothing", 20.0)
+    if (
+        isinstance(smoothing, bool)
+        or not isinstance(smoothing, (int, float))
+        or float(smoothing) < 0
+    ):
+        msg = f"{section}.categorical_handling.target_encoding.smoothing must be non-negative."
+        raise ConfigError(msg)
+
+
 def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
     """Validate method-specific LightGBM configuration."""
     parameters = params.get("parameters", {})
@@ -400,6 +459,7 @@ def _validate_lightgbm_params(params: Mapping[str, Any]) -> None:
     _require_positive_int(params.get("n_trials"), "model.params.n_trials")
     _validate_optuna_params_block("model", params)
     _validate_optional_seed(params.get("seed"), "model.params.seed")
+    _validate_categorical_handling(params, "model.params")
     shift_seed_per_fold = params.get("shift_seed_per_fold")
     if shift_seed_per_fold is not None:
         _require_bool("model.params.shift_seed_per_fold", shift_seed_per_fold)
@@ -494,6 +554,7 @@ def _validate_boruta_params(params: Mapping[str, Any]) -> None:
         raise ConfigError(msg)
 
     _validate_optional_seed(params.get("seed"), "precise.params.seed")
+    _validate_categorical_handling(params, "precise.params")
 
     for name in (
         "max_rows",
@@ -746,6 +807,9 @@ class ModelConfig:
               n_jobs, seed, shift_seed_per_fold, shap_max_rows, parameters).
               Optuna lives in
               ``params.optuna_params``. ``seed`` overrides ``execution.seed``.
+              ``params.categorical_handling`` selects native, Campaign-style
+              ordinal, cardinality-gated, top-N, target-encoded, or skipped
+              categorical candidates; omitted means ``native``.
             - ``"catboost_rfe"``: CatBoost recursive elimination on an
               out-of-time split, with optional Optuna tuning (params:
               eval_months, max_rows, sample_fraction, seed, parameters,

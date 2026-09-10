@@ -22,6 +22,8 @@ model:
     eval_months: 1
     max_rows: 500000
     sample_fraction: 0.1
+    categorical_handling:
+      mode: native
 
     # Скаляр - используется как есть, мапа - вся сетка пользователя.
     # Чтобы пропустить тюнинг, поставьте optuna_params.enabled: false.

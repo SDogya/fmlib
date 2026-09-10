@@ -19,7 +19,12 @@ from fmlib.feature_selection.utils.default_model_param_spaces import (
     CATBOOST_RFE_SEARCH_SPACE,
 )
 from fmlib.feature_selection.utils.lama_boost_defaults import apply_boost_heuristics
-from fmlib.feature_selection.utils.local_data import prepare_mixed_frame, root_cause
+from fmlib.feature_selection.utils.categorical import (
+    encode_categorical_frame,
+    prepare_categorical_sample,
+    resolve_categorical_handling,
+)
+from fmlib.feature_selection.utils.local_data import root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
     resolve_optuna_settings,
@@ -154,26 +159,14 @@ class CatBoostRfeSelector:
             raise ExecutionError(msg)
 
         options = self._resolve_options(context)
+        handling = options["categorical_handling"]
         target_count = options["num_features_to_select"]
-        if len(features) <= target_count:
-            logger.info(
-                "%s: %d candidates already fit num_features_to_select=%d, stage is a no-op",
-                self.method_name,
-                len(features),
-                target_count,
-            )
-            context.scores[self.method_name] = {
-                "skipped": True,
-                "reason": "candidates_below_target",
-                "candidate_count": len(features),
-                "num_features_to_select": target_count,
-            }
-            return []
-
         categorical = [feature for feature in features if feature in set(context.schema.categorical)]
-
+        if handling.mode == "skip":
+            features = [feature for feature in features if feature not in set(categorical)]
+            categorical = []
         try:
-            local = prepare_mixed_frame(
+            sample = prepare_categorical_sample(
                 train,
                 target_col=target_col,
                 feature_cols=features,
@@ -183,19 +176,70 @@ class CatBoostRfeSelector:
                 sample_fraction=options["sample_fraction"],
                 seed=options["seed"],
                 method_name=self.method_name,
+                handling=handling,
                 context=context,
             )
+            if len(sample.feature_cols) <= target_count:
+                context.scores[self.method_name] = {
+                    "skipped": True,
+                    "reason": "candidates_below_target",
+                    "candidate_count": len(sample.feature_cols),
+                    "num_features_to_select": target_count,
+                    "categorical_handling": {
+                        "mode": handling.mode,
+                        "cardinality": sample.cardinality,
+                        "dropped_cardinality": sample.dropped_cardinality,
+                    },
+                }
+                return [
+                    FeatureDecision(
+                        feature=feature,
+                        stage=self.stage_name,
+                        method=self.method_name,
+                        reason="dropped_categorical_cardinality",
+                        value=float(cardinality),
+                        threshold=float(handling.max_cardinality or 0),
+                        keep=False,
+                    )
+                    for feature, cardinality in sample.dropped_cardinality.items()
+                ]
+            te_task = resolve_task(
+                context.schema.task_type,
+                sample.frame[target_col].to_numpy(),
+                method_name=self.method_name,
+            )
+            fit_raw, _eval_raw, _periods = split_out_of_time(
+                sample.frame,
+                time_col=time_col,
+                target_col=target_col,
+                eval_months=options["eval_months"],
+                method_name=self.method_name,
+                task_type=context.schema.task_type,
+            )
+            encoded = encode_categorical_frame(
+                sample,
+                target=te_task.encoded_target,
+                task=te_task,
+                handling=handling,
+                seed=options["seed"],
+                train_indices=fit_raw.index.to_numpy(dtype="int64"),
+            )
+            local = encoded.features.copy()
+            for name in encoded.categorical_model_features:
+                local[name] = local[name].astype(str)
+            local[target_col] = sample.frame[target_col].to_numpy()
+            local[time_col] = sample.frame[time_col].to_numpy()
             details = run_catboost_rfe(
                 local,
-                feature_cols=features,
-                categorical_cols=categorical,
+                feature_cols=encoded.model_features,
+                categorical_cols=encoded.categorical_model_features,
                 target_col=target_col,
                 time_col=time_col,
                 eval_months=options["eval_months"],
                 parameters=options["parameters"],
                 optuna_params=options["optuna_params"],
                 feature_selection_params=options["feature_selection_params"],
-                num_features_to_select=target_count,
+                num_features_to_select=min(target_count, len(encoded.model_features)),
                 seed=options["seed"],
                 method_name=self.method_name,
                 task_type=context.schema.task_type,
@@ -206,10 +250,34 @@ class CatBoostRfeSelector:
             msg = f"catboost_rfe: feature selection failed. Root cause: {root_cause(exc)}."
             raise ExecutionError(msg) from exc
 
-        selected = set(details["selected_features"])
-        elimination_rank = {name: index + 1 for index, name in enumerate(details["eliminated_features"])}
+        source_by_model = encoded.source_by_model_feature
+        # Multiclass TE expands one source into K model columns. CatBoost's
+        # built-in RFE ranks columns, while the public contract counts source
+        # features. Fill from the reverse elimination order so the requested
+        # source-feature budget is deterministic and never keeps a partial
+        # technical name in the result.
+        ranked_sources = _unique_sources(
+            [*details["selected_features"], *reversed(details["eliminated_features"])],
+            source_by_model,
+        )
+        selected = set(ranked_sources[:target_count])
+        elimination_rank = {
+            source_by_model.get(name, name): index + 1
+            for index, name in enumerate(details["eliminated_features"])
+        }
 
         decisions = [
+            FeatureDecision(
+                feature=feature,
+                stage=self.stage_name,
+                method=self.method_name,
+                reason="dropped_categorical_cardinality",
+                value=float(cardinality),
+                threshold=float(handling.max_cardinality or 0),
+                keep=False,
+            )
+            for feature, cardinality in sample.dropped_cardinality.items()
+        ] + [
             FeatureDecision(
                 feature=feature,
                 stage=self.stage_name,
@@ -223,8 +291,8 @@ class CatBoostRfeSelector:
         ]
 
         context.scores[self.method_name] = {
-            "selected_features": list(details["selected_features"]),
-            "elimination_order": list(details["eliminated_features"]),
+            "selected_features": [name for name in sample.feature_cols if name in selected],
+            "elimination_order": _unique_sources(details["eliminated_features"], source_by_model),
             "best_params": details["best_params"],
             "best_metric": details["best_metric"],
             "optuna_trials": details["optuna_trials"],
@@ -238,12 +306,17 @@ class CatBoostRfeSelector:
             "loss_graph": details["loss_graph"],
             "steps": details["steps"],
             "elimination_mode": details["elimination_mode"],
-            "n_candidates": len(features),
+            "n_candidates": len(sample.feature_cols),
             "eval_strategy": "out_of_time",
             "eval_periods": details["eval_periods"],
             "fit_rows": details["fit_rows"],
             "eval_rows": details["eval_rows"],
             "categorical_evaluated": categorical,
+            "categorical_handling": {
+                "mode": handling.mode,
+                "cardinality": sample.cardinality,
+                "dropped_cardinality": sample.dropped_cardinality,
+            },
         }
         if details.get("feature_drop_per_step") is not None:
             context.scores[self.method_name]["feature_drop_per_step"] = details[
@@ -256,7 +329,6 @@ class CatBoostRfeSelector:
             len(selected),
         )
         return decisions
-
     def _resolve_options(self: CatBoostRfeSelector, context: StageContext) -> dict[str, Any]:
         """Resolve and validate method options.
 
@@ -322,6 +394,10 @@ class CatBoostRfeSelector:
                 "optuna_params": dict(optuna_params),
                 "feature_selection_params": dict(feature_selection_params),
                 "seed": resolve_step_seed(params, context),
+                "categorical_handling": resolve_categorical_handling(
+                    params,
+                    method_name=self.method_name,
+                ),
             }
             if options["sample_fraction"] is not None:
                 options["sample_fraction"] = float(options["sample_fraction"])
@@ -862,3 +938,18 @@ def _stitch_constant_drop_loss(
         "loss_values": loss_values,
         "main_indices": list(range(len(loss_values))),
     }
+
+
+def _unique_sources(
+    model_features: Sequence[str],
+    source_by_model: Mapping[str, str],
+) -> list[str]:
+    """Map model columns to source names while preserving ranking order."""
+    result: list[str] = []
+    seen: set[str] = set()
+    for name in model_features:
+        source = source_by_model.get(name, name)
+        if source not in seen:
+            result.append(source)
+            seen.add(source)
+    return result

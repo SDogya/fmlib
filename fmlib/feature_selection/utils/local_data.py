@@ -243,7 +243,7 @@ def prepare_mixed_frame(
         ]
         if conversion_failures:
             msg = (
-                f"{method_name}: columns declared as continuous could not be "
+                f"{method_name}: FeatureSchema.continuous columns could not be "
                 f"converted to numeric: {conversion_failures}. Declare them as "
                 "categorical or fix the source types."
             )

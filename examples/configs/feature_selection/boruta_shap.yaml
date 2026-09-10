@@ -2,7 +2,7 @@
 #
 # Сравнивает признак с его перемешанной копией. Стоимость растёт от СТРОК
 # (SHAP на каждой из boruta_trials), не от числа колонок — режьте max_rows.
-# Оценивает только continuous; категориальные проходят без решения.
+# По умолчанию оценивает continuous и categorical нативно.
 # model_type: lgbm | rf. task_type = schema.task_type (все три задачи).
 # Обычно ставят после статистик или lightgbm; один этот шаг — для отладки.
 
@@ -13,6 +13,8 @@ boruta_shap:
   model_type: lgbm
   n_jobs: -1
   seed: 17
+  categorical_handling:
+    mode: native
   max_rows: 250000
   sample_fraction: null
   boruta_trials: 50

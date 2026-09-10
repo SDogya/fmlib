@@ -146,13 +146,15 @@ boruta_shap:
   model_type: lgbm           # lgbm | rf
   n_jobs: -1
   seed: 17                   # иначе execution.seed
+  categorical_handling:
+    mode: native
   # Стоимость определяется СТРОКАМИ: на каждой итерации считается SHAP по всей
   # выборке. Сокращение числа признаков стадию почти не ускоряет — режьте это.
   max_rows: 250000
   sample_fraction: null
   boruta_trials: 50
   tentative_fix_method: rough
-  # Оценивает только continuous; категориальные проходят без решения.
+  # native (дефолт) оценивает и continuous, и categorical.
   # Сколько признаков реально оценено — в scores["boruta_shap#<шаг>"].
 
   parameters:

@@ -134,7 +134,7 @@ _TINY_FIXED_PARAMS = {
 
 
 def test_selector_is_lightgbm() -> None:
-    context = _context(_frame())
+    context = _context(_frame(), params={"categorical_handling": {"mode": "skip"}})
 
     selector = LightGbmSelector(context.config.model)
 
@@ -145,7 +145,7 @@ def test_selector_is_lightgbm() -> None:
 def test_select_scopes_training_to_continuous_candidates_and_passes_category(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    context = _context(_frame())
+    context = _context(_frame(), params={"categorical_handling": {"mode": "skip"}})
     selector = LightGbmSelector(context.config.model)
     captured: dict[str, Any] = {}
     _mock_backends(selector, monkeypatch)
@@ -178,7 +178,7 @@ def test_select_scopes_training_to_continuous_candidates_and_passes_category(
 def test_select_stores_flat_json_compatible_scores(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    context = _context(_frame())
+    context = _context(_frame(), params={"categorical_handling": {"mode": "skip"}})
     selector = LightGbmSelector(context.config.model)
     _mock_backends(selector, monkeypatch)
     monkeypatch.setattr(
@@ -214,6 +214,7 @@ def test_only_categorical_candidates_pass_through_without_dependencies() -> None
         frame,
         categorical=("category",),
         continuous=(),
+        params={"categorical_handling": {"mode": "skip"}},
     )
 
     decisions = LightGbmSelector(context.config.model).select(
@@ -250,7 +251,12 @@ def test_regression_and_classification_run_on_pandas() -> None:
             {
                 "model": {
                     "method": "lightgbm",
-                    "params": {"n_trials": 1, "n_folds": 2, **selector_params},
+                    "params": {
+                        "n_trials": 1,
+                        "n_folds": 2,
+                        "categorical_handling": {"mode": "skip"},
+                        **selector_params,
+                    },
                 },
                 "execution": {"seed": 17, "task_type": task_type, "max_local_rows": 1_000},
             },

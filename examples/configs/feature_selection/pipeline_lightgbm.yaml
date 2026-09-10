@@ -6,7 +6,7 @@
 # order оба флага всё равно игнорируются.
 #
 # Отличия от pipeline_catboost_rfe.yaml:
-#   • lightgbm оценивает только continuous, категориальные проходят стадию
+#   • lightgbm по умолчанию оценивает continuous и categorical нативно
 #     насквозь без решения (catboost_rfe — единственный, кто их оценивает);
 #   • отбор идёт по кумулятивным порогам важности, а не до фиксированного
 #     числа признаков: selection.max_features этим методом НЕ читается;
@@ -59,6 +59,8 @@ lightgbm:
   optuna_mode: global        # global — подбор один раз; per_fold — на каждом фолде
   n_jobs: -1
   seed: 17                   # иначе execution.seed
+  categorical_handling:
+    mode: native
   shap_max_rows: 5000        # строк на расчёт SHAP внутри фолда
 
   # aggregated — среднее по фолдам, два кумулятива, пересечение.
@@ -114,6 +116,8 @@ boruta_shap:
   model_type: lgbm
   n_jobs: -1
   seed: 17                   # иначе execution.seed
+  categorical_handling:
+    mode: native
   max_rows: 250000           # стоимость определяется строками: SHAP по каждой
   sample_fraction: null
   boruta_trials: 50

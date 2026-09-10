@@ -27,7 +27,13 @@ from fmlib.feature_selection.utils.lama_boost_defaults import (
     fit_lgbm_with_early_stopping,
     split_lgbm_early_stopping,
 )
-from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
+from fmlib.feature_selection.utils.categorical import (
+    CategoricalHandling,
+    encode_categorical_frame,
+    prepare_categorical_sample,
+    resolve_categorical_handling,
+)
+from fmlib.feature_selection.utils.local_data import root_cause
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
     resolve_optuna_settings,
@@ -69,7 +75,7 @@ DEFAULT_SEARCH_SPACE: dict[str, dict[str, Any]] = LIGHTGBM_SEARCH_SPACE
 
 
 class LightGbmSelector:
-    """Select continuous features using LightGBM and SHAP importances.
+    """Select continuous and configured categorical features using LightGBM.
 
     The model algorithm follows ``shap_lgbm_spark.py``: tune LightGBM on a
     hold-out split (stratified unless the task is regression), execute outer folds
@@ -84,8 +90,8 @@ class LightGbmSelector:
 
     Spark inputs are stratified before local materialization. Already-local
     pandas inputs use equivalent bounded stratified sampling. Only current
-    candidates declared in ``FeatureSchema.continuous`` are evaluated;
-    categorical candidates pass through the model stage unchanged. Fold
+    candidates declared in ``FeatureSchema.continuous`` and eligible
+    ``FeatureSchema.categorical`` columns are evaluated. Fold
     training never ships code or packages to Spark executors.
 
     The Optuna search space defaults to ``DEFAULT_SEARCH_SPACE`` when
@@ -143,11 +149,17 @@ class LightGbmSelector:
             raise ExecutionError(msg)
 
         continuous = set(context.schema.continuous)
-        feature_cols = [feature for feature in candidates if feature in continuous]
+        categorical = set(context.schema.categorical)
+        options = self._resolve_options(context)
+        handling = options["categorical_handling"]
+        feature_cols = [
+            feature
+            for feature in candidates
+            if feature in continuous or (feature in categorical and handling.mode != "skip")
+        ]
         if not feature_cols:
             return []
 
-        options = self._resolve_options(context)
         self._load_backends(require_optuna=bool(options["search_space"]))
 
         try:
@@ -175,6 +187,8 @@ class LightGbmSelector:
                 fixed_params=options["fixed_params"],
                 return_importances=True,
                 context=context,
+                categorical_cols=[feature for feature in feature_cols if feature in categorical],
+                categorical_handling=handling,
             )
         except (BackendError, ExecutionError):
             raise
@@ -196,8 +210,20 @@ class LightGbmSelector:
             for feature, share in dict(details.get("set_presence") or {}).items()
         }
 
-        decisions = []
-        for feature in feature_cols:
+        evaluated_features = details.get("evaluated_features", feature_cols)
+        decisions = [
+            FeatureDecision(
+                feature=feature,
+                stage=self.stage_name,
+                method=self.method_name,
+                reason="dropped_categorical_cardinality",
+                value=float(cardinality),
+                threshold=float(handling.max_cardinality or 0),
+                keep=False,
+            )
+            for feature, cardinality in details.get("dropped_cardinality", {}).items()
+        ]
+        for feature in evaluated_features:
             if selection_mode == "vote":
                 value = float(set_presence[feature])
                 threshold = min_set_share
@@ -248,6 +274,12 @@ class LightGbmSelector:
             "fold_execution": "driver",
             "global_best_params": details["global_best_params"],
             "fold_best_params": details["fold_best_params"],
+            "categorical_handling": {
+                "mode": handling.mode,
+                "cardinality": details.get("categorical_cardinality", {}),
+                "dropped_cardinality": details.get("dropped_cardinality", {}),
+                "categorical_evaluated": details.get("categorical_evaluated", []),
+            },
         }
         if "fold_seeds" in details:
             scores["fold_seeds"] = details["fold_seeds"]
@@ -340,6 +372,10 @@ class LightGbmSelector:
                 "shap_max_rows": int(params.get("shap_max_rows", 5_000)),
                 "seed": resolve_step_seed(params, context),
                 "shift_seed_per_fold": params.get("shift_seed_per_fold", True),
+                "categorical_handling": resolve_categorical_handling(
+                    params,
+                    method_name=self.method_name,
+                ),
             }
             fixed, search_space = resolve_tuning_space(
                 params.get("parameters", {}),
@@ -410,22 +446,56 @@ class LightGbmSelector:
         sample_fraction: float | None,
         seed: int,
         context: Any | None = None,
-    ) -> tuple[np.ndarray, np.ndarray, list[str]]:
-        """Build the bounded local numeric matrix used by the draft algorithm."""
-        local = prepare_numeric_frame(
+        categorical_cols: Sequence[str] = (),
+        categorical_handling: CategoricalHandling | None = None,
+        return_details: bool = False,
+    ) -> Any:
+        """Build a bounded local mixed matrix and preserve source names."""
+        handling = categorical_handling or CategoricalHandling()
+        sample = prepare_categorical_sample(
             df,
             target_col=target_col,
             feature_cols=feature_cols,
+            categorical_cols=categorical_cols,
             max_rows=max_rows,
             sample_fraction=sample_fraction,
             seed=seed,
             method_name=self.method_name,
+            handling=handling,
             context=context,
         )
+        raw_target = sample.frame[target_col].to_numpy()
+        task_type = (
+            context.schema.task_type
+            if context is not None
+            else "binary_classification"
+        )
+        task = resolve_task(task_type, raw_target, method_name=self.method_name)
+        encoded = encode_categorical_frame(
+            sample,
+            target=task.encoded_target,
+            task=task,
+            handling=handling,
+            seed=seed,
+        )
+        evaluated = [
+            name
+            for name in sample.feature_cols
+            if name in set(encoded.source_by_model_feature.values())
+        ]
+        details = {
+            "task": task,
+            "sample": sample,
+            "encoded": encoded,
+        }
+        if return_details:
+            return encoded.features, task.encoded_target, evaluated, details
+        # Keep this private helper's historical numeric return contract for
+        # direct callers and existing downstream tests.
         return (
-            local.loc[:, feature_cols].to_numpy(dtype=float),
-            local[target_col].to_numpy(),
-            list(feature_cols),
+            encoded.features.to_numpy(dtype=float),
+            task.encoded_target,
+            evaluated,
         )
 
     def _select_robust_features(
@@ -454,6 +524,8 @@ class LightGbmSelector:
         min_set_share: float = 1.0,
         return_importances: bool = False,
         context: Any | None = None,
+        categorical_cols: Sequence[str] = (),
+        categorical_handling: CategoricalHandling | None = None,
     ) -> list[str] | dict[str, Any]:
         """Tune parameters and execute every outer fold on the driver.
 
@@ -462,7 +534,7 @@ class LightGbmSelector:
         sampling. When enabled, the one-based outer-fold index is added to
         ``seed``; otherwise every outer fold receives the same seed.
         """
-        feature_matrix, target, evaluated = self._extract_and_prep_data(
+        feature_matrix, target, evaluated, categorical_details = self._extract_and_prep_data(
             df,
             target_col,
             feature_cols,
@@ -470,14 +542,38 @@ class LightGbmSelector:
             sample_fraction,
             seed,
             context,
+            categorical_cols,
+            categorical_handling,
+            True,
         )
-        task_type = (
-            context.schema.task_type
-            if context is not None
-            else "binary_classification"
-        )
-        task = resolve_task(task_type, target, method_name="lightgbm")
-        target = task.encoded_target
+        task = categorical_details["task"]
+        sample = categorical_details["sample"]
+        if not evaluated:
+            empty = pd.DataFrame(
+                columns=[
+                    "feature",
+                    "lgbm_imp",
+                    "shap_imp",
+                    "lgbm_norm",
+                    "shap_norm",
+                    "lgbm_cumsum",
+                    "shap_cumsum",
+                ],
+            )
+            return {
+                "selected_features": [],
+                "importances_df": empty,
+                "global_best_params": None,
+                "fold_best_params": {},
+                "fold_seeds": {},
+                "dropped_cardinality": sample.dropped_cardinality,
+                "categorical_cardinality": sample.cardinality,
+                "categorical_evaluated": [],
+                "evaluated_features": [],
+                "n_sets": 0,
+                "set_presence": {},
+                "fold_sets": {},
+            }
         if task.is_regression:
             if len(target) < n_folds:
                 msg = (
@@ -502,8 +598,17 @@ class LightGbmSelector:
         )
         if optuna_mode == "global":
             if effective_space:
+                tune_train, tune_valid = _make_tuning_indices(target, task, seed)
+                tune_encoded = encode_categorical_frame(
+                    categorical_details["sample"],
+                    target=target,
+                    task=task,
+                    handling=categorical_handling or CategoricalHandling(),
+                    seed=seed,
+                    train_indices=tune_train,
+                )
                 global_best_params = tune_parameters(
-                    feature_matrix,
+                    tune_encoded.features,
                     target,
                     n_trials=n_trials,
                     seed=seed,
@@ -514,6 +619,8 @@ class LightGbmSelector:
                     sampler=sampler,
                     timeout=timeout,
                     task=task,
+                    train_indices=tune_train,
+                    valid_indices=tune_valid,
                 )
             else:
                 global_best_params = _finalize_parameters(
@@ -533,16 +640,28 @@ class LightGbmSelector:
         fold_shap: list[np.ndarray] = []
         fold_best_params: dict[str, dict[str, Any]] = {}
         fold_seeds: dict[str, int] = {}
+        handling = categorical_handling or CategoricalHandling()
         for fold_index, (_, valid_indices) in enumerate(
             folds.split(feature_matrix, target),
             start=1,
         ):
             fold_seed = seed + fold_index if shift_seed_per_fold else seed
+            valid_indices = np.asarray(valid_indices, dtype=np.int64)
+            train_mask = np.ones(len(target), dtype=bool)
+            train_mask[valid_indices] = False
+            fold_encoded = encode_categorical_frame(
+                sample,
+                target=target,
+                task=task,
+                handling=handling,
+                seed=fold_seed,
+                train_indices=np.flatnonzero(train_mask),
+            )
             lgbm_values, shap_values, best_params = self._run_fold(
-                feature_matrix,
+                fold_encoded.features,
                 target,
                 fold_index=fold_index,
-                valid_indices=np.asarray(valid_indices, dtype=np.int64),
+                valid_indices=valid_indices,
                 seed=fold_seed,
                 optuna_mode=optuna_mode,
                 n_trials=n_trials,
@@ -556,8 +675,22 @@ class LightGbmSelector:
                 fixed_params=fixed_params,
                 task=task,
             )
-            fold_lgbm.append(lgbm_values)
-            fold_shap.append(shap_values)
+            fold_lgbm.append(
+                _aggregate_source_importance(
+                    lgbm_values,
+                    fold_encoded.model_features,
+                    fold_encoded.source_by_model_feature,
+                    evaluated,
+                ),
+            )
+            fold_shap.append(
+                _aggregate_source_importance(
+                    shap_values,
+                    fold_encoded.model_features,
+                    fold_encoded.source_by_model_feature,
+                    evaluated,
+                ),
+            )
             fold_best_params[str(fold_index)] = dict(best_params)
             fold_seeds[str(fold_index)] = fold_seed
 
@@ -601,6 +734,10 @@ class LightGbmSelector:
         )
         details["fold_best_params"] = fold_best_params
         details["fold_seeds"] = fold_seeds
+        details["dropped_cardinality"] = sample.dropped_cardinality
+        details["categorical_cardinality"] = sample.cardinality
+        details["categorical_evaluated"] = list(sample.categorical_cols)
+        details["evaluated_features"] = list(evaluated)
         return details if return_importances else details["selected_features"]
 
     @staticmethod
@@ -664,9 +801,9 @@ class LightGbmSelector:
         train_mask = np.ones(row_count, dtype=bool)
         train_mask[valid_indices] = False
         train_indices = np.flatnonzero(train_mask)
-        train_matrix = feature_matrix[train_indices]
+        train_matrix = _take_rows(feature_matrix, train_indices)
         train_target = target[train_indices]
-        valid_matrix = feature_matrix[valid_indices]
+        valid_matrix = _take_rows(feature_matrix, valid_indices)
         valid_target = target[valid_indices]
 
         if optuna_mode == "per_fold":
@@ -731,7 +868,7 @@ class LightGbmSelector:
                     sample_size,
                     replace=False,
                 )
-                shap_sample = valid_matrix[sample_indices]
+                shap_sample = _take_rows(valid_matrix, sample_indices)
             shap_values = shap.TreeExplainer(model).shap_values(shap_sample)
             shap_importances = shap_mean_abs(resolved, shap_values)
         except Exception as exc:  # noqa: BLE001 - model/SHAP failures
@@ -739,6 +876,28 @@ class LightGbmSelector:
             raise ExecutionError(msg) from exc
 
         return lgbm_importances, shap_importances, dict(best_params)
+
+
+def _take_rows(matrix: Any, indices: np.ndarray) -> Any:
+    """Index numpy matrices and pandas frames without losing category dtype."""
+    if isinstance(matrix, pd.DataFrame):
+        return matrix.iloc[indices]
+    return matrix[indices]
+
+
+def _aggregate_source_importance(
+    values: np.ndarray,
+    model_features: Sequence[str],
+    source_by_model_feature: Mapping[str, str],
+    source_features: Sequence[str],
+) -> np.ndarray:
+    """Sum temporary encoded-column importances by source feature name."""
+    totals = {name: 0.0 for name in source_features}
+    for name, value in zip(model_features, values):
+        source = source_by_model_feature.get(name)
+        if source in totals:
+            totals[source] += float(value)
+    return np.asarray([totals[name] for name in source_features], dtype=float)
 
     @staticmethod
     def _aggregate_importances(
@@ -865,6 +1024,89 @@ class LightGbmSelector:
         }
 
 
+def _aggregate_importances(
+    feature_cols: list[str],
+    lgbm_importances: np.ndarray,
+    shap_importances: np.ndarray,
+    lgbm_threshold: float,
+    shap_threshold: float,
+) -> dict[str, Any]:
+    """Normalize source-level importances and intersect their cutoffs."""
+    lgbm_selected, lgbm_norm, lgbm_cumsum = _cumulative_select(
+        lgbm_importances,
+        feature_cols,
+        lgbm_threshold,
+        empty_total_message="lightgbm: split importances have a non-positive total.",
+    )
+    shap_selected, shap_norm, shap_cumsum = _cumulative_select(
+        shap_importances,
+        feature_cols,
+        shap_threshold,
+        empty_total_message="lightgbm: SHAP importances have a non-positive total.",
+    )
+    importances = pd.DataFrame(
+        {
+            "feature": feature_cols,
+            "lgbm_imp": lgbm_importances,
+            "shap_imp": shap_importances,
+            "lgbm_norm": lgbm_norm,
+            "shap_norm": shap_norm,
+            "lgbm_cumsum": lgbm_cumsum,
+            "shap_cumsum": shap_cumsum,
+        }
+    )
+    return {
+        "selected_features": [name for name in feature_cols if name in lgbm_selected and name in shap_selected],
+        "lgbm_selected": [name for name in feature_cols if name in lgbm_selected],
+        "shap_selected": [name for name in feature_cols if name in shap_selected],
+        "lgbm_dropped": [name for name in feature_cols if name not in lgbm_selected],
+        "shap_dropped": [name for name in feature_cols if name not in shap_selected],
+        "importances_df": importances,
+    }
+
+
+def _vote_importances(
+    feature_cols: list[str],
+    fold_lgbm: Sequence[np.ndarray],
+    fold_shap: Sequence[np.ndarray],
+    lgbm_threshold: float,
+    shap_threshold: float,
+    min_set_share: float,
+) -> dict[str, Any]:
+    """Cut per-fold source importances and keep features by set presence."""
+    if len(fold_lgbm) != len(fold_shap) or not fold_lgbm:
+        msg = "lightgbm: vote selection requires matching non-empty fold results."
+        raise ExecutionError(msg)
+    counts = {name: 0 for name in feature_cols}
+    fold_sets: dict[str, dict[str, list[str]]] = {}
+    for index, (lgbm_values, shap_values) in enumerate(zip(fold_lgbm, fold_shap), start=1):
+        lgbm_selected, _, _ = _cumulative_select(
+            np.asarray(lgbm_values, dtype=float), feature_cols, lgbm_threshold,
+            empty_total_message="lightgbm: split importances have a non-positive total.",
+        )
+        shap_selected, _, _ = _cumulative_select(
+            np.asarray(shap_values, dtype=float), feature_cols, shap_threshold,
+            empty_total_message="lightgbm: SHAP importances have a non-positive total.",
+        )
+        lgbm_kept = [name for name in feature_cols if name in lgbm_selected]
+        shap_kept = [name for name in feature_cols if name in shap_selected]
+        fold_sets[str(index)] = {"lgbm": lgbm_kept, "shap": shap_kept}
+        for name in [*lgbm_kept, *shap_kept]:
+            counts[name] += 1
+    n_sets = 2 * len(fold_lgbm)
+    presence = {name: counts[name] / n_sets for name in feature_cols}
+    return {
+        "selected_features": [name for name in feature_cols if presence[name] >= min_set_share],
+        "set_presence": presence,
+        "fold_sets": fold_sets,
+        "n_sets": n_sets,
+    }
+
+
+LightGbmSelector._aggregate_importances = staticmethod(_aggregate_importances)
+LightGbmSelector._vote_importances = staticmethod(_vote_importances)
+
+
 def _cumulative_select(
     values: np.ndarray,
     feature_cols: list[str],
@@ -939,11 +1181,12 @@ def tune_parameters(
     sampler: str = "TPE",
     timeout: int | None = None,
     task: TaskRuntime | None = None,
+    train_indices: np.ndarray | None = None,
+    valid_indices: np.ndarray | None = None,
 ) -> dict[str, Any]:
     """Tune one LightGBM parameter set on an 80/20 hold-out."""
     try:
         import optuna
-        from sklearn.model_selection import train_test_split
     except ImportError as exc:
         msg = (
             "lightgbm: LightGBM, Optuna, and scikit-learn must be installed "
@@ -956,14 +1199,12 @@ def tune_parameters(
         if task is not None
         else resolve_task("binary_classification", target, method_name="lightgbm")
     )
-    split_kwargs: dict[str, Any] = {"test_size": 0.2, "random_state": seed}
-    if resolved.stratify:
-        split_kwargs["stratify"] = target
-    train_matrix, valid_matrix, train_target, valid_target = train_test_split(
-        feature_matrix,
-        target,
-        **split_kwargs,
-    )
+    if train_indices is None or valid_indices is None:
+        train_indices, valid_indices = _make_tuning_indices(target, resolved, seed)
+    train_matrix = _take_rows(feature_matrix, np.asarray(train_indices, dtype=np.int64))
+    valid_matrix = _take_rows(feature_matrix, np.asarray(valid_indices, dtype=np.int64))
+    train_target = target[np.asarray(train_indices, dtype=np.int64)]
+    valid_target = target[np.asarray(valid_indices, dtype=np.int64)]
     space = DEFAULT_SEARCH_SPACE if search_space is None else search_space
     study = optuna.create_study(
         direction=optuna_direction(resolved),
@@ -1016,6 +1257,25 @@ def tune_parameters(
         n_jobs=n_jobs,
         task=resolved,
     )
+
+
+def _make_tuning_indices(
+    target: np.ndarray,
+    task: TaskRuntime,
+    seed: int,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Make the deterministic 80/20 Optuna split without transforming data."""
+    try:
+        from sklearn.model_selection import train_test_split
+    except ImportError as exc:
+        msg = "lightgbm: scikit-learn is required for Optuna tuning."
+        raise BackendError(msg) from exc
+    indices = np.arange(len(target), dtype=np.int64)
+    kwargs: dict[str, Any] = {"test_size": 0.2, "random_state": seed}
+    if task.stratify:
+        kwargs["stratify"] = target
+    train, valid = train_test_split(indices, **kwargs)
+    return np.asarray(train, dtype=np.int64), np.asarray(valid, dtype=np.int64)
 
 
 def _lightgbm_library_seeds(seed: int) -> dict[str, Any]:

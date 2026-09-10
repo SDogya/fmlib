@@ -4,7 +4,7 @@
 # Признак остаётся, если попал в долю наборов >= min_set_share.
 # min_set_share: 1.0 — должен быть во всех наборах (алгебра как у campaign).
 #
-# Отбор только continuous; категориальные проходят без решения.
+# Отбор continuous и categorical; categorical_handling управляет режимом.
 # execution.task_type должен совпасть со schema.task_type.
 
 order:
@@ -25,6 +25,8 @@ lightgbm:
   optuna_mode: global
   n_jobs: -1
   seed: 17
+  categorical_handling:
+    mode: native
   shap_max_rows: 5000
   selection_mode: vote
   min_set_share: 1.0

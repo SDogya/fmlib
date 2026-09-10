@@ -25,7 +25,12 @@ from fmlib.feature_selection.utils.lama_boost_defaults import (
     fit_lgbm_with_early_stopping,
     split_lgbm_early_stopping,
 )
-from fmlib.feature_selection.utils.local_data import prepare_numeric_frame, root_cause
+from fmlib.feature_selection.utils.categorical import (
+    encode_categorical_frame,
+    prepare_categorical_sample,
+    resolve_categorical_handling,
+)
+from fmlib.feature_selection.utils.local_data import root_cause
 from fmlib.feature_selection.utils.stdlib_import import stdlib_module
 from fmlib.feature_selection.utils.optuna_space import (
     build_sampler,
@@ -73,7 +78,7 @@ class _Backends:
 
 
 class BorutaShapSelector:
-    """Run Optuna-tuned BorutaSHAP as the final continuous-feature selector.
+    """Run Optuna-tuned BorutaSHAP as the final model selector.
 
     The ML flow follows ``BorutaSHAP_dep.py``: tune LightGBM or RandomForest on
     a stratified hold-out split, pass the optimized model to BorutaShap, fit on
@@ -109,13 +114,27 @@ class BorutaShapSelector:
             raise ExecutionError(msg)
 
         continuous = set(context.schema.continuous)
+        categorical = set(context.schema.categorical)
+        options = self._resolve_options(context)
+        handling = options["categorical_handling"]
         feature_cols = [
-            feature for feature in candidates if feature in continuous
+            feature
+            for feature in candidates
+            if feature in continuous or (feature in categorical and handling.mode != "skip")
         ]
         if not feature_cols:
             return []
+        if (
+            options["model_type"] == "rf"
+            and handling.mode in {"native", "max_cardinality", "top_n"}
+            and any(feature in categorical for feature in feature_cols)
+        ):
+            msg = (
+                "boruta_shap: model_type='rf' does not support native categorical "
+                "handling. Use ordinal_campaign, target_encoding, or skip."
+            )
+            raise ExecutionError(msg)
 
-        options = self._resolve_options(context)
         backends = self._load_backends(
             options["model_type"],
             require_optuna=bool(options["search_space"]),
@@ -147,6 +166,17 @@ class BorutaShapSelector:
                 feature=feature,
                 stage=self.stage_name,
                 method=self.method_name,
+                reason="dropped_categorical_cardinality",
+                value=float(cardinality),
+                threshold=float(handling.max_cardinality or 0),
+                keep=False,
+            )
+            for feature, cardinality in details.get("dropped_cardinality", {}).items()
+        ] + [
+            FeatureDecision(
+                feature=feature,
+                stage=self.stage_name,
+                method=self.method_name,
                 reason=(
                     "boruta_accepted"
                     if feature in accepted
@@ -160,7 +190,7 @@ class BorutaShapSelector:
                 threshold=None,
                 keep=feature in accepted,
             )
-            for feature in feature_cols
+            for feature in details.get("evaluated_features", feature_cols)
         ]
         context.scores[self.method_name] = {
             "accepted": list(details["accepted"]),
@@ -183,6 +213,11 @@ class BorutaShapSelector:
                 else options["n_trials"]
             ),
             "boruta_trials": options["boruta_trials"],
+            "categorical_handling": {
+                "mode": handling.mode,
+                "cardinality": details.get("categorical_cardinality", {}),
+                "dropped_cardinality": details.get("dropped_cardinality", {}),
+            },
         }
         logger.info(
             "BorutaShapSelector: evaluated %d features, kept %d",
@@ -262,6 +297,10 @@ class BorutaShapSelector:
                 "fixed_params": fixed_params,
                 "search_space": search_space,
                 "seed": resolve_step_seed(params, context),
+                "categorical_handling": resolve_categorical_handling(
+                    params,
+                    method_name=self.method_name,
+                ),
             }
             if options["sample_fraction"] is not None:
                 options["sample_fraction"] = float(
@@ -371,19 +410,45 @@ class BorutaShapSelector:
         context: Any | None = None,
     ) -> dict[str, Any]:
         """Tune the model and execute the legacy BorutaSHAP flow."""
-        local = prepare_numeric_frame(
+        handling = options["categorical_handling"]
+        categorical = []
+        if context is not None:
+            categorical = [
+                feature
+                for feature in feature_cols
+                if feature in set(context.schema.categorical)
+            ]
+        sample = prepare_categorical_sample(
             train,
             target_col=target_col,
             feature_cols=feature_cols,
+            categorical_cols=categorical,
             max_rows=options["max_rows"],
             sample_fraction=options["sample_fraction"],
             seed=seed,
             method_name=self.method_name,
+            handling=handling,
             context=context,
         )
+        raw_target = sample.frame[target_col].to_numpy()
+        task_type = (
+            context.schema.task_type
+            if context is not None
+            else "binary_classification"
+        )
+        task = resolve_task(task_type, raw_target, method_name=self.method_name)
+        encoded = encode_categorical_frame(
+            sample,
+            target=task.encoded_target,
+            task=task,
+            handling=handling,
+            seed=seed,
+        )
+        local = encoded.features.copy()
+        local[target_col] = task.encoded_target
         all_null = [
             feature
-            for feature in feature_cols
+            for feature in encoded.model_features
             if local[feature].isna().all()
         ]
         if all_null:
@@ -393,14 +458,8 @@ class BorutaShapSelector:
             )
             raise ExecutionError(msg)
 
-        features = local.loc[:, feature_cols]
+        features = local.loc[:, encoded.model_features]
         raw_target = local[target_col].to_numpy()
-        task_type = (
-            context.schema.task_type
-            if context is not None
-            else "binary_classification"
-        )
-        task = resolve_task(task_type, raw_target, method_name=self.method_name)
         target = task.encoded_target
         if task.is_regression:
             if len(target) < 4:
@@ -581,23 +640,28 @@ class BorutaShapSelector:
         accepted_set = set(getattr(feature_selector, "accepted", []))
         rejected_set = set(getattr(feature_selector, "rejected", []))
         tentative_set = set(getattr(feature_selector, "tentative", []))
-        accepted = [
-            feature for feature in feature_cols if feature in accepted_set
-        ]
-        tentative = [
+        source_by_model = encoded.source_by_model_feature
+        accepted_sources = {source_by_model.get(feature, feature) for feature in accepted_set}
+        tentative_sources = {source_by_model.get(feature, feature) for feature in tentative_set}
+        rejected_sources = {source_by_model.get(feature, feature) for feature in rejected_set}
+        evaluated_sources = [
             feature
-            for feature in feature_cols
-            if feature in tentative_set
-            and feature not in accepted_set
-            and feature not in rejected_set
+            for feature in sample.feature_cols
+            if feature in set(source_by_model.values())
+        ]
+        accepted = [feature for feature in evaluated_sources if feature in accepted_sources]
+        tentative = [
+            feature for feature in evaluated_sources
+            if feature in tentative_sources
+            and feature not in accepted_sources
+            and feature not in rejected_sources
         ]
         rejected = [
-            feature
-            for feature in feature_cols
-            if feature in rejected_set
+            feature for feature in evaluated_sources
+            if feature in rejected_sources
             or (
-                feature not in accepted_set
-                and feature not in tentative_set
+                feature not in accepted_sources
+                and feature not in tentative_sources
             )
         ]
         return {
@@ -606,6 +670,9 @@ class BorutaShapSelector:
             "tentative": tentative,
             "best_auc": best_auc,
             "best_params": best_params,
+            "dropped_cardinality": sample.dropped_cardinality,
+            "categorical_cardinality": sample.cardinality,
+            "evaluated_features": evaluated_sources,
         }
 
     @staticmethod

@@ -4,7 +4,7 @@
 # Должна совпасть со schema.task_type. Пайплайн сам ставит objective
 # multiclass, num_class, метрику Optuna (macro OVR AUC) и StratifiedKFold.
 # IV в этот order не ставьте: метод только для binary_classification.
-# Отбор только continuous; категориальные проходят без решения.
+# Отбор continuous и categorical; categorical_handling управляет режимом.
 
 order:
   - null_rate: ${statistics.null_rate}
@@ -32,6 +32,8 @@ lightgbm:
   optuna_mode: global
   n_jobs: -1
   seed: 17
+  categorical_handling:
+    mode: native
   shap_max_rows: 5000
   selection_mode: aggregated
   lgbm_threshold: 0.85
