@@ -63,6 +63,8 @@ def compute_fingerprint(
         }
     if method == "psi":
         fingerprint: dict[str, Any] = {
+            "min_bin_share": float(getattr(settings, "min_bin_share", 0.0)),
+            "max_levels": getattr(settings, "max_levels", 50),
             "mode": str(getattr(settings, "mode", "train_valid")),
             "num_bins": int(getattr(settings, "num_bins", 10)),
             "subsample_rows": getattr(settings, "subsample_rows", None),

@@ -2,8 +2,7 @@
 #
 # Нужен datasets["valid"] в fit_select либо schema.split со строками valid.
 # schema.time не обязателен. Ключ datasets["test"] не читается.
-# На строковых категориальных approxQuantile падает — либо только numeric
-# кандидаты, либо не ставьте этот шаг перед catboost_rfe с кошками.
+# Непрерывные признаки разбиваются по квантилям, категориальные — по уровням.
 # Для регрессии сэмпл не стратифицируется по таргету.
 
 order:
@@ -14,6 +13,8 @@ statistics:
     mode: train_valid
     threshold: 0.25
     num_bins: 10
+    min_bin_share: 0.0  # редкие уровни baseline объединяются в other
+    max_levels: 50     # null — без ограничения; новые уровни actual идут в other
     relative_error: 0.001
     batch_size: 100
     n_jobs: -1

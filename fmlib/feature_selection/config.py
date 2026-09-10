@@ -606,6 +606,11 @@ class PsiConfig:
         mode: Режим сравнения 'train_valid' или 'month_over_month'.
         threshold: Порог PSI для исключения признака.
         num_bins: Число квантильных интервалов для вычисления PSI.
+        min_bin_share: Минимальная доля категории в baseline; более редкие уровни
+            объединяются в ``other``. ``0`` отключает правило.
+        max_levels: Максимальное число отдельных уровней по частоте в baseline;
+            остальные и новые уровни попадают в ``other``. Пропуски считаются отдельно.
+            ``null`` отключает ограничение числа уровней.
         month_column: Имя столбца с идентификатором месяца (для режима train_valid).
         test_months: Число последних месяцев для тестовой выборки.
         eps: Малая константа для корректировки вероятностей при вычислении PSI в Pandas.
@@ -628,6 +633,8 @@ class PsiConfig:
     n_jobs: int = -1
     subsample_rows: Optional[int] = None
     seed: Optional[int] = None
+    min_bin_share: float = 0.0
+    max_levels: Optional[int] = 50
 
 
 @dataclass(frozen=True)
@@ -1478,6 +1485,18 @@ def _require_readable_feature_drop(path: Optional[str], section: str) -> None:
 
 def _validate_psi_config(config: PsiConfig, section: str = "statistics.psi") -> None:
     """Проверяет числовые настройки индекса стабильности популяции (PSI)."""
+    if (
+        isinstance(config.min_bin_share, bool)
+        or not isinstance(config.min_bin_share, (int, float))
+        or not 0.0 <= float(config.min_bin_share) < 1.0
+    ):
+        raise ConfigError(f"{section}.min_bin_share must be in [0, 1).")
+    if config.max_levels is not None and (
+        isinstance(config.max_levels, bool)
+        or not isinstance(config.max_levels, int)
+        or config.max_levels < 2
+    ):
+        raise ConfigError(f"{section}.max_levels must be an integer >= 2 or null.")
     if (
         isinstance(config.threshold, bool)
         or not isinstance(config.threshold, (int, float))

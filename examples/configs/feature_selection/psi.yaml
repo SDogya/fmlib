@@ -18,6 +18,8 @@ statistics:
     mode: month_over_month
     threshold: 0.25
     num_bins: 10
+    min_bin_share: 0.0  # редкие уровни baseline объединяются в other
+    max_levels: 50     # null — без ограничения; новые уровни actual идут в other
     month_column: month_part
     test_months: 1
     eps: 1e-4

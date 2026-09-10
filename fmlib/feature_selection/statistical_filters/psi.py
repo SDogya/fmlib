@@ -268,10 +268,20 @@ class PsiSelector:
                 actual=context.verbose_log.snapshot_frame(test_df),
             )
 
-        if is_pyspark:
-            psi_scores = self._compute_pyspark_psi(train_df, test_df, feature_cols, num_bins)
-        else:
-            psi_scores = self._compute_pandas_psi(train_df, test_df, feature_cols, num_bins, eps)
+        continuous = set(context.schema.continuous)
+        numeric_cols = [col for col in feature_cols if col in continuous]
+        categorical_cols = [col for col in feature_cols if col not in continuous]
+        psi_scores: dict[str, float] = {}
+        if numeric_cols:
+            if is_pyspark:
+                psi_scores.update(self._compute_pyspark_psi(train_df, test_df, numeric_cols, num_bins))
+            else:
+                psi_scores.update(self._compute_pandas_psi(train_df, test_df, numeric_cols, num_bins, eps))
+        if categorical_cols:
+            psi_scores.update(
+                self._compute_categorical_psi(train_df, test_df, categorical_cols, is_pyspark=is_pyspark),
+            )
+        psi_scores = {col: psi_scores[col] for col in feature_cols}
 
         if verbose_enabled(context, self.method_name) and psi_scores:
             values = [float(score) for score in psi_scores.values()]
@@ -506,6 +516,58 @@ class PsiSelector:
         )
         return baseline, actual
 
+    def _compute_categorical_psi(
+        self,
+        baseline: Any,
+        actual: Any,
+        columns: Sequence[str],
+        *,
+        is_pyspark: bool,
+    ) -> dict[str, float]:
+        """Сравнивает частоты категорий в общих корзинах, определённых по baseline.
+
+        Редкие и новые уровни объединяются в отдельную корзину. Пропуски не
+        объединяются с категориями; служебные строковые значения не используются.
+        """
+        scores: dict[str, float] = {}
+        for name in columns:
+            if is_pyspark:
+                expected = _categorical_counts_spark(baseline, name)
+                observed = _categorical_counts_spark(actual, name)
+            else:
+                expected = _categorical_counts_pandas(baseline[name])
+                observed = _categorical_counts_pandas(actual[name])
+            scores[name] = self._categorical_psi_from_counts(expected, observed)
+        return scores
+
+    def _categorical_psi_from_counts(
+        self,
+        expected: Mapping[Any, int],
+        observed: Mapping[Any, int],
+    ) -> float:
+        """Выбирает частые уровни baseline и вычисляет PSI по согласованным частотам."""
+        total = sum(expected.values())
+        levels = sorted(
+            (
+                level for level, count in expected.items()
+                if level is not None and count > 0
+                and count / total >= self.config.min_bin_share
+            ),
+            key=lambda level: (-expected[level], type(level).__name__, str(level)),
+        )
+        if self.config.max_levels is not None:
+            levels = levels[:self.config.max_levels]
+        keep = set(levels)
+
+        def counts(source: Mapping[Any, int]) -> list[int]:
+            """Собирает частоты отдельных уровней, пропусков и общей корзины other."""
+            return [source.get(level, 0) for level in levels] + [
+                source.get(None, 0),
+                sum(count for level, count in source.items() if level is not None and level not in keep),
+            ]
+
+        return _psi_from_counts(counts(expected), counts(observed))
+
     def _compute_pyspark_psi(
         self, train_df: Any, test_df: Any, feature_cols: List[str], num_bins: int
     ) -> Dict[str, float]:
@@ -681,3 +743,38 @@ class PsiSelector:
             method=self.method_name,
             reason=reason,
         )
+
+
+def _categorical_counts_pandas(series: Any) -> dict[Any, int]:
+    """Считает категории pandas, объединяя None, NaN и pd.NA в один пропуск."""
+    counts = series.dropna().value_counts()
+    result = {level: int(count) for level, count in counts.items() if count > 0}
+    result[None] = int(series.isna().sum())
+    return result
+
+
+def _categorical_counts_spark(frame: Any, name: str) -> dict[Any, int]:
+    """Собирает только агрегированные частоты Spark; isnan применяется лишь к float/double."""
+    from pyspark.sql import functions as F  # noqa: N812
+    from pyspark.sql.types import DoubleType, FloatType
+
+    value = F.col("`" + name.replace("`", "``") + "`")
+    if isinstance(frame.schema[name].dataType, (FloatType, DoubleType)):
+        value = F.when(F.isnan(value), F.lit(None)).otherwise(value)
+    rows = frame.select(value.alias("level")).groupBy("level").count().collect()
+    return {row["level"]: int(row["count"]) for row in rows}
+
+
+def _psi_from_counts(expected: Sequence[int], observed: Sequence[int]) -> float:
+    """Вычисляет PSI, сглаживая нулевые доли половиной наблюдения, как числовая ветка."""
+    total_exp, total_act = sum(expected), sum(observed)
+    if not total_exp or not total_act:
+        return 0.0
+    score = 0.0
+    for exp_count, act_count in zip(expected, observed):
+        if exp_count == 0 and act_count == 0:
+            continue
+        exp_share = (exp_count or 0.5) / total_exp
+        act_share = (act_count or 0.5) / total_act
+        score += (act_share - exp_share) * math.log(act_share / exp_share)
+    return float(score)
