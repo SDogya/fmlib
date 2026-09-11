@@ -705,13 +705,14 @@ def test_core_rejects_single_class_and_all_null_features() -> None:
         )
 
 
-def test_core_keeps_partial_nans() -> None:
+@pytest.mark.parametrize("model_type", ["lgbm", "rf"])
+def test_core_handles_partial_nans_by_model_type(model_type: str) -> None:
     frame = _frame()
     config = FeatureSelectionConfig.from_dict(
         {
             "model": {
                 "method": "boruta_shap",
-                "params": _tiny_boruta_params(),
+                "params": _tiny_boruta_params(model_type),
             },
             "execution": {"seed": 17, "max_local_rows": 1_000},
         },
@@ -723,16 +724,16 @@ def test_core_keeps_partial_nans() -> None:
         task_type="binary_classification",
     )
     selector = BorutaShapSelector(config.model)
-    options = selector._resolve_options(
-        StageContext(
-            spark=None,
-            datasets={"train": frame},
-            schema=schema,
-            config=config,
-            seed=17,
-            candidates=schema.candidate_features(),
-        ),
+    context = StageContext(
+        spark=None,
+        datasets={"train": frame},
+        schema=schema,
+        config=config,
+        seed=17,
+        candidates=schema.candidate_features(),
     )
+    options = selector._resolve_options(context)
+    received: list[pd.DataFrame] = []
 
     class FakeModel:
         def __init__(self, **kwargs: Any) -> None:
@@ -745,7 +746,7 @@ def test_core_keeps_partial_nans() -> None:
             self.tentative: list[str] = []
 
         def fit(self, **kwargs: Any) -> None:
-            return None
+            received.append(kwargs["X"].copy())
 
         def TentativeRoughFix(self) -> None:
             return None
@@ -776,9 +777,85 @@ def test_core_keeps_partial_nans() -> None:
         options=options,
         seed=17,
         backends=backends,
+        context=context,
     )
     assert details["accepted"] == ["first"]
     assert details["rejected"] == ["second"]
+    expected = partial_null[["first", "second"]]
+    if model_type == "rf":
+        expected = expected.fillna(expected.median())
+    pd.testing.assert_frame_equal(
+        received[0].sort_values("second").reset_index(drop=True), expected,
+    )
+    assert partial_null["first"].isna().sum() == 1
+    assert context.local_numeric_sample.frame["first"].isna().sum() == 1
+
+
+def test_rf_imputation_uses_training_medians_and_passes_boruta_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Проверяет импутацию с реальными RF, Optuna и валидатором входа Boruta."""
+    from sklearn.ensemble import RandomForestClassifier
+    from BorutaShap import BorutaShap
+
+    train_features = pd.DataFrame({
+        "first": [1.0, 3.0, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan],
+        "second": [np.nan] * 8,
+    })
+    valid_features = pd.DataFrame({"first": [np.nan, 100.0], "second": [10.0, 20.0]})
+    frame = pd.concat([train_features, valid_features], ignore_index=True)
+    frame["response"] = np.tile([0, 1], 5)
+    context = _context(frame, categorical=(), params=_tiny_boruta_params(
+        parameters={"n_estimators": {"type": "int", "min": 8, "max": 9}},
+        optuna_params={"enabled": True, "n_trials": 1, "n_startup_trials": 1},
+    ))
+    selector = BorutaShapSelector(context.config.model)
+    fitted: list[pd.DataFrame] = []
+    scored: list[pd.DataFrame] = []
+    original_fit = RandomForestClassifier.fit
+    original_predict = RandomForestClassifier.predict_proba
+
+    def capture_fit(self: Any, X: pd.DataFrame, y: Any, **kwargs: Any) -> Any:
+        fitted.append(X.copy())
+        return original_fit(self, X, y, **kwargs)
+
+    def capture_predict(self: Any, X: pd.DataFrame, **kwargs: Any) -> Any:
+        scored.append(X.copy())
+        return original_predict(self, X, **kwargs)
+
+    monkeypatch.setattr(RandomForestClassifier, "fit", capture_fit)
+    monkeypatch.setattr(RandomForestClassifier, "predict_proba", capture_predict)
+
+    class ValidatingBoruta(BorutaShap):
+        def fit(self, X: pd.DataFrame, y: Any, **kwargs: Any) -> None:
+            self.X, self.y = X, y
+            self.check_X()
+            self.check_missing_values()
+            self.model.fit(X, y)
+            self.accepted, self.rejected, self.tentative = ["first"], ["second"], []
+
+        def TentativeRoughFix(self) -> None:
+            pass
+
+    def split(*args: Any, **kwargs: Any) -> tuple[Any, ...]:
+        return train_features.copy(), valid_features.copy(), np.tile([0, 1], 4), np.array([0, 1])
+
+    selector._run_boruta_selection(
+        train=frame, target_col="response", feature_cols=["first", "second"],
+        options=selector._resolve_options(context), seed=17, context=context,
+        backends=_Backends(
+            boruta_class=ValidatingBoruta, model_class=RandomForestClassifier,
+            optuna_module=boruta_module.optuna, train_test_split=split,
+        ),
+    )
+    assert len(fitted) == 2
+    pd.testing.assert_frame_equal(fitted[0], train_features.fillna({"first": 2.0, "second": 0.0}))
+    pd.testing.assert_frame_equal(scored[0], valid_features.fillna({"first": 2.0, "second": 0.0}))
+    expected = context.local_numeric_sample.frame[["first", "second"]]
+    pd.testing.assert_frame_equal(fitted[1], expected.fillna(expected.median()))
+    assert expected["first"].median() == 3.0
+    assert expected["second"].median() == 15.0
+    assert context.local_numeric_sample.frame.isna().sum().sum() == frame.isna().sum().sum()
 
 
 def test_spark_core_uses_shared_materialization_and_supports_dots(spark: Any) -> None:

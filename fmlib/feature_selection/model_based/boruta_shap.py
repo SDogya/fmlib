@@ -368,7 +368,15 @@ class BorutaShapSelector:
         backends: _Backends,
         context: Any | None = None,
     ) -> dict[str, Any]:
-        """Подбирает параметры модели и выполняет унаследованный алгоритм BorutaSHAP."""
+        """Подбирает параметры модели и выполняет алгоритм BorutaSHAP.
+
+        Для LightGBM пропуски сохраняются. Ветка RF заполняет их медианами:
+        BorutaShap запрещает NaN для RF даже при поддержке в самом sklearn.
+        При подборе параметров медианы вычисляются только на обучающей части;
+        полностью пустой в этой части столбец заполняется нулём.
+        Перед итоговым отбором медианы пересчитываются на всей локальной выборке.
+        Общая кэшированная выборка при этом не изменяется.
+        """
         local = prepare_numeric_frame(
             train,
             target_col=target_col,
@@ -460,6 +468,10 @@ class BorutaShapSelector:
                 target,
                 **split_kwargs,
             )
+            if options["model_type"] == "rf":
+                train_medians = train_features.median().fillna(0.0)
+                train_features = train_features.fillna(train_medians)
+                valid_features = valid_features.fillna(train_medians)
             sampler = build_sampler(
                 backends.optuna_module,
                 sampler_name=options["sampler"],
@@ -553,6 +565,9 @@ class BorutaShapSelector:
                 seed,
                 task=task,
             )
+
+        if options["model_type"] == "rf":
+            features = features.fillna(features.median())
 
         try:
             feature_selector = backends.boruta_class(
