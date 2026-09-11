@@ -718,7 +718,19 @@ class TestIvSelectorSpark:
             {"num": [0.0, 1.0, 0.0, 1.0], "response": [0, 1, 0, 1]},
         )
         train = spark.createDataFrame(pandas_frame)
-        monkeypatch.setattr(SparkDataFrame, "is_cached", True, raising=False)
+        original_select = SparkDataFrame.select
+        original_persist = SparkDataFrame.persist
+        original_unpersist = SparkDataFrame.unpersist
+        cached_frames = []
+
+        def select(self: Any, *args: Any, **kwargs: Any) -> Any:
+            prepared = original_select(self, *args, **kwargs)
+            if prepared.columns == ["c0", "__y__"]:
+                original_persist(prepared)
+                cached_frames.append(prepared)
+            return prepared
+
+        monkeypatch.setattr(SparkDataFrame, "select", select)
 
         def persist(self: Any, *_args: Any, **_kwargs: Any) -> Any:
             del self
@@ -726,8 +738,14 @@ class TestIvSelectorSpark:
 
         monkeypatch.setattr(SparkDataFrame, "persist", persist)
         context = _context(train, categorical=(), continuous=("num",), spark=spark)
-        IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
-        assert "num" in context.scores["iv"]["values"]
+        try:
+            IvSelector(IvConfig(num_bins=2, threshold=0.0)).select(context, ["num"])
+            assert "num" in context.scores["iv"]["values"]
+            assert len(cached_frames) == 1
+            assert cached_frames[0].is_cached
+        finally:
+            for prepared in cached_frames:
+                original_unpersist(prepared)
 
     def test_persist_failure_still_computes(
         self,

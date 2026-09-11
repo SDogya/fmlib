@@ -134,6 +134,98 @@ def _tiny_boruta_params(model_type: str = "rf", **overrides: Any) -> dict[str, A
     return payload
 
 
+@pytest.mark.parametrize("n_classes", [2, 3])
+@pytest.mark.parametrize("legacy", [False, True])
+def test_boruta_shap_formats_preserve_class_aggregation(n_classes: int, legacy: bool) -> None:
+    values = np.arange(2 * 4 * n_classes, dtype=float).reshape(2, 4, n_classes) - 7
+    payload = [values[:, :, index] for index in range(n_classes)] if legacy else values
+    result = boruta_module._boruta_shap_importances(
+        payload, n_rows=2, n_features=4, classification=True,
+    )
+    np.testing.assert_allclose(result, np.abs(values).sum(axis=2).mean(axis=0))
+    assert result.shape == (4,)
+
+
+@pytest.mark.parametrize("classification", [False, True])
+def test_boruta_shap_matrix_format(classification: bool) -> None:
+    values = np.array([[1.0, -2.0], [-3.0, 4.0]])
+    result = boruta_module._boruta_shap_importances(
+        values, n_rows=2, n_features=2, classification=classification,
+    )
+    np.testing.assert_allclose(result, [2.0, 3.0])
+
+
+@pytest.mark.parametrize(
+    ("values", "classification"),
+    [
+        (np.ones(4), True),
+        (np.ones((2, 3)), True),
+        (np.ones((3, 2, 4)), True),
+        ([np.ones((2, 3))], True),
+        ([], True),
+        (np.ones((2, 4, 0)), True),
+        (np.ones((2, 4, 2)), False),
+        ([np.ones((2, 4))], False),
+        (np.full((2, 4), np.nan), True),
+        (np.full((2, 4), np.inf), True),
+    ],
+)
+def test_boruta_rejects_invalid_shap_output(values: Any, classification: bool) -> None:
+    with pytest.raises(ExecutionError, match="SHAP"):
+        boruta_module._boruta_shap_importances(
+            values, n_rows=2, n_features=4, classification=classification,
+        )
+
+
+@pytest.mark.parametrize("sample", [False, True])
+def test_boruta_adapter_uses_requested_frame(monkeypatch: pytest.MonkeyPatch, sample: bool) -> None:
+    import shap
+
+    frame = pd.DataFrame(np.arange(24, dtype=float).reshape(6, 4))
+    subset = frame.iloc[[1, 4]]
+    received = []
+
+    class Explainer:
+        def __init__(self, model: Any, **kwargs: Any) -> None:
+            assert model is instance.model
+            assert kwargs["feature_perturbation"] == "tree_path_dependent"
+
+        def shap_values(self, data: Any) -> np.ndarray:
+            received.append(data)
+            return np.stack([data.to_numpy(), -data.to_numpy()], axis=-1)
+
+    instance = boruta_module._compatible_boruta_class(object)()
+    instance.model = object()
+    instance.X_boruta = frame
+    instance.sample = sample
+    instance.classification = True
+    instance.find_sample = lambda: subset
+    monkeypatch.setattr(shap, "TreeExplainer", Explainer)
+    instance.explain()
+    expected_frame = subset if sample else frame
+    assert received[0] is expected_frame
+    np.testing.assert_allclose(instance.shap_values, 2 * expected_frame.abs().mean().to_numpy())
+
+
+@pytest.mark.parametrize("model_type", ["lgbm", "rf"])
+@pytest.mark.parametrize("task_type", ["classification", "regression"])
+def test_boruta_adapter_with_real_models(model_type: str, task_type: str) -> None:
+    _require_boruta_stack()
+    rng = np.random.default_rng(17)
+    frame = pd.DataFrame(rng.normal(size=(40, 2)), columns=["first", "second"])
+    target = np.arange(40) % 3 if task_type == "classification" else frame["first"].to_numpy()
+    selector = BorutaShapSelector(ModelConfig(method="boruta_shap"))
+    backends = selector._load_backends(model_type, require_optuna=False, task_type=task_type)
+    model = backends.model_class(n_estimators=8, max_depth=3, random_state=17, n_jobs=1)
+    boruta = backends.boruta_class(
+        model=model, importance_measure="shap", classification=task_type != "regression",
+    )
+    boruta.fit(X=frame, y=target, n_trials=2, random_state=17, verbose=False)
+    assert set(boruta.accepted) | set(boruta.rejected) | set(boruta.tentative) == set(frame.columns)
+    assert len(boruta.X_feature_import) == 2
+    assert len(boruta.Shadow_feature_import) == 2
+
+
 def test_selector_is_boruta_shap() -> None:
     context = _context(_frame())
 
@@ -471,8 +563,9 @@ def test_core_runs_boruta_for_both_models(
         received_type: str,
         parameters: Any,
         seed: int,
+        **kwargs: Any,
     ) -> Any:
-        model = original_build(model_class, received_type, parameters, seed)
+        model = original_build(model_class, received_type, parameters, seed, **kwargs)
         built.append({"model_type": received_type, "params": dict(model.get_params())})
         return model
 

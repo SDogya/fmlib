@@ -70,6 +70,71 @@ class _Backends:
     train_test_split: Any
 
 
+def _boruta_shap_importances(
+    values: Any,
+    *,
+    n_rows: int,
+    n_features: int,
+    classification: bool,
+) -> np.ndarray:
+    """Приводит старый и новый форматы SHAP к важностям признаков Boruta.
+
+    Старый формат классификации — список матриц по классам; новый — массив
+    ``(строки, признаки, классы)``. Сохраняется агрегация BorutaShap 1.0.17:
+    сумма |SHAP| по классам, затем среднее по строкам. Для двумерного результата
+    вычисляется только среднее |SHAP| по строкам.
+    """
+    if isinstance(values, list):
+        if not classification or not values:
+            msg = "boruta_shap: unexpected SHAP class list."
+            raise ExecutionError(msg)
+        arrays = [np.asarray(item) for item in values]
+        if any(array.shape != (n_rows, n_features) for array in arrays):
+            msg = "boruta_shap: invalid SHAP class matrix shape."
+            raise ExecutionError(msg)
+        matrix = np.stack(arrays, axis=-1)
+    else:
+        matrix = np.asarray(values)
+    if matrix.ndim == 3 and classification and matrix.shape[2] > 0:
+        matrix = np.abs(matrix).sum(axis=2)
+    if matrix.shape != (n_rows, n_features) or n_rows == 0:
+        msg = (
+            f"boruta_shap: unexpected SHAP shape {matrix.shape!r}; "
+            f"expected ({n_rows}, {n_features}) after class aggregation."
+        )
+        raise ExecutionError(msg)
+    if not np.isfinite(matrix).all():
+        msg = "boruta_shap: SHAP values must be finite."
+        raise ExecutionError(msg)
+    return np.abs(matrix).mean(axis=0)
+
+
+def _compatible_boruta_class(base_class: Any) -> Any:
+    """Создаёт локальный адаптер Boruta без изменения SHAP и установленных пакетов."""
+
+    class CompatibleBorutaShap(base_class):
+        """Обрабатывает обе версии формата SHAP в полном и выборочном расчёте."""
+
+        def explain(self) -> None:
+            """Вычисляет важности исходных и теневых признаков с проверкой формы."""
+            import shap
+
+            explainer = shap.TreeExplainer(
+                self.model,
+                feature_perturbation="tree_path_dependent",
+                approximate=True,
+            )
+            frame = self.find_sample() if self.sample else self.X_boruta
+            self.shap_values = _boruta_shap_importances(
+                explainer.shap_values(frame),
+                n_rows=len(frame),
+                n_features=self.X_boruta.shape[1],
+                classification=self.classification,
+            )
+
+    return CompatibleBorutaShap
+
+
 class BorutaShapSelector:
     """Выполняет окончательный отбор непрерывных признаков через BorutaSHAP с подбором параметров Optuna.
 
@@ -351,7 +416,7 @@ class BorutaShapSelector:
             model_class = rf_estimator_class(task_type)
 
         return _Backends(
-            boruta_class=BorutaShap,
+            boruta_class=_compatible_boruta_class(BorutaShap),
             model_class=model_class,
             optuna_module=optuna,
             train_test_split=train_test_split,

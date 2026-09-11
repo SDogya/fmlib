@@ -104,7 +104,10 @@ class TestPsiStratifiedSampling:
 
         # Mock context
         class MockContext:
-            schema = type("Obj", (), {"target": "target"})()
+            schema = FeatureSchema(
+                categorical=(), continuous=("feature1",),
+                target="target", task_type="binary_classification",
+            )
             seed = 42
             # PsiSelector falls back to step_seed(context) when PsiConfig.seed
             # is unset, and step_seed reads run_seed.
@@ -133,7 +136,10 @@ class TestPsiStratifiedSampling:
 
         # Mock context
         class MockContext:
-            schema = type("Obj", (), {"target": "target"})()
+            schema = FeatureSchema(
+                categorical=(), continuous=("feature1",),
+                target="target", task_type="binary_classification",
+            )
             seed = 42
             # PsiSelector falls back to step_seed(context) when PsiConfig.seed
             # is unset, and step_seed reads run_seed.

@@ -412,6 +412,8 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
     options = selector._resolve_options(context)
     tune_calls: list[dict[str, Any]] = []
     captured_folds: list[dict[str, Any]] = []
+    tuning_inside_fold: list[bool] = []
+    inside_fold = False
     original_tune = lightgbm_module.tune_parameters
     original_run = selector._run_fold
 
@@ -421,6 +423,7 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         **kwargs: Any,
     ) -> dict[str, Any]:
         tune_calls.append(kwargs)
+        tuning_inside_fold.append(inside_fold)
         return original_tune(matrix, target, **kwargs)
 
     def wrapped_run(
@@ -428,8 +431,13 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         target: np.ndarray,
         **kwargs: Any,
     ) -> tuple[np.ndarray, np.ndarray, dict[str, Any]]:
+        nonlocal inside_fold
         captured_folds.append(kwargs)
-        return original_run(matrix, target, **kwargs)
+        inside_fold = True
+        try:
+            return original_run(matrix, target, **kwargs)
+        finally:
+            inside_fold = False
 
     monkeypatch.setattr(lightgbm_module, "tune_parameters", wrapped_tune)
     monkeypatch.setattr(selector, "_run_fold", wrapped_run)
@@ -454,7 +462,8 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         return_importances=True,
     )
 
-    assert len(tune_calls) == expected_driver_calls
+    assert tuning_inside_fold.count(False) == expected_driver_calls
+    assert tuning_inside_fold.count(True) == (2 if mode == "per_fold" else 0)
     assert len(captured_folds) == 2
     assert all(fold["optuna_mode"] == mode for fold in captured_folds)
     assert all(fold["n_jobs"] == 1 for fold in captured_folds)
@@ -465,6 +474,7 @@ def test_optuna_mode_controls_driver_tuning_and_fold_payloads(
         assert details["global_best_params"] is not None
         assert 8 <= details["global_best_params"]["n_estimators"] <= 10
     else:
+        assert [call["seed"] for call in tune_calls] == [18, 19]
         assert all(fold["global_params"] is None for fold in captured_folds)
         assert details["global_best_params"] is None
     assert set(details["fold_best_params"]) == {"1", "2"}
