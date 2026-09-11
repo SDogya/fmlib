@@ -52,6 +52,16 @@ from fmlib.feature_selection.utils.task_runtime import (
 
 logger = logging.getLogger(__name__)
 
+_OPTUNA_BEST_ITERATION_ATTR = "lgbm_best_iteration"
+_LGBM_TREE_CAP_KEYS = (
+    "n_estimators",
+    "num_iterations",
+    "num_trees",
+    "num_boost_round",
+    "num_tree",
+    "nrounds",
+)
+
 try:
     import optuna
 except ImportError:
@@ -206,6 +216,7 @@ class BorutaShapSelector:
                 key: _json_value(value)
                 for key, value in details["best_params"].items()
             },
+            "best_iteration": details.get("best_iteration"),
             "optuna_enabled": options["optuna_enabled"],
             "optuna_trials": (
                 0
@@ -572,6 +583,15 @@ class BorutaShapSelector:
                         task=task,
                     )
                     model.fit(train_features, train_target)
+                if options["model_type"] == "lgbm":
+                    best_iteration = _positive_iteration(
+                        getattr(model, "best_iteration_", None),
+                    )
+                    if best_iteration is not None:
+                        trial.set_user_attr(
+                            _OPTUNA_BEST_ITERATION_ATTR,
+                            best_iteration,
+                        )
                 return score_model(task, model, valid_features, valid_target)
 
             try:
@@ -589,6 +609,22 @@ class BorutaShapSelector:
                         "boruta_shap: Optuna did not produce a finite best metric."
                     )
                     raise ExecutionError(msg)
+                best_iteration = None
+                if options["model_type"] == "lgbm":
+                    best_iteration = _positive_iteration(
+                        study.best_trial.user_attrs.get(
+                            _OPTUNA_BEST_ITERATION_ATTR,
+                        ),
+                    )
+                    if best_iteration is not None:
+                        best_params = _pin_lgbm_tree_cap(
+                            best_params,
+                            best_iteration,
+                        )
+                        logger.info(
+                            "BorutaShapSelector: Optuna selected %d LightGBM trees for Boruta",
+                            best_iteration,
+                        )
                 final_model = self._build_model(
                     backends.model_class,
                     options["model_type"],
@@ -607,6 +643,7 @@ class BorutaShapSelector:
         else:
             best_params = dict(fixed_params)
             best_auc = None
+            best_iteration = None
             final_model = self._build_model(
                 backends.model_class,
                 options["model_type"],
@@ -616,6 +653,12 @@ class BorutaShapSelector:
             )
 
         try:
+            logger.info(
+                "BorutaShapSelector: starting %d Boruta trials on %d rows and %d model features",
+                options["boruta_trials"],
+                len(features),
+                len(encoded.model_features),
+            )
             feature_selector = backends.boruta_class(
                 model=final_model,
                 importance_measure="shap",
@@ -670,6 +713,7 @@ class BorutaShapSelector:
             "tentative": tentative,
             "best_auc": best_auc,
             "best_params": best_params,
+            "best_iteration": best_iteration,
             "dropped_cardinality": sample.dropped_cardinality,
             "categorical_cardinality": sample.cardinality,
             "evaluated_features": evaluated_sources,
@@ -756,3 +800,26 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_json_value(item) for item in value]
     return value
+
+
+def _positive_iteration(value: Any) -> int | None:
+    """Return a positive LightGBM iteration count, otherwise ``None``."""
+    try:
+        iteration = int(value)
+    except (TypeError, ValueError):
+        return None
+    return iteration if iteration > 0 else None
+
+
+def _pin_lgbm_tree_cap(
+    parameters: Mapping[str, Any],
+    best_iteration: int,
+) -> dict[str, Any]:
+    """Replace every LightGBM tree-cap alias with the tuned iteration count."""
+    pinned = {
+        name: value
+        for name, value in parameters.items()
+        if name not in _LGBM_TREE_CAP_KEYS
+    }
+    pinned["n_estimators"] = int(best_iteration)
+    return pinned

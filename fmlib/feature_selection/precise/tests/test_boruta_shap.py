@@ -610,6 +610,139 @@ def test_scalar_parameters_are_pinned_and_leave_the_search_space() -> None:
     assert set(space) == {"n_estimators"}
 
 
+def test_optuna_best_iteration_caps_the_model_passed_to_boruta(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    frame = _frame(40)
+    params = {
+        "model_type": "lgbm",
+        "max_rows": len(frame),
+        "boruta_trials": 2,
+        "parameters": {
+            "num_iterations": 2_000,
+            "num_leaves": {"type": "int", "min": 16, "max": 32},
+        },
+        "optuna_params": {
+            "enabled": True,
+            "n_trials": 1,
+            "n_startup_trials": 1,
+        },
+    }
+    config = FeatureSelectionConfig.from_dict(
+        {
+            "precise": {"method": "boruta_shap", "params": params},
+            "execution": {"seed": 17, "max_local_rows": 1_000},
+        },
+    )
+    schema = FeatureSchema(
+        categorical=(),
+        continuous=("first", "second"),
+        target="response",
+        task_type="binary_classification",
+    )
+    context = StageContext(
+        spark=None,
+        datasets={"train": frame},
+        schema=schema,
+        config=config,
+        seed=17,
+        candidates=schema.candidate_features(),
+    )
+    selector = BorutaShapSelector(context.config.precise)
+    received: dict[str, Any] = {}
+
+    class FakeTrial:
+        def __init__(self) -> None:
+            self.user_attrs: dict[str, Any] = {}
+
+        def suggest_int(self, _name: str, low: int, _high: int, **_kwargs: Any) -> int:
+            return low
+
+        def set_user_attr(self, name: str, value: Any) -> None:
+            self.user_attrs[name] = value
+
+    class FakeStudy:
+        def __init__(self) -> None:
+            self.best_params = {"num_leaves": 16}
+            self.best_value = 0.8
+            self.best_trial = FakeTrial()
+
+        def optimize(self, objective: Any, **_kwargs: Any) -> None:
+            objective(self.best_trial)
+
+    class FakeOptuna:
+        @staticmethod
+        def create_study(**_kwargs: Any) -> FakeStudy:
+            return FakeStudy()
+
+    class FakeModel:
+        def __init__(self, **parameters: Any) -> None:
+            self.parameters = parameters
+            self.best_iteration_ = 0
+
+        def fit(self, *_args: Any, **_kwargs: Any) -> None:
+            self.best_iteration_ = 37
+
+    class FakeBoruta:
+        def __init__(self, *, model: FakeModel, **_kwargs: Any) -> None:
+            received.update(model.parameters)
+            self.accepted = ["first"]
+            self.rejected = ["second"]
+            self.tentative: list[str] = []
+
+        def fit(self, **_kwargs: Any) -> None:
+            return None
+
+        def TentativeRoughFix(self) -> None:
+            return None
+
+    def fake_split(
+        features: pd.DataFrame,
+        target: np.ndarray,
+        **_kwargs: Any,
+    ) -> tuple[pd.DataFrame, pd.DataFrame, np.ndarray, np.ndarray]:
+        return features.iloc[:-8], features.iloc[-8:], target[:-8], target[-8:]
+
+    monkeypatch.setattr(boruta_module, "build_sampler", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(boruta_module, "score_model", lambda *_args, **_kwargs: 0.8)
+    monkeypatch.setattr(
+        boruta_module,
+        "fit_lgbm_with_early_stopping",
+        lambda model, features, target, **_kwargs: model.fit(features, target),
+    )
+
+    details = selector._run_boruta_selection(
+        train=frame,
+        target_col="response",
+        feature_cols=["first", "second"],
+        options=selector._resolve_options(context),
+        seed=17,
+        backends=_Backends(
+            boruta_class=FakeBoruta,
+            model_class=FakeModel,
+            optuna_module=FakeOptuna(),
+            train_test_split=fake_split,
+        ),
+        context=context,
+    )
+
+    assert received["n_estimators"] == 37
+    assert "num_iterations" not in received
+    assert details["best_iteration"] == 37
+    assert details["best_params"]["n_estimators"] == 37
+
+
+def test_best_iteration_helpers_validate_and_replace_tree_cap_aliases() -> None:
+    parameters = {"num_iterations": 500, "num_leaves": 31}
+
+    assert boruta_module._positive_iteration(0) is None
+    assert boruta_module._positive_iteration(None) is None
+    assert boruta_module._pin_lgbm_tree_cap(parameters, 37) == {
+        "num_leaves": 31,
+        "n_estimators": 37,
+    }
+
+
 def test_grid_sampler_uses_finite_custom_values() -> None:
     _require_boruta_stack()
     import optuna
